@@ -11,39 +11,34 @@ La IA implementa; Francisco revisa y aprueba. El contexto del repo está en `wav
 - Este modo está siempre activo. Si Francisco escribe `@modo-yo-construyo` o dice "modo yo construyo", ese modo (él programa, tú enseñas) **reemplaza a este** hasta que diga "vuelve al modo IA construye". Nunca aplican los dos a la vez.
 
 ## 0. Alcance estricto (regla más importante)
+- Haz **exactamente** lo que Francisco pidió en el mensaje actual, ni más ni menos. Lo pedido manda sobre cualquier plantilla o ciclo de este archivo.
+- Si dice "no hagas X" (por ejemplo, "no hagas el frontend"), X no se toca, aunque el ciclo normal lo incluya.
+- Un pedido puntual ("copia los tokens de Figma") es **una sola tarea**: se hace solo eso (el archivo de tokens), sin pantallas, componentes ni rutas.
+- Tras terminar el pedido, **detente**: presenta (§7) y espera. No encadenes el paso siguiente por iniciativa propia.
+- Si para cumplir el pedido haría falta algo más grande, o dudas del alcance, pregunta antes (una pregunta, con opciones).
+- Los ciclos de §2 (ruta + pantalla) aplican solo cuando Francisco pide construir una ruta o feature; no son una lista de tareas por defecto.
 
-Haz exactamente lo que Francisco pidió en el mensaje actual, ni más ni menos. Lo pedido manda sobre cualquier plantilla o ciclo de este archivo.
-Si dice “no hagas X” (por ejemplo, “no hagas el frontend”), X no se toca, aunque el ciclo normal lo incluya.
-Un pedido puntual (“copia los tokens de Figma”) es una sola tarea: se hace solo eso (el archivo de tokens), sin pantallas, componentes ni rutas.
-Tras terminar el pedido, detente: presenta (§7) y espera. No encadenes el paso siguiente por iniciativa propia.
-Si para cumplir el pedido haría falta algo más grande, o dudas del alcance, pregunta antes (una pregunta, con opciones).
-Los ciclos de §2 (ruta + pantalla) aplican solo cuando Francisco pide construir una ruta o feature; no son una lista de tareas por defecto.
+**Antes de crear o modificar archivos**
+- Lista los archivos que vas a crear o modificar (ruta y una línea de por qué) y **espera mi OK**.
+- Solo toca los archivos de esa lista. Si durante el trabajo hace falta otro, detente y pregunta.
+- Si el pedido es de una sola línea o un archivo ya conocido, puedes avisar y hacerlo en el mismo mensaje.
 
-Antes de crear o modificar archivos
+**Nunca, sin que yo lo pida explícitamente**
+- Crear carpetas o módulos nuevos (`web/`, `api/`, `http/`, `docs/`, `features/`, `pages/`).
+- Crear `.env`, `.env.*`, `docker-compose.yml`, `Dockerfile`, `ci.yml` ni archivos de configuración.
+- Crear o correr migraciones, ni cambiar `schema.prisma`.
+- Crear pantallas, componentes, rutas, hooks, estilos o assets que no estén en el pedido.
+- Ejecutar `npm install` ni agregar dependencias.
+- Tocar archivos que ya existen y que el pedido no menciona.
+- Refactorizar, renombrar, reformatear o "mejorar" código existente.
+- Anticipar trabajo futuro ("ya que estamos", "para dejarlo listo", "por si acaso").
 
-Lista los archivos que vas a crear o modificar (ruta y una línea de por qué) y espera mi OK.
-Solo toca los archivos de esa lista. Si durante el trabajo hace falta otro, detente y pregunta.
-Si el pedido es de una sola línea o un archivo ya conocido, puedes avisar y hacerlo en el mismo mensaje.
+**Si algo parece faltar**
+- Dilo en el resumen como "Falta / sugerencia", sin hacerlo. Yo decido si se hace.
 
-Nunca, sin que yo lo pida explícitamente
-
-Crear carpetas o módulos nuevos (web/, api/, http/, docs/, features/, pages/).
-Crear .env, .env.\*, docker-compose.yml, Dockerfile, ci.yml ni archivos de configuración.
-Crear o correr migraciones, ni cambiar schema.prisma.
-Crear pantallas, componentes, rutas, hooks, estilos o assets que no estén en el pedido.
-Ejecutar npm install ni agregar dependencias.
-Tocar archivos que ya existen y que el pedido no menciona.
-Refactorizar, renombrar, reformatear o “mejorar” código existente.
-Anticipar trabajo futuro (“ya que estamos”, “para dejarlo listo”, “por si acaso”).
-
-Si algo parece faltar
-
-Dilo en el resumen como “Falta / sugerencia”, sin hacerlo. Yo decido si se hace.
-
-Al terminar cada tarea
-
-Muestra la lista de archivos creados o modificados. Si hay alguno que no estaba en la lista aprobada, márcalo y explica por qué.
-No empieces la siguiente tarea. Espera mi aprobación.
+**Al terminar cada tarea**
+- Muestra la lista de archivos creados o modificados. Si hay alguno que no estaba en la lista aprobada, márcalo y explica por qué.
+- No empieces la siguiente tarea. Espera mi aprobación.
 
 ## 1. Rol y herramientas
 
