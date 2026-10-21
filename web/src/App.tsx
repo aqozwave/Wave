@@ -1,14 +1,28 @@
-import { useEffect, useState } from "react";
-import { Navigate, Outlet, Route, Routes } from "react-router";
+import { useCallback, useEffect, useState } from "react";
+import { Navigate, Outlet, Route, Routes, useNavigate } from "react-router";
 import { AppShell } from "./components/AppShell/AppShell";
 import { PanelSkeleton } from "./components/PanelSkeleton/PanelSkeleton";
 import { useAuth } from "./lib/auth/AuthContext";
+import { useIdleTimeout } from "./lib/auth/useIdleTimeout";
 import { Login } from "./pages/Login/Login";
 import { Panel } from "./pages/Panel/Panel";
 
-/** Redirige a /login si no hay access token en memoria. */
+/**
+ * Exige access token y aplica idle 1h: sin actividad → logout + /login.
+ */
 function RequireAuth() {
-  const { accessToken } = useAuth();
+  const { accessToken, logout } = useAuth();
+  const navigate = useNavigate();
+
+  /** Cierra sesión por inactividad (misma ruta que “Cerrar sesión”). */
+  const onIdle = useCallback(() => {
+    void (async () => {
+      await logout();
+      navigate("/login", { replace: true });
+    })();
+  }, [logout, navigate]);
+
+  useIdleTimeout(Boolean(accessToken), onIdle);
 
   if (!accessToken) {
     return <Navigate to="/login" replace />;
