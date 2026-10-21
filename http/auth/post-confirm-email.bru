@@ -1,0 +1,47 @@
+meta {
+  name: Post confirm-email
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/confirm-email
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "token": "{{confirmEmailToken}}"
+  }
+}
+
+docs {
+  Tras Post register, copiá el token del log de la API:
+  `[auth.register] confirm token para …: <TOKEN>`
+  y pegalo en la variable de entorno `confirmEmailToken` (local).
+}
+
+script:pre-request {
+  const token = bru.getEnvVar("confirmEmailToken");
+  if (!token) {
+    throw new Error(
+      "Definí confirmEmailToken en el entorno local (token del log tras register)",
+    );
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.user.confirmed: eq true
+  res.body.message: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

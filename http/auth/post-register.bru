@@ -36,6 +36,11 @@ script:pre-request {
   }
 }
 
+docs {
+  Tras 201, la API loguea el confirm token (stub hasta Resend).
+  Copiálo a `confirmEmailToken` del entorno local y corré Post confirm-email.
+}
+
 assert {
   res.status: eq 201
   res.body.user.confirmed: eq false

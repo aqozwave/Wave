@@ -3,6 +3,7 @@ import { authenticate } from "../../middlewares/authenticate.js";
 import { requireSuperadmin } from "../../middlewares/requireSuperadmin.js";
 import { validate } from "../../middlewares/validate.js";
 import {
+  confirmEmailHandler,
   loginHandler,
   logoutHandler,
   meHandler,
@@ -10,6 +11,7 @@ import {
   registerHandler,
 } from "./auth.controller.js";
 import {
+  confirmEmailRequestSchema,
   loginRequestSchema,
   refreshRequestSchema,
   registerRequestSchema,
@@ -28,6 +30,15 @@ authRouter.post(
   validate(registerRequestSchema),
   (req, res, next) => {
     registerHandler(req, res).catch(next);
+  },
+);
+
+// Público: el token del correo demuestra posesión del enlace.
+authRouter.post(
+  "/confirm-email",
+  validate(confirmEmailRequestSchema),
+  (req, res, next) => {
+    confirmEmailHandler(req, res).catch(next);
   },
 );
 

@@ -107,3 +107,22 @@ export type RefreshResponse = z.infer<typeof refreshResponseSchema>;
 export type LogoutResponse = z.infer<typeof logoutResponseSchema>;
 export type RegisterBody = z.infer<typeof registerBodySchema>;
 export type RegisterResponse = z.infer<typeof registerResponseSchema>;
+
+/** Body de confirmación de correo (token en claro del enlace). */
+export const confirmEmailBodySchema = z.object({
+  token: z.string().min(1),
+});
+
+export const confirmEmailRequestSchema = z.object({
+  body: confirmEmailBodySchema,
+});
+
+export const confirmEmailResponseSchema = z
+  .object({
+    message: z.string(),
+    user: authUserSchema,
+  })
+  .openapi("ConfirmEmailResponse");
+
+export type ConfirmEmailBody = z.infer<typeof confirmEmailBodySchema>;
+export type ConfirmEmailResponse = z.infer<typeof confirmEmailResponseSchema>;

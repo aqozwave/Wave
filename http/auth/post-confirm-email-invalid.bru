@@ -1,0 +1,31 @@
+meta {
+  name: Post confirm-email invalid
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/confirm-email
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "token": "token-invalido-para-probar-400"
+  }
+}
+
+assert {
+  res.status: eq 400
+  res.body.code: eq invalid_confirm_token
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

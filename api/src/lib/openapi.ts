@@ -4,6 +4,8 @@ import {
 } from "@asteasolutions/zod-to-openapi";
 import { z } from "./zod.js";
 import {
+  confirmEmailBodySchema,
+  confirmEmailResponseSchema,
   loginBodySchema,
   loginResponseSchema,
   logoutResponseSchema,
@@ -53,7 +55,7 @@ registry.registerPath({
   tags: ["Auth"],
   summary: "Register (superadmin)",
   description:
-    "Alta interna por superadmin. Crea usuario confirmed=false sin emitir tokens. Correo: stub hasta Resend.",
+    "Alta interna por superadmin. Crea usuario confirmed=false, emite EmailToken (confirm_email). Correo: stub (token en log) hasta Resend.",
   security: [{ bearerAuth: [] }],
   request: {
     body: {
@@ -77,6 +79,36 @@ registry.registerPath({
     401: { description: "Sin token" },
     403: { description: "No es superadmin" },
     409: { description: "Email, username o RUN duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/confirm-email",
+  tags: ["Auth"],
+  summary: "Confirm email",
+  description:
+    "Activa la cuenta (confirmed=true) con el token en claro del enlace. Público.",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: confirmEmailBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Cuenta confirmada",
+      content: {
+        "application/json": {
+          schema: confirmEmailResponseSchema,
+        },
+      },
+    },
+    400: { description: "Token inválido o expirado" },
+    403: { description: "Usuario desactivado" },
   },
 });
 

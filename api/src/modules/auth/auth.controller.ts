@@ -1,16 +1,19 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  confirmEmailResponseSchema,
   loginResponseSchema,
   logoutResponseSchema,
   meResponseSchema,
   refreshResponseSchema,
   registerResponseSchema,
+  type ConfirmEmailBody,
   type LoginBody,
   type RefreshBody,
   type RegisterBody,
 } from "./auth.schemas.js";
 import {
+  confirmEmailAccount,
   getMe,
   loginUser,
   logoutUser,
@@ -180,4 +183,17 @@ export async function registerHandler(
   const result = await registerUser(body);
   const bodyOut = registerResponseSchema.parse(result);
   res.status(201).json(bodyOut);
+}
+
+/**
+ * POST /confirm-email — activa cuenta con el token del enlace (público).
+ */
+export async function confirmEmailHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const body = req.body as ConfirmEmailBody;
+  const result = await confirmEmailAccount(body.token);
+  const bodyOut = confirmEmailResponseSchema.parse(result);
+  res.status(200).json(bodyOut);
 }

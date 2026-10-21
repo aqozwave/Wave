@@ -1,5 +1,9 @@
-import type { User } from "@prisma/client";
+import { EmailTokenPurpose, type User } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
+import {
+  hashEmailToken,
+  issueEmailToken,
+} from "../../lib/emailToken.js";
 import { hashPassword, verifyPassword } from "../../lib/password.js";
 import { prisma } from "../../lib/prisma.js";
 import {
@@ -9,6 +13,7 @@ import {
 } from "../../lib/tokens.js";
 import type {
   AuthUser,
+  ConfirmEmailResponse,
   LoginBody,
   LoginResponse,
   RefreshResponse,
@@ -251,13 +256,66 @@ export async function registerUser(
     },
   });
 
-  // Stub: cuando exista ConfirmEmail + Resend, acá se encola el mail.
+  const { plain, expiresAt } = await issueEmailToken(
+    user.id,
+    EmailTokenPurpose.confirm_email,
+  );
+
+  // Stub de correo: log del token para Bruno/dev. Resend reemplaza esto.
   console.info(
-    `[auth.register] confirmación pendiente para ${user.email} (id=${user.id})`,
+    `[auth.register] confirm token para ${user.email}: ${plain} (expira ${expiresAt.toISOString()})`,
   );
 
   return {
     user: toAuthUser(user),
     message: REGISTER_OK_MESSAGE,
+  };
+}
+
+/**
+ * Activa la cuenta con el token del correo (hash en EmailToken).
+ * Idempotente si ya estaba confirmed y el token era válido.
+ */
+export async function confirmEmailAccount(
+  plainToken: string,
+): Promise<ConfirmEmailResponse> {
+  const tokenHash = hashEmailToken(plainToken);
+
+  const record = await prisma.emailToken.findFirst({
+    where: {
+      tokenHash,
+      purpose: EmailTokenPurpose.confirm_email,
+      usedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    include: { user: true },
+  });
+
+  if (!record || record.user.deletedAt) {
+    throw new AppError(
+      400,
+      "invalid_confirm_token",
+      "Enlace de confirmación inválido o expirado",
+    );
+  }
+
+  if (!record.user.state) {
+    throw new AppError(403, "user_disabled", "Usuario desactivado");
+  }
+
+  const [, user] = await prisma.$transaction([
+    prisma.emailToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    }),
+    prisma.user.update({
+      where: { id: record.userId },
+      data: { confirmed: true },
+    }),
+  ]);
+
+  return {
+    message: "Cuenta confirmada. Ya puedes iniciar sesión.",
+    user: toAuthUser(user),
   };
 }
