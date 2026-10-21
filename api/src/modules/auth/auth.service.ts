@@ -1,11 +1,16 @@
 import { EmailTokenPurpose, type User } from "@prisma/client";
 import { sendConfirmEmail } from "../../emails/sendConfirmEmail.js";
+import { sendLoginMfaEmail } from "../../emails/sendLoginMfa.js";
 import { sendResetPasswordEmail } from "../../emails/sendResetPassword.js";
 import { AppError } from "../../lib/errors.js";
 import {
   hashEmailToken,
   issueEmailToken,
 } from "../../lib/emailToken.js";
+import {
+  createLoginChallenge,
+  verifyLoginChallenge,
+} from "../../lib/loginChallenge.js";
 import { hashPassword, verifyPassword } from "../../lib/password.js";
 import { prisma } from "../../lib/prisma.js";
 import {
@@ -19,12 +24,36 @@ import type {
   ForgotPasswordResponse,
   LoginBody,
   LoginResponse,
+  MfaChallengeResponse,
   RefreshResponse,
   RegisterBody,
   RegisterResponse,
   ResendConfirmationResponse,
+  ResendMfaResponse,
   ResetPasswordResponse,
 } from "./auth.schemas.js";
+
+/** MFA activo salvo LOGIN_MFA_ENABLED=false|0 (mismo default que el portal viejo). */
+function isLoginMfaEnabled(): boolean {
+  const raw = process.env.LOGIN_MFA_ENABLED?.trim()?.toLowerCase();
+  if (raw === "false" || raw === "0") {
+    return false;
+  }
+  return true;
+}
+
+/** Enmascara email para la UI (f***@dominio.com). */
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!domain) {
+    return "***";
+  }
+  const maskedLocal =
+    local.length <= 1
+      ? "*"
+      : `${local[0]}${"*".repeat(Math.min(local.length - 1, 3))}`;
+  return `${maskedLocal}@${domain}`;
+}
 
 /** Intentos fallidos antes de bloquear la cuenta. */
 const MAX_LOGIN_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5);
@@ -68,8 +97,13 @@ function issueTokens(user: User): LoginResponse {
   };
 }
 
-// Login sin MFA en este paso. MFA entra con LoginChallenge después.
-export async function loginUser(input: LoginBody): Promise<LoginResponse> {
+/**
+ * Login: valida credenciales; con MFA emite challenge + mail (sin tokens).
+ * Sin MFA (LOGIN_MFA_ENABLED=false) emite tokens directo.
+ */
+export async function loginUser(
+  input: LoginBody,
+): Promise<LoginResponse | MfaChallengeResponse> {
   const user = await prisma.user.findFirst({
     where: {
       email: input.email,
@@ -131,16 +165,129 @@ export async function loginUser(input: LoginBody): Promise<LoginResponse> {
     );
   }
 
-  const updated = await prisma.user.update({
+  // Credenciales OK: limpiamos intentos; lastLoginAt se setea al verificar MFA.
+  await prisma.user.update({
     where: { id: user.id },
     data: {
       loginAttempts: 0,
       lockUntil: null,
-      lastLoginAt: new Date(),
     },
   });
 
+  if (isLoginMfaEnabled()) {
+    const { challengeId, code, expiresAt } = await createLoginChallenge(
+      user.id,
+    );
+    await sendLoginMfaEmail({
+      to: user.email,
+      firstName: user.firstName,
+      code,
+    });
+    return {
+      mfaRequired: true,
+      challengeId,
+      expiresInSeconds: Math.max(
+        1,
+        Math.floor((expiresAt.getTime() - Date.now()) / 1000),
+      ),
+      emailMasked: maskEmail(user.email),
+    };
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() },
+  });
+
   return issueTokens(updated);
+}
+
+/**
+ * Completa el login con el código del correo.
+ * Emite tokens (misma forma que login sin MFA).
+ */
+export async function verifyLoginMfa(
+  challengeId: string,
+  code: string,
+): Promise<LoginResponse> {
+  const result = await verifyLoginChallenge(challengeId, code);
+
+  if (!result.ok) {
+    if (result.reason === "expired" || result.reason === "not_found") {
+      throw new AppError(
+        400,
+        "mfa_code_expired",
+        "El código expiró. Volvé a iniciar sesión.",
+      );
+    }
+    if (result.reason === "max_attempts") {
+      throw new AppError(
+        400,
+        "mfa_max_attempts",
+        "Demasiados intentos. Volvé a iniciar sesión.",
+      );
+    }
+    throw new AppError(401, "mfa_invalid_code", "Código incorrecto");
+  }
+
+  const user = await prisma.user.findFirst({
+    where: { id: result.userId, deletedAt: null, state: true },
+  });
+
+  if (!user) {
+    throw new AppError(401, "mfa_challenge_invalid", "Challenge inválido");
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() },
+  });
+
+  return issueTokens(updated);
+}
+
+/**
+ * Reenvía un nuevo código para el mismo challengeId (rota el challenge).
+ */
+export async function resendLoginMfa(
+  challengeId: string,
+): Promise<ResendMfaResponse> {
+  const existing = await prisma.loginChallenge.findUnique({
+    where: { challengeId },
+    include: { user: true },
+  });
+
+  if (
+    !existing ||
+    existing.expiresAt.getTime() <= Date.now() ||
+    existing.user.deletedAt ||
+    !existing.user.state
+  ) {
+    throw new AppError(
+      400,
+      "mfa_code_expired",
+      "El código expiró. Volvé a iniciar sesión.",
+    );
+  }
+
+  const { challengeId: nextId, code, expiresAt } = await createLoginChallenge(
+    existing.userId,
+  );
+  await sendLoginMfaEmail({
+    to: existing.user.email,
+    firstName: existing.user.firstName,
+    code,
+  });
+
+  return {
+    message: "Te enviamos un nuevo código.",
+    challengeId: nextId,
+    expiresInSeconds: Math.max(
+      1,
+      Math.floor((expiresAt.getTime() - Date.now()) / 1000),
+    ),
+    emailMasked: maskEmail(existing.user.email),
+  };
 }
 
 /**

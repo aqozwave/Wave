@@ -18,6 +18,22 @@ export type LoginSuccess = {
   accessToken: string;
 };
 
+/** Login con MFA: aún no hay tokens. */
+export type MfaChallenge = {
+  mfaRequired: true;
+  challengeId: string;
+  expiresInSeconds: number;
+  emailMasked: string;
+};
+
+/** Resultado de login: sesión completa o challenge MFA. */
+export type LoginResult = LoginSuccess | MfaChallenge;
+
+/** True si la respuesta es challenge MFA. */
+export function isMfaChallenge(result: LoginResult): result is MfaChallenge {
+  return "mfaRequired" in result && result.mfaRequired === true;
+}
+
 /** Respuesta de GET /me. */
 export type MeSuccess = {
   user: AuthUser;
@@ -55,7 +71,7 @@ function toApiError(res: Response, body: unknown): ApiError {
 export async function loginRequest(
   email: string,
   password: string,
-): Promise<LoginSuccess> {
+): Promise<LoginResult> {
   const res = await fetch("/api/v1/auth/login", {
     method: "POST",
     headers: {
@@ -73,6 +89,16 @@ export async function loginRequest(
   }
 
   if (
+    typeof body === "object" &&
+    body !== null &&
+    "mfaRequired" in body &&
+    (body as MfaChallenge).mfaRequired === true &&
+    typeof (body as MfaChallenge).challengeId === "string"
+  ) {
+    return body as MfaChallenge;
+  }
+
+  if (
     typeof body !== "object" ||
     body === null ||
     !("accessToken" in body) ||
@@ -83,6 +109,59 @@ export async function loginRequest(
   }
 
   return body as LoginSuccess;
+}
+
+/** POST /auth/verify-mfa — completa sesión tras el código. */
+export async function verifyMfaRequest(
+  challengeId: string,
+  code: string,
+): Promise<LoginSuccess> {
+  const res = await fetch("/api/v1/auth/verify-mfa", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Client": "web",
+    },
+    credentials: "include",
+    body: JSON.stringify({ challengeId, code }),
+  });
+
+  const body: unknown = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw toApiError(res, body);
+  }
+
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("accessToken" in body) ||
+    typeof (body as LoginSuccess).accessToken !== "string" ||
+    !("user" in body)
+  ) {
+    throw new ApiError(500, "invalid_response", "Respuesta inválida de verify-mfa");
+  }
+
+  return body as LoginSuccess;
+}
+
+/** POST /auth/resend-mfa — nuevo código + nuevo challengeId. */
+export async function resendMfaRequest(
+  challengeId: string,
+): Promise<MfaChallenge & { message: string }> {
+  const res = await fetch("/api/v1/auth/resend-mfa", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ challengeId }),
+  });
+
+  const body: unknown = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw toApiError(res, body);
+  }
+
+  return body as MfaChallenge & { message: string };
 }
 
 /** GET /api/v1/auth/me — valida el Bearer y trae el perfil fresco. */

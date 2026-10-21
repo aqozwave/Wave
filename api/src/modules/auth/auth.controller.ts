@@ -6,9 +6,11 @@ import {
   loginResponseSchema,
   logoutResponseSchema,
   meResponseSchema,
+  mfaChallengeResponseSchema,
   refreshResponseSchema,
   registerResponseSchema,
   resendConfirmationResponseSchema,
+  resendMfaResponseSchema,
   resetPasswordResponseSchema,
   type ConfirmEmailBody,
   type ForgotPasswordBody,
@@ -16,7 +18,9 @@ import {
   type RefreshBody,
   type RegisterBody,
   type ResendConfirmationBody,
+  type ResendMfaBody,
   type ResetPasswordBody,
+  type VerifyMfaBody,
 } from "./auth.schemas.js";
 import {
   confirmEmailAccount,
@@ -27,7 +31,9 @@ import {
   registerUser,
   requestPasswordReset,
   resendAccountConfirmation,
+  resendLoginMfa,
   resetPasswordWithToken,
+  verifyLoginMfa,
 } from "./auth.service.js";
 
 /** Nombre de la cookie HttpOnly del refresh (web). */
@@ -94,11 +100,48 @@ function clearRefreshCookie(res: Response): void {
   );
 }
 
-/** POST /login — emite tokens; web: refresh en cookie; ios: refresh en body. */
+/**
+ * POST /login — tokens o challenge MFA.
+ * Web: refresh en cookie solo si hay sesión completa.
+ */
 export async function loginHandler(req: Request, res: Response): Promise<void> {
   const client = readClient(req);
   const body = req.body as LoginBody;
   const result = await loginUser(body);
+
+  if ("mfaRequired" in result) {
+    const bodyOut = mfaChallengeResponseSchema.parse(result);
+    res.status(200).json(bodyOut);
+    return;
+  }
+
+  // Tras el narrowing: sesión completa (tokens).
+  const session = result;
+
+  if (client === "web") {
+    setRefreshCookie(res, session.refreshToken!);
+    const bodyOut = loginResponseSchema.parse({
+      user: session.user,
+      accessToken: session.accessToken,
+    });
+    res.status(200).json(bodyOut);
+    return;
+  }
+
+  const bodyOut = loginResponseSchema.parse(session);
+  res.status(200).json(bodyOut);
+}
+
+/**
+ * POST /verify-mfa — completa login con el código; misma respuesta que login.
+ */
+export async function verifyMfaHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const client = readClient(req);
+  const body = req.body as VerifyMfaBody;
+  const result = await verifyLoginMfa(body.challengeId, body.code);
 
   if (client === "web") {
     setRefreshCookie(res, result.refreshToken!);
@@ -111,6 +154,17 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
   }
 
   const bodyOut = loginResponseSchema.parse(result);
+  res.status(200).json(bodyOut);
+}
+
+/** POST /resend-mfa — nuevo código; actualiza challengeId. */
+export async function resendMfaHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const body = req.body as ResendMfaBody;
+  const result = await resendLoginMfa(body.challengeId);
+  const bodyOut = resendMfaResponseSchema.parse(result);
   res.status(200).json(bodyOut);
 }
 

@@ -12,13 +12,15 @@ import {
   setAccessToken,
   subscribeSession,
 } from "./session";
-import type { AuthUser } from "../api/auth";
+import type { AuthUser, MfaChallenge } from "../api/auth";
 import {
   ApiError,
+  isMfaChallenge,
   loginRequest,
   logoutRequest,
   meRequest,
   refreshRequest,
+  verifyMfaRequest,
 } from "../api/auth";
 
 /** Estado expuesto a pantallas y layouts protegidos. */
@@ -27,7 +29,16 @@ type AuthState = {
   user: AuthUser | null;
   /** true mientras se llama a /me (o refresh) al entrar al shell. */
   hydrating: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  /**
+   * Login: si hay MFA, devuelve el challenge (sin tokens).
+   * Si no, guarda sesión y retorna null.
+   */
+  login: (
+    email: string,
+    password: string,
+  ) => Promise<MfaChallenge | null>;
+  /** Completa MFA y guarda sesión. */
+  verifyMfa: (challengeId: string, code: string) => Promise<void>;
   /** Cierra sesión en API (cookie + tokenVersion) y limpia el cliente. */
   logout: () => Promise<void>;
   /** Revalida sesión con GET /me; si falla, intenta refresh. */
@@ -117,17 +128,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [clearLocal]);
 
-  /** Login + guarda accessToken; el shell luego hidrata con /me. */
-  async function login(email: string, password: string): Promise<void> {
+  /**
+   * Login: MFA → challenge; sin MFA → tokens en memoria.
+   */
+  async function login(
+    email: string,
+    password: string,
+  ): Promise<MfaChallenge | null> {
     const result = await loginRequest(email, password);
+    if (isMfaChallenge(result)) {
+      return result;
+    }
     setAccessToken(result.accessToken);
-    // Perfil provisional hasta que hydrateSession confirme con /me.
+    setUser(result.user);
+    return null;
+  }
+
+  /** Tras el código del mail: emite sesión como un login completo. */
+  async function verifyMfa(challengeId: string, code: string): Promise<void> {
+    const result = await verifyMfaRequest(challengeId, code);
+    setAccessToken(result.accessToken);
     setUser(result.user);
   }
 
   return (
     <AuthContext.Provider
-      value={{ accessToken, user, hydrating, login, logout, hydrateSession }}
+      value={{
+        accessToken,
+        user,
+        hydrating,
+        login,
+        verifyMfa,
+        logout,
+        hydrateSession,
+      }}
     >
       {children}
     </AuthContext.Provider>

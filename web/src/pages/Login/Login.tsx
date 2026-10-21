@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router";
 import {
   Clock,
@@ -12,7 +12,11 @@ import {
 import heroUrl from "../../assets/brand/login-hero.jpg";
 import { Button } from "../../components/Button/Button";
 import { Logo } from "../../components/Logo/Logo";
+import { OtpInput } from "../../components/OtpInput/OtpInput";
 import { TextField } from "../../components/TextField/TextField";
+import { useToast } from "../../components/Toast/ToastProvider";
+import type { MfaChallenge } from "../../lib/api/auth";
+import { resendMfaRequest } from "../../lib/api/auth";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
 /**
@@ -37,22 +41,57 @@ const features = [
   },
 ] as const;
 
+/** Intentos máximos MFA (mismo default que api LOGIN_MFA_MAX_ATTEMPTS). */
+const MFA_MAX_ATTEMPTS = 5;
+
+/** Segundos de espera antes de poder reenviar (Figma A2 · 0:45). */
+const MFA_RESEND_COOLDOWN_SECONDS = 45;
+
+/** Formatea segundos restantes como M:SS (ej. 0:45). */
+function formatCooldown(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 /**
- * Pantalla de login (Figma A1 · 103:239).
+ * Pantalla de login (Figma A1 · 103:239) + MFA (Figma A2).
  * POST /auth/login con X-Client web; access en memoria, refresh en cookie.
  */
 export function Login() {
-  const { accessToken, login } = useAuth();
+  const { accessToken, login, verifyMfa } = useAuth();
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Si hay challenge, mostramos el paso MFA en lugar del form de clave. */
+  const [mfa, setMfa] = useState<MfaChallenge | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+  /** Intentos restantes mostrados bajo el OTP (bajan en cliente al fallar). */
+  const [attemptsLeft, setAttemptsLeft] = useState(MFA_MAX_ATTEMPTS);
+  /** Countdown para habilitar «Reenviar código». */
+  const [resendIn, setResendIn] = useState(0);
+
+  /** Tick del cooldown de reenvío MFA. */
+  useEffect(() => {
+    if (resendIn <= 0) {
+      return;
+    }
+    const id = window.setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => window.clearTimeout(id);
+  }, [resendIn]);
 
   if (accessToken) {
     return <Navigate to="/" replace />;
   }
+
+  /** Minutos de validez del código (desde expiresInSeconds del challenge). */
+  const expiresMinutes = mfa
+    ? Math.max(1, Math.round(mfa.expiresInSeconds / 60))
+    : 10;
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -60,17 +99,105 @@ export function Login() {
     setSubmitting(true);
 
     try {
-      await login(email.trim(), password);
+      const challenge = await login(email.trim(), password);
+      if (challenge) {
+        setMfa(challenge);
+        setMfaCode("");
+        setAttemptsLeft(MFA_MAX_ATTEMPTS);
+        setResendIn(MFA_RESEND_COOLDOWN_SECONDS);
+        showToast(`Código enviado a ${challenge.emailMasked}`, "info");
+        return;
+      }
+      showToast("Sesión iniciada correctamente.", "success");
       navigate("/", { replace: true });
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError("No se pudo iniciar sesión. Reintentá.");
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : "No se pudo iniciar sesión. Reintentá.";
+      setError(message);
+      showToast(message, "danger");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function onVerifyMfa(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!mfa) {
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      await verifyMfa(mfa.challengeId, mfaCode.trim());
+      showToast("Sesión iniciada correctamente.", "success");
+      navigate("/", { replace: true });
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : "Código inválido. Reintentá.";
+      setError(message);
+      showToast(message, "danger");
+      // Baja el contador local al fallar (el API no expone remainingAttempts en error).
+      if (err instanceof ApiError && err.code === "mfa_invalid_code") {
+        setAttemptsLeft((n) => Math.max(0, n - 1));
+        setMfaCode("");
+      }
+      // Sin intentos o challenge muerto → volver al login.
+      if (
+        err instanceof ApiError &&
+        (err.code === "mfa_max_attempts" || err.code === "mfa_code_expired")
+      ) {
+        setMfa(null);
+        setMfaCode("");
+        setAttemptsLeft(MFA_MAX_ATTEMPTS);
+        setResendIn(0);
       }
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function onResendMfa() {
+    if (!mfa || resendIn > 0) {
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      const next = await resendMfaRequest(mfa.challengeId);
+      setMfa({
+        mfaRequired: true,
+        challengeId: next.challengeId,
+        expiresInSeconds: next.expiresInSeconds,
+        emailMasked: next.emailMasked,
+      });
+      setMfaCode("");
+      setAttemptsLeft(MFA_MAX_ATTEMPTS);
+      setResendIn(MFA_RESEND_COOLDOWN_SECONDS);
+      showToast(next.message, "info");
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : "No se pudo reenviar el código.";
+      setError(message);
+      showToast(message, "danger");
+      if (err instanceof ApiError && err.code === "mfa_code_expired") {
+        setMfa(null);
+        setMfaCode("");
+        setResendIn(0);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  /** Vuelve al form de email/clave y limpia el challenge en UI. */
+  function onUseAnotherAccount() {
+    setMfa(null);
+    setMfaCode("");
+    setError(null);
+    setAttemptsLeft(MFA_MAX_ATTEMPTS);
+    setResendIn(0);
   }
 
   return (
@@ -124,102 +251,184 @@ export function Login() {
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col items-center justify-center bg-[var(--color-tremor-background)] px-6 py-10">
-        <form
-          onSubmit={onSubmit}
-          className="flex w-full max-w-[400px] flex-col items-center gap-4"
-          noValidate
-        >
-          <Logo size="auth" />
-
-          <div className="flex flex-col items-center gap-1.5 text-center">
-            <h2 className="text-2xl font-semibold leading-[30px] text-[var(--color-nachipa-title)]">
-              Iniciar sesión
-            </h2>
-            <p className="text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
-              Ingresa con tu cuenta corporativa
-            </p>
-          </div>
-
-          <div className="flex w-full flex-col gap-4">
-            <TextField
-              label="Correo electrónico"
-              name="email"
-              type="email"
-              autoComplete="username"
-              placeholder="nombre@nachipa-w.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              leadingIcon={<Mail strokeWidth={1.5} aria-hidden />}
-            />
-
-            <TextField
-              label="Contraseña"
-              name="password"
-              type={showPassword ? "text" : "password"}
-              autoComplete="current-password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              leadingIcon={<Lock strokeWidth={1.5} aria-hidden />}
-              trailing={
-                <button
-                  type="button"
-                  className="text-[var(--color-icon-default)]"
-                  aria-label={
-                    showPassword ? "Ocultar contraseña" : "Mostrar contraseña"
-                  }
-                  onClick={() => setShowPassword((v) => !v)}
-                >
-                  {showPassword ? (
-                    <Eye strokeWidth={1.5} aria-hidden />
-                  ) : (
-                    <EyeOff strokeWidth={1.5} aria-hidden />
-                  )}
-                </button>
-              }
-            />
-
-            <div className="flex w-full justify-end">
-              <Link
-                to="/forgot-password"
-                className="text-[13px] font-semibold leading-[19px] text-[var(--color-nachipa-primary)] hover:underline"
-              >
-                ¿Olvidaste tu contraseña?
-              </Link>
+        {mfa ? (
+          <form
+            onSubmit={onVerifyMfa}
+            className="flex w-full max-w-[400px] flex-col items-center gap-4"
+            noValidate
+          >
+            <Logo size="auth" />
+            <div className="flex flex-col items-center gap-1.5 text-center">
+              <h2 className="text-2xl font-semibold leading-[30px] text-[var(--color-nachipa-title)]">
+                Verifica tu identidad
+              </h2>
+              <p className="text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
+                Enviamos un código de 6 dígitos a {mfa.emailMasked}
+              </p>
             </div>
 
-            {error ? (
-              <p
-                role="alert"
-                className="w-full rounded-[var(--radius-md)] border border-[var(--color-status-danger-fg)]/20 bg-[var(--color-status-danger-bg)] px-3 py-2 text-[13px] text-[var(--color-status-danger-fg)]"
-              >
-                {error}
+            <div className="flex w-full flex-col items-center gap-3">
+              <OtpInput
+                value={mfaCode}
+                onChange={setMfaCode}
+                disabled={submitting}
+                autoFocus
+              />
+              <p className="text-center text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+                El código expira en {expiresMinutes} minutos · Intentos
+                restantes: {attemptsLeft}
               </p>
-            ) : null}
 
-            <Button type="submit" disabled={submitting || !email || !password}>
-              {submitting ? "Ingresando…" : "Iniciar sesión"}
-            </Button>
+              {error ? (
+                <p
+                  role="alert"
+                  className="w-full rounded-[var(--radius-md)] border border-[var(--color-status-danger-fg)]/20 bg-[var(--color-status-danger-bg)] px-3 py-2 text-[13px] text-[var(--color-status-danger-fg)]"
+                >
+                  {error}
+                </p>
+              ) : null}
 
-            <p className="flex justify-center gap-1 text-[13px] leading-[19px]">
-              <span className="text-[var(--color-nachipa-secondary)]">
-                ¿No confirmaste tu cuenta?
-              </span>
-              <Link
-                to="/resend-confirmation"
-                className="font-semibold text-[var(--color-nachipa-primary)] hover:underline"
+              <Button
+                type="submit"
+                disabled={submitting || mfaCode.length !== 6}
               >
-                Reenviar correo
-              </Link>
-            </p>
-          </div>
+                {submitting ? "Verificando…" : "Verificar y entrar"}
+              </Button>
 
-          <p className="text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
-            © 2026 Nachipa Wellboats · v2.0.0
-          </p>
-        </form>
+              <p className="text-center text-[13px] leading-[19px]">
+                <span className="text-[var(--color-nachipa-secondary)]">
+                  ¿No te llegó?{" "}
+                </span>
+                {resendIn > 0 ? (
+                  <span className="font-semibold text-[var(--color-nachipa-primary)]">
+                    Reenviar código en {formatCooldown(resendIn)}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="font-semibold text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-50"
+                    disabled={submitting}
+                    onClick={() => void onResendMfa()}
+                  >
+                    Reenviar código
+                  </button>
+                )}
+              </p>
+
+              <button
+                type="button"
+                className="text-[13px] text-[var(--color-nachipa-secondary)] hover:underline"
+                onClick={onUseAnotherAccount}
+              >
+                ← Usar otra cuenta
+              </button>
+            </div>
+
+            <p className="text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+              © 2026 Nachipa Wellboats · v2.0.0
+            </p>
+          </form>
+        ) : (
+          <form
+            onSubmit={onSubmit}
+            className="flex w-full max-w-[400px] flex-col items-center gap-4"
+            noValidate
+          >
+            <Logo size="auth" />
+
+            <div className="flex flex-col items-center gap-1.5 text-center">
+              <h2 className="text-2xl font-semibold leading-[30px] text-[var(--color-nachipa-title)]">
+                Iniciar sesión
+              </h2>
+              <p className="text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
+                Ingresa con tu cuenta corporativa
+              </p>
+            </div>
+
+            <div className="flex w-full flex-col gap-4">
+              <TextField
+                label="Correo electrónico"
+                name="email"
+                type="email"
+                autoComplete="username"
+                placeholder="nombre@nachipa-w.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                leadingIcon={<Mail strokeWidth={1.5} aria-hidden />}
+              />
+
+              <TextField
+                label="Contraseña"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                leadingIcon={<Lock strokeWidth={1.5} aria-hidden />}
+                trailing={
+                  <button
+                    type="button"
+                    className="text-[var(--color-icon-default)]"
+                    aria-label={
+                      showPassword ? "Ocultar contraseña" : "Mostrar contraseña"
+                    }
+                    onClick={() => setShowPassword((v) => !v)}
+                  >
+                    {showPassword ? (
+                      <Eye strokeWidth={1.5} aria-hidden />
+                    ) : (
+                      <EyeOff strokeWidth={1.5} aria-hidden />
+                    )}
+                  </button>
+                }
+              />
+
+              <div className="flex w-full justify-end">
+                <Link
+                  to="/forgot-password"
+                  className="text-[13px] font-semibold leading-[19px] text-[var(--color-nachipa-primary)] hover:underline"
+                >
+                  ¿Olvidaste tu contraseña?
+                </Link>
+              </div>
+
+              {error ? (
+                <p
+                  role="alert"
+                  className="w-full rounded-[var(--radius-md)] border border-[var(--color-status-danger-fg)]/20 bg-[var(--color-status-danger-bg)] px-3 py-2 text-[13px] text-[var(--color-status-danger-fg)]"
+                >
+                  {error}
+                </p>
+              ) : null}
+
+              <Button
+                type="submit"
+                disabled={submitting || !email || !password}
+              >
+                {submitting ? "Ingresando…" : "Iniciar sesión"}
+              </Button>
+
+              <p className="flex justify-center gap-1 text-[13px] leading-[19px]">
+                <span className="text-[var(--color-nachipa-secondary)]">
+                  ¿No confirmaste tu cuenta?
+                </span>
+                <Link
+                  to="/resend-confirmation"
+                  className="font-semibold text-[var(--color-nachipa-primary)] hover:underline"
+                >
+                  Reenviar correo
+                </Link>
+              </p>
+            </div>
+
+            <p className="text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+              © 2026 Nachipa Wellboats · v2.0.0
+            </p>
+          </form>
+        )}
       </main>
     </div>
   );

@@ -61,6 +61,8 @@
   --color-table-head-text: #6b6b73;
 
   --radius-md: 8px;
+  /* Toast / cards Figma (12px). */
+  --radius-lg: 12px;
   --radius-full: 9999px;
 }
 

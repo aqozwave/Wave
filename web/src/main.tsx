@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 import { App } from "./App";
+import { ToastProvider } from "./components/Toast/ToastProvider";
 import { AuthProvider } from "./lib/auth/AuthContext";
 import "./index.css";
 
@@ -12,13 +13,15 @@ if (!root) {
   throw new Error("No se encontró #root");
 }
 
-// Router + Auth envuelven toda la app (login y shell protegido).
+// Router + Auth + Toast (notificaciones in-app).
 createRoot(root).render(
   <StrictMode>
     <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </ToastProvider>
     </BrowserRouter>
   </StrictMode>,
 );

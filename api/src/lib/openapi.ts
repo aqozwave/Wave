@@ -12,14 +12,18 @@ import {
   loginResponseSchema,
   logoutResponseSchema,
   meResponseSchema,
+  mfaChallengeResponseSchema,
   refreshBodySchema,
   refreshResponseSchema,
   registerBodySchema,
   registerResponseSchema,
   resendConfirmationBodySchema,
   resendConfirmationResponseSchema,
+  resendMfaBodySchema,
+  resendMfaResponseSchema,
   resetPasswordBodySchema,
   resetPasswordResponseSchema,
+  verifyMfaBodySchema,
 } from "../modules/auth/auth.schemas.js";
 import { healthResponseSchema } from "../modules/health/health.schemas.js";
 
@@ -214,13 +218,45 @@ registry.registerPath({
   tags: ["Auth"],
   summary: "Login",
   description:
-    "Autentica con email y password. Header X-Client: web | ios. Web recibe refresh en cookie HttpOnly; iOS en el body.",
+    "Autentica con email y password. Con MFA activo responde challenge (sin tokens). Header X-Client: web | ios.",
   request: {
     headers: clientHeadersSchema,
     body: {
       content: {
         "application/json": {
           schema: loginBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Sesión iniciada o challenge MFA",
+      content: {
+        "application/json": {
+          schema: loginResponseSchema.or(mfaChallengeResponseSchema),
+        },
+      },
+    },
+    400: { description: "Validación o X-Client inválido" },
+    401: { description: "Credenciales inválidas" },
+    403: { description: "Cuenta bloqueada, desactivada o no confirmada" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/verify-mfa",
+  tags: ["Auth"],
+  summary: "Verify MFA code",
+  description:
+    "Completa el login con el código de 6 dígitos. Mismos tokens que login sin MFA.",
+  request: {
+    headers: clientHeadersSchema,
+    body: {
+      content: {
+        "application/json": {
+          schema: verifyMfaBodySchema,
         },
       },
     },
@@ -234,9 +270,36 @@ registry.registerPath({
         },
       },
     },
-    400: { description: "Validación o X-Client inválido" },
-    401: { description: "Credenciales inválidas" },
-    403: { description: "Cuenta bloqueada, desactivada o no confirmada" },
+    400: { description: "Código expirado o demasiados intentos" },
+    401: { description: "Código incorrecto" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/resend-mfa",
+  tags: ["Auth"],
+  summary: "Resend MFA code",
+  description: "Invalida el challenge anterior y envía un código nuevo.",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: resendMfaBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Nuevo challenge",
+      content: {
+        "application/json": {
+          schema: resendMfaResponseSchema,
+        },
+      },
+    },
+    400: { description: "Challenge expirado" },
   },
 });
 

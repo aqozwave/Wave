@@ -11,7 +11,9 @@ import {
   refreshHandler,
   registerHandler,
   resendConfirmationHandler,
+  resendMfaHandler,
   resetPasswordHandler,
+  verifyMfaHandler,
 } from "./auth.controller.js";
 import {
   confirmEmailRequestSchema,
@@ -20,7 +22,9 @@ import {
   refreshRequestSchema,
   registerRequestSchema,
   resendConfirmationRequestSchema,
+  resendMfaRequestSchema,
   resetPasswordRequestSchema,
+  verifyMfaRequestSchema,
 } from "./auth.schemas.js";
 
 /** Rutas de autenticación bajo /api/v1/auth. */
@@ -78,6 +82,23 @@ authRouter.post(
 authRouter.post("/login", validate(loginRequestSchema), (req, res, next) => {
   loginHandler(req, res).catch(next);
 });
+
+// MFA: verificar código (mismo X-Client que login para cookie/body).
+authRouter.post(
+  "/verify-mfa",
+  validate(verifyMfaRequestSchema),
+  (req, res, next) => {
+    verifyMfaHandler(req, res).catch(next);
+  },
+);
+
+authRouter.post(
+  "/resend-mfa",
+  validate(resendMfaRequestSchema),
+  (req, res, next) => {
+    resendMfaHandler(req, res).catch(next);
+  },
+);
 
 authRouter.post(
   "/refresh",

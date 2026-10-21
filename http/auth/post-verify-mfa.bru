@@ -1,0 +1,52 @@
+meta {
+  name: Post verify-mfa
+  type: http
+  seq: 20
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/verify-mfa
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  X-Client: web
+}
+
+body:json {
+  {
+    "challengeId": "{{mfaChallengeId}}",
+    "code": "{{mfaCode}}"
+  }
+}
+
+docs {
+  Tras Post login (web) con MFA: copiá challengeId y el código del mail (o stub en log) a las vars del entorno.
+  No commitear códigos reales.
+}
+
+script:pre-request {
+  if (!bru.getEnvVar("mfaChallengeId") || !bru.getEnvVar("mfaCode")) {
+    throw new Error("Definí mfaChallengeId y mfaCode en el entorno local");
+  }
+}
+
+script:post-response {
+  if (res.status === 200 && res.body.accessToken) {
+    bru.setVar("accessToken", res.body.accessToken);
+    bru.setEnvVar("accessToken", res.body.accessToken);
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.accessToken: isDefined
+  res.body.user.email: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

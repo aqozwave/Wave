@@ -70,11 +70,30 @@ model User {
   deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
-  emailTokens   EmailToken[]
+  emailTokens     EmailToken[]
+  loginChallenges LoginChallenge[]
 
   @@index([email])
   @@index([username])
   @@map("users")
+}
+
+/// Challenge MFA de login: código de 6 dígitos por correo (hash en BD).
+model LoginChallenge {
+  id          String   @id @default(uuid()) @db.Uuid
+  /// UUID público que recibe el cliente (verify / resend).
+  challengeId String   @unique @map("challenge_id")
+  userId      String   @map("user_id") @db.Uuid
+  user        User     @relation(fields: [userId], references: [id])
+  /// SHA-256 hex del código en claro.
+  codeHash    String   @map("code_hash")
+  attempts    Int      @default(0)
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("login_challenges")
 }
 
 /// Tokens de un solo uso enviados por correo (hash en BD; plain solo en el mail).

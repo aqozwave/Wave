@@ -22,19 +22,25 @@ body:json {
   }
 }
 
+docs {
+  Con LOGIN_MFA_ENABLED=true responde mfaRequired + challengeId (sin accessToken).
+  Copiá challengeId a mfaChallengeId, el código del mail a mfaCode, y corré Post verify-mfa.
+  Con MFA=false responde accessToken como antes.
+}
+
 assert {
   res.status: eq 200
-  res.body.accessToken: isDefined
-  res.body.user.email: eq fsoto@nachipa-w.com
 }
 
 script:post-response {
-  // Guarda el Bearer para Get me y el resto de rutas protegidas.
-  // setVar = colección (siempre); setEnvVar = entorno local (si está activo).
   const body = res.getBody();
-  if (res.getStatus() === 200 && body && body.accessToken) {
+  if (res.getStatus() !== 200 || !body) return;
+  if (body.accessToken) {
     bru.setVar("accessToken", body.accessToken);
     bru.setEnvVar("accessToken", body.accessToken);
+  }
+  if (body.mfaRequired && body.challengeId) {
+    bru.setEnvVar("mfaChallengeId", body.challengeId);
   }
 }
 

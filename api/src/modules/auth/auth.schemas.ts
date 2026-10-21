@@ -33,6 +33,53 @@ export const loginResponseSchema = z
   })
   .openapi("LoginResponse");
 
+/**
+ * Login con MFA activo: aún no hay tokens; el cliente pide verify-mfa.
+ */
+export const mfaChallengeResponseSchema = z
+  .object({
+    mfaRequired: z.literal(true),
+    challengeId: z.uuid(),
+    expiresInSeconds: z.number().int().positive(),
+    emailMasked: z.string(),
+  })
+  .openapi("MfaChallengeResponse");
+
+/** Body de verificación MFA. */
+export const verifyMfaBodySchema = z.object({
+  challengeId: z.uuid(),
+  // Exactamente 6 dígitos.
+  code: z.string().regex(/^\d{6}$/),
+});
+
+export const verifyMfaRequestSchema = z.object({
+  body: verifyMfaBodySchema,
+});
+
+/** Body de reenvío MFA. */
+export const resendMfaBodySchema = z.object({
+  challengeId: z.uuid(),
+});
+
+export const resendMfaRequestSchema = z.object({
+  body: resendMfaBodySchema,
+});
+
+export const resendMfaResponseSchema = z
+  .object({
+    message: z.string(),
+    /** Nuevo challengeId (el anterior se invalida al reenviar). */
+    challengeId: z.uuid(),
+    expiresInSeconds: z.number().int().positive(),
+    emailMasked: z.string(),
+  })
+  .openapi("ResendMfaResponse");
+
+export type MfaChallengeResponse = z.infer<typeof mfaChallengeResponseSchema>;
+export type VerifyMfaBody = z.infer<typeof verifyMfaBodySchema>;
+export type ResendMfaBody = z.infer<typeof resendMfaBodySchema>;
+export type ResendMfaResponse = z.infer<typeof resendMfaResponseSchema>;
+
 /** Respuesta de GET /me: perfil del usuario autenticado. */
 export const meResponseSchema = z
   .object({
