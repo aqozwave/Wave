@@ -251,9 +251,9 @@ con cierre "En una frase" y Glosario del paso.
 | # | Decisión | Opciones | Se resuelve en |
 |---|---|---|---|
 | 1 | ~~Nombre del sistema~~ **Resuelto:** Wave (código) / Portal Nachipa Wellboats (visible) | — | — |
-| 2 | Monorepo o dos repos; gestor de paquetes | npm workspaces / pnpm / repos separados | Sección 0 |
-| 3 | Tipo de ID | `uuid` / `cuid` / `bigint` autoincremental | Sección 0 |
-| 4 | Soft delete | `deletedAt` en todas las tablas / solo en algunas | Sección 0 |
+| 2 | ~~Monorepo y gestor~~ **Resuelto:** un solo repo, npm workspaces (`api/`, y `web/` cuando exista la pantalla) | — | — |
+| 3 | ~~Tipo de ID~~ **Resuelto:** `uuid` | — | — |
+| 4 | ~~Soft delete~~ **Resuelto:** `deletedAt` solo en algunas tablas; se define entidad por entidad (empiezan usuarios y empresas) | — | — |
 | 5 | Cliente tipado en web | `openapi-typescript` + `openapi-fetch` / `orval` / schemas Zod compartidos | Sección 0 |
 | 6 | ~~Colección HTTP~~ **Resuelto:** Bruno, colección en `http/` | — | — |
 | 7 | Runner de tests | Ninguno por ahora / Vitest + Supertest | Sección 0 |

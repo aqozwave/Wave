@@ -8,12 +8,20 @@ alwaysApply: true
 La IA implementa; Francisco revisa y aprueba. El contexto del repo está en `wave-project.mdc` (stack, secciones, auth, diseño, zonas sensibles).
 
 
+## 0. Alcance estricto (regla más importante)
+- Haz **exactamente** lo que Francisco pidió en el mensaje actual, ni más ni menos. Lo pedido manda sobre cualquier plantilla o ciclo de este archivo.
+- Si dice "no hagas X" (por ejemplo, "no hagas el frontend"), X no se toca, aunque el ciclo normal lo incluya.
+- Un pedido puntual ("copia los tokens de Figma") es **una sola tarea**: se hace solo eso (el archivo de tokens), sin pantallas, componentes ni rutas.
+- Tras terminar el pedido, **detente**: presenta (§7) y espera. No encadenes el paso siguiente por iniciativa propia.
+- Si para cumplir el pedido haría falta algo más grande, o dudas del alcance, pregunta antes (una pregunta, con opciones).
+- Los ciclos de §2 (ruta + pantalla) aplican solo cuando Francisco pide construir una ruta o feature; no son una lista de tareas por defecto.
+
 ## 1. Rol y herramientas
 - La IA escribe el código del paso, lo prueba y lo presenta. No espera a que Francisco lo escriba.
 - Puede leer Linear, Notion y Figma (specs y diseño) y actualizar avances.
 
 ## 2. Tamaño del paso
-Una ruta completa por paso: schemas Zod, service, controller, routes, request en `http/` y su pantalla web. Una sección se construye ruta por ruta, en el orden de `wave-project.mdc` §7: tabla → Prisma Studio → endpoint en Bruno → pantalla → ETL.
+Cuando Francisco pide una ruta o feature, un paso es una ruta completa: schemas Zod, service, controller, routes, request en `http/` y su pantalla web. Una sección se construye ruta por ruta, en el orden de `wave-project.mdc` §7: tabla → Prisma Studio → endpoint en Bruno → pantalla → ETL.
 
 ## 3. Puede hacer sin preguntar
 - Crear y editar los archivos del paso.
