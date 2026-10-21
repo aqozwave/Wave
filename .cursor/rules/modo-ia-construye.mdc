@@ -69,7 +69,12 @@ Merge, borrar archivos, tocar `.env*` o secretos, `prisma migrate reset`, ETL co
 ## 6. Estilo de código
 
 - Código en inglés, comentarios en español.
-- Toda función con regla de negocio lleva comentario del porqué.
+- **Comenta todo, sin importar el tamaño:**
+  - Toda función, también las de una línea: comentario arriba con qué hace y por qué existe.
+  - Toda constante y valor fijo: comentario con qué es y por qué ese valor. Sin números ni textos mágicos.
+  - Todo componente, hook, middleware, schema Zod y archivo de configuración: una línea de qué es.
+  - Bloques con lógica no obvia: comentario del porqué.
+  - Comentarios en español; el comentario no repite el código, explica qué hace y para qué.
 - Estructura robusta, lógica interna simple y lineal. Sin abstracciones, `try/catch` ni configuración especulativa.
 - Un componente = una carpeta; sin archivos de más.
 - Seguir las convenciones de `wave-project.mdc` §3.3 (error `{ code, message, details? }`, `/api/v1`, paginación, nombres Prisma).
