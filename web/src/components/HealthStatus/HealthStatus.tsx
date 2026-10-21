@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 
+/** Estado de la pastilla de salud de la API. */
 type HealthState =
   | { kind: "loading" }
   | { kind: "ok" }
   | { kind: "error"; message: string };
 
+/** Respuesta mínima de GET /api/v1/health. */
 type HealthResponse = {
   status: "ok";
 };
 
+/** Consulta el endpoint de salud; lanza si no es 200 o el body no es ok. */
 async function fetchHealth(): Promise<HealthResponse> {
   const res = await fetch("/api/v1/health");
 
@@ -30,13 +33,17 @@ async function fetchHealth(): Promise<HealthResponse> {
   return body as HealthResponse;
 }
 
+/**
+ * Chip de estado de la API (fundaciones Sección 0).
+ * Hace poll cada 15s; útil en Topbar de pantallas que aún lo monten.
+ */
 export function HealthStatus() {
   const [state, setState] = useState<HealthState>({ kind: "loading" });
 
   useEffect(() => {
     let cancelled = false;
 
-    // Poll corto solo para ver la API viva en el shell de fundaciones.
+    /** Una lectura de /health; ignora resultado si el efecto ya se limpió. */
     async function load() {
       try {
         await fetchHealth();
@@ -54,6 +61,7 @@ export function HealthStatus() {
     }
 
     void load();
+    // 15s: bastante para ver caídas sin martillar la API en local.
     const id = window.setInterval(() => {
       void load();
     }, 15_000);
@@ -85,6 +93,7 @@ export function HealthStatus() {
   );
 }
 
+/** Pastilla compacta con punto de color (ok / error / pending). */
 function StatusChip({
   label,
   tone,

@@ -1,12 +1,21 @@
 import type { InputHTMLAttributes, ReactNode } from "react";
 
+/** Props del campo de formulario (Figma TextField outlined/filled). */
 type TextFieldProps = {
+  /** Etiqueta visible arriba del input. */
   label: string;
+  /** Ícono a la izquierda (mail, lock, etc.). */
   leadingIcon?: ReactNode;
+  /** Acción a la derecha (mostrar contraseña, clear…). */
   trailing?: ReactNode;
+  /** Mensaje de error debajo del campo. */
   error?: string;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "className">;
 
+/**
+ * Campo de texto con label e íconos (Figma TextField).
+ * Usado en Login; focus con borde navy + anillo suave.
+ */
 export function TextField({
   label,
   leadingIcon,
@@ -15,6 +24,7 @@ export function TextField({
   id,
   ...inputProps
 }: TextFieldProps) {
+  // Preferimos name como id estable si no viene id explícito.
   const fieldId = id ?? inputProps.name;
 
   return (

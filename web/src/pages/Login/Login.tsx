@@ -15,6 +15,10 @@ import { Logo } from "../../components/Logo/Logo";
 import { TextField } from "../../components/TextField/TextField";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
+/**
+ * Cards del hero izquierdo (Figma A1 · Iniciar sesión).
+ * Copy e íconos Lucide alineados al diseño.
+ */
 const features = [
   {
     icon: Star,
@@ -33,6 +37,10 @@ const features = [
   },
 ] as const;
 
+/**
+ * Pantalla de login (Figma A1 · 103:239).
+ * POST /auth/login con X-Client web; access en memoria, refresh en cookie.
+ */
 export function Login() {
   const { accessToken, login } = useAuth();
   const navigate = useNavigate();

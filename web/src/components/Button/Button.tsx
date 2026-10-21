@@ -1,11 +1,15 @@
 import type { ButtonHTMLAttributes } from "react";
 
+/** Variantes visuales del botón primario del portal. */
 type ButtonVariant = "primary" | "brand";
 
+/** Props del Button (HTML button + variante Figma). */
 type ButtonProps = {
+  /** primary = azul Nachipa; brand = navy del logo (auth). */
   variant?: ButtonVariant;
 } & ButtonHTMLAttributes<HTMLButtonElement>;
 
+/** Clases Tailwind por variante (Figma Button). */
 const variantClass: Record<ButtonVariant, string> = {
   primary:
     "bg-[var(--color-nachipa-primary)] text-white hover:brightness-105 disabled:opacity-60",
@@ -13,6 +17,10 @@ const variantClass: Record<ButtonVariant, string> = {
     "bg-[var(--color-brand-navy)] text-white hover:brightness-110 disabled:opacity-60",
 };
 
+/**
+ * Botón principal (Figma Button).
+ * Primary para CTAs del dashboard; Brand opcional en auth.
+ */
 export function Button({
   variant = "primary",
   children,

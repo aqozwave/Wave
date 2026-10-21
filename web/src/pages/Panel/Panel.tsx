@@ -12,7 +12,10 @@ import {
 import { useAuth } from "../../lib/auth/AuthContext";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 
-// Maqueta S1 · Panel global (Figma 133:4570). Datos de diseño; API real = sección Dashboard.
+/**
+ * Maqueta S1 · Panel global (Figma 133:4570).
+ * Datos de diseño; la API real entra en la sección Dashboard.
+ */
 
 /** Capitaliza el primer carácter (nombres del seed vienen en minúscula). */
 function capitalizeName(value: string): string {
@@ -23,6 +26,7 @@ function capitalizeName(value: string): string {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
+/** KPIs superiores del Panel (valores mock de Figma). */
 const kpis = [
   {
     label: "Cumplimiento global",
@@ -155,6 +159,7 @@ const meses = [
   "Oct",
 ];
 
+/** Página Panel global: header S1 + KPIs + charts + tabla mock. */
 export function Panel() {
   const { user } = useAuth();
   const welcomeName = user

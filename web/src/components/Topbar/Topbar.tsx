@@ -11,7 +11,10 @@ type TopbarProps = {
   actions?: ReactNode;
 };
 
-// Topbar Figma (2:442): blanco/neutro. Sin botón primary ni fondos de color.
+/**
+ * Topbar breadcrumb (Figma 2:442): blanco/neutro.
+ * Usado en pantallas tipo Empresas; el Panel S1 lleva header propio.
+ */
 export function Topbar({
   breadcrumb,
   breadcrumbIcon: BreadcrumbIcon = LayoutDashboard,

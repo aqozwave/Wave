@@ -1,13 +1,15 @@
 import type { ReactNode } from "react";
 import { Sidebar } from "../Sidebar/Sidebar";
 
+/** Props del layout principal del portal. */
 type AppShellProps = {
+  /** Contenido de la página (Panel, Empresas, …). */
   children: ReactNode;
 };
 
 /**
  * Shell del portal (Figma S1): sidebar + área main.
- * El header de página (Bienvenido / Topbar) vive dentro de cada pantalla.
+ * El header de página (Bienvenido / acciones) vive dentro de cada pantalla.
  */
 export function AppShell({ children }: AppShellProps) {
   return (

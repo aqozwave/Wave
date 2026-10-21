@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
-/* Tokens = code syntax de Figma (S1 · Panel global / Nav Superadmin). */
+/*
+ * Tokens = code syntax de Figma (colecciones Primitives / Color / Layout).
+ * Usados en Panel, Sidebar y Login vía var(--…).
+ */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-brand: "Poppins", "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -93,6 +96,22 @@ body {
 
 .animate-enter {
   animation: wave-enter 320ms ease-out both;
+}
+
+/* Entrada del sidebar al montar el shell (desliz + fade). */
+@keyframes wave-sidebar-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-sidebar-enter {
+  animation: wave-sidebar-enter 360ms ease-out both;
 }
 
 /* Shimmer de skeletons (carga de /me y bloques del panel). */
