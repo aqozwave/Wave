@@ -10,6 +10,8 @@ import {
   meResponseSchema,
   refreshBodySchema,
   refreshResponseSchema,
+  registerBodySchema,
+  registerResponseSchema,
 } from "../modules/auth/auth.schemas.js";
 import { healthResponseSchema } from "../modules/health/health.schemas.js";
 
@@ -42,6 +44,39 @@ registry.registerPath({
         },
       },
     },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/register",
+  tags: ["Auth"],
+  summary: "Register (superadmin)",
+  description:
+    "Alta interna por superadmin. Crea usuario confirmed=false sin emitir tokens. Correo: stub hasta Resend.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: registerBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Usuario creado",
+      content: {
+        "application/json": {
+          schema: registerResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "No es superadmin" },
+    409: { description: "Email, username o RUN duplicado" },
   },
 });
 

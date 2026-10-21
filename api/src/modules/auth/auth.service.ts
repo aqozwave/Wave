@@ -1,6 +1,6 @@
 import type { User } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
-import { verifyPassword } from "../../lib/password.js";
+import { hashPassword, verifyPassword } from "../../lib/password.js";
 import { prisma } from "../../lib/prisma.js";
 import {
   signAccessToken,
@@ -12,6 +12,8 @@ import type {
   LoginBody,
   LoginResponse,
   RefreshResponse,
+  RegisterBody,
+  RegisterResponse,
 } from "./auth.schemas.js";
 
 /** Intentos fallidos antes de bloquear la cuenta. */
@@ -189,4 +191,73 @@ export async function logoutUser(userId: string): Promise<void> {
       tokenVersion: { increment: 1 },
     },
   });
+}
+
+/**
+ * Mensaje fijo post-alta (el correo real entra con Resend + ConfirmEmail).
+ */
+const REGISTER_OK_MESSAGE =
+  "Usuario creado. Debes confirmar tu correo antes de iniciar sesión.";
+
+/**
+ * Alta interna (superadmin): usuario confirmed=false, sin tokens.
+ * Stub de correo: log en consola hasta integrar Resend.
+ */
+export async function registerUser(
+  input: RegisterBody,
+): Promise<RegisterResponse> {
+  const existing = await prisma.user.findFirst({
+    where: {
+      deletedAt: null,
+      OR: [
+        { email: input.email },
+        { username: input.username },
+        { run: input.run },
+      ],
+    },
+  });
+
+  if (existing) {
+    if (existing.email === input.email) {
+      throw new AppError(
+        409,
+        "duplicate_email",
+        "El correo electrónico ya está registrado",
+      );
+    }
+    if (existing.username === input.username) {
+      throw new AppError(
+        409,
+        "duplicate_username",
+        "El nombre de usuario ya está en uso",
+      );
+    }
+    throw new AppError(409, "duplicate_run", "El RUN ya está registrado");
+  }
+
+  const passwordHash = await hashPassword(input.password);
+
+  const user = await prisma.user.create({
+    data: {
+      email: input.email,
+      username: input.username,
+      passwordHash,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      run: input.run,
+      confirmed: false,
+      state: true,
+      internalRol: "user",
+    },
+  });
+
+  // Stub: cuando exista ConfirmEmail + Resend, acá se encola el mail.
+  console.info(
+    `[auth.register] confirmación pendiente para ${user.email} (id=${user.id})`,
+  );
+
+  return {
+    user: toAuthUser(user),
+    message: REGISTER_OK_MESSAGE,
+  };
 }

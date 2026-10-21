@@ -67,6 +67,37 @@ export const logoutResponseSchema = z
   })
   .openapi("LogoutResponse");
 
+/**
+ * Alta de usuario por superadmin (Sección 1).
+ * Sin businessId aún (Empresas = Sección 2). confirmed queda false.
+ */
+export const registerBodySchema = z.object({
+  email: z.email().trim().toLowerCase(),
+  // Mínimo 8: misma barra que usaremos en reset; sin complejidad extra aún.
+  password: z.string().min(8),
+  username: z
+    .string()
+    .trim()
+    .min(3)
+    .transform((value) => value.toLowerCase()),
+  firstName: z.string().trim().min(1),
+  lastName: z.string().trim().min(1),
+  // RUN como texto; validación dígito verificador entra con reglas de negocio.
+  run: z.string().trim().min(3),
+});
+
+export const registerRequestSchema = z.object({
+  body: registerBodySchema,
+});
+
+/** Respuesta de register: usuario sin tokens (debe confirmar correo). */
+export const registerResponseSchema = z
+  .object({
+    user: authUserSchema,
+    message: z.string(),
+  })
+  .openapi("RegisterResponse");
+
 export type LoginBody = z.infer<typeof loginBodySchema>;
 export type LoginResponse = z.infer<typeof loginResponseSchema>;
 export type AuthUser = z.infer<typeof authUserSchema>;
@@ -74,3 +105,5 @@ export type MeResponse = z.infer<typeof meResponseSchema>;
 export type RefreshBody = z.infer<typeof refreshBodySchema>;
 export type RefreshResponse = z.infer<typeof refreshResponseSchema>;
 export type LogoutResponse = z.infer<typeof logoutResponseSchema>;
+export type RegisterBody = z.infer<typeof registerBodySchema>;
+export type RegisterResponse = z.infer<typeof registerResponseSchema>;

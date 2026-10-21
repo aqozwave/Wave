@@ -215,7 +215,7 @@ export function Panel() {
 
         <button
           type="button"
-          className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-nachipa-primary)] px-5 text-[13px] font-semibold leading-[19px] text-white"
+          className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-nachipa-primary)] px-4 text-[13px] font-semibold leading-[19px] text-white"
         >
           <Download size={18} strokeWidth={1.5} aria-hidden />
           Exportar resumen

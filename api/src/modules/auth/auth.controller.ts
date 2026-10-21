@@ -5,14 +5,17 @@ import {
   logoutResponseSchema,
   meResponseSchema,
   refreshResponseSchema,
+  registerResponseSchema,
   type LoginBody,
   type RefreshBody,
+  type RegisterBody,
 } from "./auth.schemas.js";
 import {
   getMe,
   loginUser,
   logoutUser,
   refreshSession,
+  registerUser,
 } from "./auth.service.js";
 
 /** Nombre de la cookie HttpOnly del refresh (web). */
@@ -163,4 +166,18 @@ export async function logoutHandler(
 
   const bodyOut = logoutResponseSchema.parse({ ok: true });
   res.status(200).json(bodyOut);
+}
+
+/**
+ * POST /register — alta por superadmin; 201 con user confirmed=false.
+ * No emite tokens (hay que confirmar correo).
+ */
+export async function registerHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const body = req.body as RegisterBody;
+  const result = await registerUser(body);
+  const bodyOut = registerResponseSchema.parse(result);
+  res.status(201).json(bodyOut);
 }
