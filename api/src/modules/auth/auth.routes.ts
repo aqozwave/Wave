@@ -9,12 +9,14 @@ import {
   meHandler,
   refreshHandler,
   registerHandler,
+  resendConfirmationHandler,
 } from "./auth.controller.js";
 import {
   confirmEmailRequestSchema,
   loginRequestSchema,
   refreshRequestSchema,
   registerRequestSchema,
+  resendConfirmationRequestSchema,
 } from "./auth.schemas.js";
 
 /** Rutas de autenticación bajo /api/v1/auth. */
@@ -39,6 +41,15 @@ authRouter.post(
   validate(confirmEmailRequestSchema),
   (req, res, next) => {
     confirmEmailHandler(req, res).catch(next);
+  },
+);
+
+// Público: reenvío con mensaje fijo (no revela si el email existe).
+authRouter.post(
+  "/resend-confirmation",
+  validate(resendConfirmationRequestSchema),
+  (req, res, next) => {
+    resendConfirmationHandler(req, res).catch(next);
   },
 );
 

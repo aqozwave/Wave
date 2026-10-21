@@ -14,6 +14,8 @@ import {
   refreshResponseSchema,
   registerBodySchema,
   registerResponseSchema,
+  resendConfirmationBodySchema,
+  resendConfirmationResponseSchema,
 } from "../modules/auth/auth.schemas.js";
 import { healthResponseSchema } from "../modules/health/health.schemas.js";
 
@@ -55,7 +57,7 @@ registry.registerPath({
   tags: ["Auth"],
   summary: "Register (superadmin)",
   description:
-    "Alta interna por superadmin. Crea usuario confirmed=false, emite EmailToken (confirm_email). Correo: stub (token en log) hasta Resend.",
+    "Alta interna por superadmin. Crea usuario confirmed=false, emite EmailToken y envía correo (Resend; sin API key → stub en log).",
   security: [{ bearerAuth: [] }],
   request: {
     body: {
@@ -109,6 +111,36 @@ registry.registerPath({
     },
     400: { description: "Token inválido o expirado" },
     403: { description: "Usuario desactivado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/resend-confirmation",
+  tags: ["Auth"],
+  summary: "Resend confirmation email",
+  description:
+    "Reenvía el enlace de confirmación. Respuesta siempre igual (anti-enumeración).",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: resendConfirmationBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Mensaje genérico",
+      content: {
+        "application/json": {
+          schema: resendConfirmationResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación" },
+    502: { description: "Fallo al enviar con Resend" },
   },
 });
 

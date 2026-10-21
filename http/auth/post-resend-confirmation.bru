@@ -1,0 +1,36 @@
+meta {
+  name: Post resend-confirmation
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/resend-confirmation
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "nuevo@nachipa.local"
+  }
+}
+
+docs {
+  Público. Si el usuario existe, confirmed=false y state=true, reemite token y envía mail (o stub en log).
+  La respuesta es siempre el mismo mensaje (anti-enumeración).
+}
+
+assert {
+  res.status: eq 200
+  res.body.message: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

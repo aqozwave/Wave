@@ -126,3 +126,25 @@ export const confirmEmailResponseSchema = z
 
 export type ConfirmEmailBody = z.infer<typeof confirmEmailBodySchema>;
 export type ConfirmEmailResponse = z.infer<typeof confirmEmailResponseSchema>;
+
+/** Body de reenvío de confirmación (público; anti-enumeración). */
+export const resendConfirmationBodySchema = z.object({
+  email: z.email().trim().toLowerCase(),
+});
+
+export const resendConfirmationRequestSchema = z.object({
+  body: resendConfirmationBodySchema,
+});
+
+export const resendConfirmationResponseSchema = z
+  .object({
+    message: z.string(),
+  })
+  .openapi("ResendConfirmationResponse");
+
+export type ResendConfirmationBody = z.infer<
+  typeof resendConfirmationBodySchema
+>;
+export type ResendConfirmationResponse = z.infer<
+  typeof resendConfirmationResponseSchema
+>;

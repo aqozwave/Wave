@@ -7,10 +7,12 @@ import {
   meResponseSchema,
   refreshResponseSchema,
   registerResponseSchema,
+  resendConfirmationResponseSchema,
   type ConfirmEmailBody,
   type LoginBody,
   type RefreshBody,
   type RegisterBody,
+  type ResendConfirmationBody,
 } from "./auth.schemas.js";
 import {
   confirmEmailAccount,
@@ -19,6 +21,7 @@ import {
   logoutUser,
   refreshSession,
   registerUser,
+  resendAccountConfirmation,
 } from "./auth.service.js";
 
 /** Nombre de la cookie HttpOnly del refresh (web). */
@@ -195,5 +198,18 @@ export async function confirmEmailHandler(
   const body = req.body as ConfirmEmailBody;
   const result = await confirmEmailAccount(body.token);
   const bodyOut = confirmEmailResponseSchema.parse(result);
+  res.status(200).json(bodyOut);
+}
+
+/**
+ * POST /resend-confirmation — reenvía el mail; mensaje fijo siempre.
+ */
+export async function resendConfirmationHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const body = req.body as ResendConfirmationBody;
+  const result = await resendAccountConfirmation(body.email);
+  const bodyOut = resendConfirmationResponseSchema.parse(result);
   res.status(200).json(bodyOut);
 }

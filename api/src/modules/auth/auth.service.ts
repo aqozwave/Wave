@@ -1,4 +1,5 @@
 import { EmailTokenPurpose, type User } from "@prisma/client";
+import { sendConfirmEmail } from "../../emails/sendConfirmEmail.js";
 import { AppError } from "../../lib/errors.js";
 import {
   hashEmailToken,
@@ -19,6 +20,7 @@ import type {
   RefreshResponse,
   RegisterBody,
   RegisterResponse,
+  ResendConfirmationResponse,
 } from "./auth.schemas.js";
 
 /** Intentos fallidos antes de bloquear la cuenta. */
@@ -199,14 +201,37 @@ export async function logoutUser(userId: string): Promise<void> {
 }
 
 /**
- * Mensaje fijo post-alta (el correo real entra con Resend + ConfirmEmail).
+ * Mensaje fijo post-alta (el usuario aún debe confirmar correo).
  */
 const REGISTER_OK_MESSAGE =
   "Usuario creado. Debes confirmar tu correo antes de iniciar sesión.";
 
 /**
- * Alta interna (superadmin): usuario confirmed=false, sin tokens.
- * Stub de correo: log en consola hasta integrar Resend.
+ * Mensaje fijo de reenvío (anti-enumeración: igual exista o no el email).
+ */
+const RESEND_CONFIRMATION_MESSAGE =
+  "Si el correo está registrado y pendiente de confirmación, recibirás un enlace.";
+
+/**
+ * Emite EmailToken confirm_email y envía (o stubbea) el correo.
+ */
+async function issueAndSendConfirmation(user: User): Promise<void> {
+  const { plain, expiresAt } = await issueEmailToken(
+    user.id,
+    EmailTokenPurpose.confirm_email,
+  );
+
+  await sendConfirmEmail({
+    to: user.email,
+    firstName: user.firstName,
+    plainToken: plain,
+    expiresAt,
+  });
+}
+
+/**
+ * Alta interna (superadmin): usuario confirmed=false, sin tokens JWT.
+ * Emite EmailToken y envía correo (Resend o stub en log).
  */
 export async function registerUser(
   input: RegisterBody,
@@ -256,20 +281,35 @@ export async function registerUser(
     },
   });
 
-  const { plain, expiresAt } = await issueEmailToken(
-    user.id,
-    EmailTokenPurpose.confirm_email,
-  );
-
-  // Stub de correo: log del token para Bruno/dev. Resend reemplaza esto.
-  console.info(
-    `[auth.register] confirm token para ${user.email}: ${plain} (expira ${expiresAt.toISOString()})`,
-  );
+  await issueAndSendConfirmation(user);
 
   return {
     user: toAuthUser(user),
     message: REGISTER_OK_MESSAGE,
   };
+}
+
+/**
+ * Reenvía el enlace de confirmación.
+ * Siempre el mismo mensaje (no revela si el email existe).
+ */
+export async function resendAccountConfirmation(
+  email: string,
+): Promise<ResendConfirmationResponse> {
+  const user = await prisma.user.findFirst({
+    where: {
+      email,
+      deletedAt: null,
+      state: true,
+      confirmed: false,
+    },
+  });
+
+  if (user) {
+    await issueAndSendConfirmation(user);
+  }
+
+  return { message: RESEND_CONFIRMATION_MESSAGE };
 }
 
 /**

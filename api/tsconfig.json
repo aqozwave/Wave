@@ -10,7 +10,9 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    // Plantillas React Email (.tsx) en src/emails.
+    "jsx": "react-jsx"
   },
   "include": ["src"]
 }

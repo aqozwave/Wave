@@ -37,8 +37,8 @@ script:pre-request {
 }
 
 docs {
-  Tras 201, la API loguea el confirm token (stub hasta Resend).
-  Copiálo a `confirmEmailToken` del entorno local y corré Post confirm-email.
+  Tras 201, sin RESEND_API_KEY la API loguea el confirm token (stub).
+  Con Resend, llega el mail. Copiá el token a `confirmEmailToken` y corré Post confirm-email.
 }
 
 assert {

@@ -1,0 +1,35 @@
+meta {
+  name: Post resend-confirmation unknown email
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/resend-confirmation
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "no-existe@nachipa.local"
+  }
+}
+
+docs {
+  Email inexistente: mismo 200 y mismo mensaje que el happy path (no revela existencia).
+}
+
+assert {
+  res.status: eq 200
+  res.body.message: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
