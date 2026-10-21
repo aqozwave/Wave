@@ -58,8 +58,9 @@ model User {
   role          Role?     @relation(fields: [roleId], references: [id])
   state         Boolean   @default(true)
   confirmed     Boolean   @default(false)
-  // FK reales cuando existan Business / Location / Area (secciones 2–4).
+  // Tenant: FK a businesses (Sección 2). location/area cuando existan (S3–S4).
   businessId    String?   @map("business_id") @db.Uuid
+  business      Business? @relation(fields: [businessId], references: [id])
   locationId    String?   @map("location_id") @db.Uuid
   areaId        String?   @map("area_id") @db.Uuid
   tokenVersion  Int       @default(0) @map("token_version")
@@ -75,7 +76,31 @@ model User {
 
   @@index([email])
   @@index([username])
+  @@index([businessId])
   @@map("users")
+}
+
+/// Empresa (tenant). Soft delete; nombre único entre no borradas (índice parcial en migración).
+model Business {
+  id            String    @id @default(uuid()) @db.Uuid
+  legacyMongoId String?   @unique @map("legacy_mongo_id")
+  rut           String?
+  name          String
+  giro          String?
+  country       String?   @default("Chile")
+  commune       String?
+  city          String?
+  phone         String?
+  email         String?
+  description   String?
+  state         Boolean   @default(true)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  users         User[]
+
+  @@index([name])
+  @@map("businesses")
 }
 
 /// Challenge MFA de login: código de 6 dígitos por correo (hash en BD).

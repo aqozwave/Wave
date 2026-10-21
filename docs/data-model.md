@@ -41,7 +41,7 @@ Leyenda de tablas: **N** = nullable · **D** = default · **UK** = unique · **P
 
 ## Diagrama (Auth migrado + Empresas propuesto)
 
-Todas las columnas (nombres Postgres). `businesses` y la FK `users.business_id` aún no migradas.
+Todas las columnas (nombres Postgres). `businesses` y la FK `users.business_id` **migradas** (2026-10-21).
 
 ```mermaid
 erDiagram
@@ -162,8 +162,8 @@ erDiagram
 
 **Tabla:** `users` · **Soft delete:** sí (`deleted_at`)  
 **Índices:** `(email)`, `(username)` · **UK:** `legacy_mongo_id`  
-**FK hoy:** `role_id` → `roles.id`  
-**FK pendientes:** `business_id` → `businesses.id` (S2); `location_id` (S3); `area_id` (S4) — columnas ya existen sin constraint  
+**FK hoy:** `role_id` → `roles.id` · `business_id` → `businesses.id`  
+**FK pendientes:** `location_id` (S3); `area_id` (S4) — columnas sin constraint aún  
 **Referencias:** portal viejo `Prisma/core-api/src/models/User.js` · Wave Auth Sección 1
 
 | # | Prisma | Columna Postgres | Tipo | N | D | Notas |
@@ -181,7 +181,7 @@ erDiagram
 | 11 | `roleId` | `role_id` | `uuid` | ✓ | | FK → `roles.id` |
 | 12 | `state` | `state` | `boolean` | | `true` | |
 | 13 | `confirmed` | `confirmed` | `boolean` | | `false` | mail de confirmación |
-| 14 | `businessId` | `business_id` | `uuid` | ✓ | | sin FK hasta S2 |
+| 14 | `businessId` | `business_id` | `uuid` | ✓ | | FK → `businesses.id`; Idx |
 | 15 | `locationId` | `location_id` | `uuid` | ✓ | | placeholder S3 |
 | 16 | `areaId` | `area_id` | `uuid` | ✓ | | placeholder S4 |
 | 17 | `tokenVersion` | `token_version` | `int` | | `0` | invalida JWT en logout |
@@ -243,19 +243,20 @@ erDiagram
 
 ---
 
-## Sección 2 — `businesses` (contrato propuesto, **no migrado**)
+## `businesses` — modelo Prisma `Business` (Sección 2)
 
-Alineado a `Prisma/core-api/src/models/Business.js`. Migrar solo con OK explícito.
+Alineado a `Prisma/core-api/src/models/Business.js`.  
+**Migraciones:** `20261021192841_add_business`, `20261021192847_businesses_name_active_unique`.
 
-**Tabla propuesta:** `businesses` · **Soft delete:** sí · **UK propuesto:** `legacy_mongo_id`; unique parcial de `name` (y opcionalmente `rut`) donde `deleted_at IS NULL`  
-**FK a cablear:** `users.business_id` → `businesses.id` (`ON DELETE RESTRICT`)
+**Tabla:** `businesses` · **Soft delete:** sí · **UK:** `legacy_mongo_id`; unique parcial `lower(name)` donde `deleted_at IS NULL`  
+**FK:** `users.business_id` → `businesses.id` (`ON DELETE SET NULL` — Prisma default)
 
-| # | Prisma (propuesto) | Columna Postgres | Tipo | N | D | Notas / Mongo |
+| # | Prisma | Columna Postgres | Tipo | N | D | Notas / Mongo |
 |---|---|---|---|---|---|---|
 | 1 | `id` | `id` | `uuid` | | `gen_uuid` | PK (en Mongo era `_id`) |
 | 2 | `legacyMongoId` | `legacy_mongo_id` | `text` | ✓ | | UK; ETL desde `_id` |
-| 3 | `rut` | `rut` | `text` | ✓ | | `rut`; normalizado |
-| 4 | `name` | `name` | `text` | | | required; en Mongo lowercase + unique soft |
+| 3 | `rut` | `rut` | `text` | ✓ | | `rut`; normalizado en service |
+| 4 | `name` | `name` | `text` | | | required; unique soft vía índice parcial |
 | 5 | `giro` | `giro` | `text` | ✓ | | |
 | 6 | `country` | `country` | `text` | ✓ | `"Chile"` | |
 | 7 | `commune` | `commune` | `text` | ✓ | | |
@@ -268,18 +269,18 @@ Alineado a `Prisma/core-api/src/models/Business.js`. Migrar solo con OK explíci
 | 14 | `createdAt` | `created_at` | `timestamptz` | | `now()` | Mongo `createdAt` |
 | 15 | `updatedAt` | `updated_at` | `timestamptz` | | auto | Mongo `updatedAt` |
 
-**Campo Mongo no llevado (por ahora):** `deletedBy` (ObjectId → User). Se puede agregar después como `deleted_by` uuid? FK → `users` si hace falta auditoría.
+**Campo Mongo no llevado (por ahora):** `deletedBy` (ObjectId → User).
 
-**Relaciones Prisma (propuestas):** `users User[]`.
+**Relaciones Prisma:** `users User[]`.
 
-**Permisos (portal viejo; confirmar A/B en plan S2):**
+**Permisos (opción A, 2026-10-21):**
 
 | Acción | Superadmin | Admin empresa |
 |---|---|---|
 | Listar | todas | solo la suya |
 | Crear / soft-delete | sí | no |
 | Editar `rut`, `name`, `state` | sí | no |
-| Editar contacto (`giro`, `country`, `commune`, `city`, `phone`, `email`, `description`) | sí | sí (opción A) |
+| Editar contacto (`giro`, `country`, `commune`, `city`, `phone`, `email`, `description`) | sí | sí |
 
 **Referencias código viejo:**
 
@@ -327,4 +328,5 @@ cd api && npx prisma studio
 | Fecha | Cambio |
 |---|---|
 | 2026-10-21 | Doc inicial Auth + contrato `businesses` |
-| 2026-10-21 | Inventario completo de columnas (todas las filas de cada tabla migrada + businesses propuesto) |
+| 2026-10-21 | Inventario completo de columnas + diagrama Mermaid completo |
+| 2026-10-21 | `businesses` migrada + FK `users.business_id` + unique parcial `name` |
