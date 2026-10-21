@@ -1,12 +1,8 @@
-import { useState } from "react";
-import { useNavigate } from "react-router";
 import {
   ChevronDown,
-  ChevronUp,
   GraduationCap,
   HardHat,
   LayoutDashboard,
-  LogOut,
   PanelLeftClose,
   Settings,
   ShieldCheck,
@@ -24,14 +20,11 @@ function initialsOf(firstName: string, lastName: string): string {
 }
 
 /**
- * Sidebar Superadmin (Figma S1).
- * El pie de usuario abre el menú con “Cerrar sesión”.
+ * Sidebar Superadmin (Figma S1 · 133:4571).
+ * El pie muestra identidad; Cerrar sesión está en el UserMenu del header.
  */
 export function Sidebar() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  // Menú del pie: abierto/cerrado al clic en la tarjeta de usuario.
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { user } = useAuth();
 
   const displayName = user
     ? `${user.firstName} ${user.lastName}`.trim()
@@ -40,13 +33,6 @@ export function Sidebar() {
   const initials = user
     ? initialsOf(user.firstName, user.lastName)
     : "?";
-
-  /** Limpia la sesión en memoria y vuelve al login. */
-  function onLogout() {
-    setMenuOpen(false);
-    logout();
-    navigate("/login", { replace: true });
-  }
 
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-[var(--color-nav-border)] bg-[var(--color-nav-bg)]">
@@ -71,31 +57,8 @@ export function Sidebar() {
         <SidebarItem label="Sistema" icon={ShieldCheck} expandable />
       </nav>
 
-      <div className="relative border-t border-[var(--color-nav-border)] p-3">
-        {menuOpen ? (
-          <div
-            className="mb-2 overflow-hidden rounded-[10px] border border-[var(--color-nav-border)] bg-white py-1 shadow-sm"
-            role="menu"
-          >
-            <button
-              type="button"
-              role="menuitem"
-              onClick={onLogout}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-[var(--color-nachipa-body)] hover:bg-[var(--color-nav-item-active-bg)]"
-            >
-              <LogOut size={16} strokeWidth={1.5} aria-hidden />
-              Cerrar sesión
-            </button>
-          </div>
-        ) : null}
-
-        <button
-          type="button"
-          className="flex w-full items-center gap-2.5 rounded-[10px] p-2 text-left hover:bg-[var(--color-nav-item-active-bg)]"
-          aria-expanded={menuOpen}
-          aria-haspopup="menu"
-          onClick={() => setMenuOpen((open) => !open)}
-        >
+      <div className="border-t border-[var(--color-nav-border)] p-3">
+        <div className="flex w-full items-center gap-2.5 rounded-[10px] p-2">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-2xl bg-[var(--color-status-info-bg)] text-[12px] font-semibold text-[var(--color-status-info-fg)]">
             {initials}
           </span>
@@ -107,22 +70,13 @@ export function Sidebar() {
               {displayMeta}
             </span>
           </span>
-          {menuOpen ? (
-            <ChevronUp
-              size={16}
-              strokeWidth={1.5}
-              className="shrink-0 text-[var(--color-nav-icon)]"
-              aria-hidden
-            />
-          ) : (
-            <ChevronDown
-              size={16}
-              strokeWidth={1.5}
-              className="shrink-0 text-[var(--color-nav-icon)]"
-              aria-hidden
-            />
-          )}
-        </button>
+          <ChevronDown
+            size={16}
+            strokeWidth={1.5}
+            className="shrink-0 text-[var(--color-nav-icon)]"
+            aria-hidden
+          />
+        </div>
       </div>
     </aside>
   );

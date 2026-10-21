@@ -1,13 +1,27 @@
 import {
   AlertTriangle,
+  Bell,
   CheckCircle2,
   ChevronDown,
   CircleAlert,
+  CircleHelp,
   Download,
+  Search,
   Ship,
 } from "lucide-react";
+import { useAuth } from "../../lib/auth/AuthContext";
+import { UserMenu } from "../../components/UserMenu/UserMenu";
 
 // Maqueta S1 · Panel global (Figma 133:4570). Datos de diseño; API real = sección Dashboard.
+
+/** Capitaliza el primer carácter (nombres del seed vienen en minúscula). */
+function capitalizeName(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
 
 const kpis = [
   {
@@ -67,6 +81,33 @@ const vencimientos = [
   },
 ];
 
+/** Escala del plot Figma: 8 unidades = 150px de alto útil. */
+const CAPSULE_MAX = 8;
+/** Alto del área de barras (sin labels), igual a Figma Plot · cápsulas. */
+const CAPSULE_PLOT_H = 150;
+/** Ancho de cada cápsula en Figma. */
+const CAPSULE_W = 12;
+
+/**
+ * Series “cápsulas” (Figma 133:4937): dos barras redondeadas en la misma
+ * categoría, ancladas abajo — soft (31–60 d) detrás / primary (0–30 d) delante.
+ */
+const porNaveCapsules = [
+  { label: "POL", soft: 7, solid: 3 },
+  { label: "DIA", soft: 5, solid: 2 },
+  { label: "ATL", soft: 4, solid: 2 },
+  { label: "PIO", soft: 4, solid: 1 },
+  { label: "AUS", soft: 1, solid: 0 },
+] as const;
+
+const porCursoCapsules = [
+  { label: "1.13", soft: 6, solid: 3 },
+  { label: "1.19", soft: 4, solid: 2 },
+  { label: "2.03", soft: 4, solid: 1 },
+  { label: "1.07", soft: 3, solid: 1 },
+  { label: "IND", soft: 2, solid: 1 },
+] as const;
+
 const naves = [
   {
     name: "Austral I",
@@ -89,10 +130,15 @@ const naves = [
   {
     name: "Ronia Diamond",
     meta: "15 de 15 tripulantes al día",
-    pct: 100,
+    pct: 97,
     tone: "ok" as const,
   },
 ];
+
+/** Convierte unidades del eje (0–8) a píxeles del plot. */
+function capsulePx(units: number): number {
+  return (units / CAPSULE_MAX) * CAPSULE_PLOT_H;
+}
 
 const meses = [
   "Nov",
@@ -110,17 +156,58 @@ const meses = [
 ];
 
 export function Panel() {
+  const { user } = useAuth();
+  const welcomeName = user
+    ? capitalizeName(user.firstName)
+    : "usuario";
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      {/* Header S1 (133:4710): saludo + búsqueda + iconos + exportar + UserMenu */}
+      <header className="flex items-center gap-2.5">
+        <div className="min-w-0 flex-1">
           <h1 className="text-[20px] font-semibold leading-[26px] text-[var(--color-nachipa-title)]">
-            Bienvenido, Francisco
+            Bienvenido, {welcomeName}
           </h1>
           <p className="text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
             Cumplimiento de todas las empresas
           </p>
         </div>
+
+        <label className="flex h-9 w-[240px] shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] pl-3 pr-2.5">
+          <input
+            type="search"
+            placeholder="Buscar…"
+            className="w-full bg-transparent text-[12px] leading-[18px] text-[var(--color-nachipa-title)] outline-none placeholder:text-[var(--color-nachipa-placeholder)]"
+          />
+          <Search
+            size={14}
+            strokeWidth={1.5}
+            className="shrink-0 text-[var(--color-nav-icon)]"
+            aria-hidden
+          />
+        </label>
+
+        <button
+          type="button"
+          className="flex size-9 shrink-0 items-center justify-center rounded-[18px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] text-[var(--color-icon-default)]"
+          aria-label="Ayuda"
+        >
+          <CircleHelp size={16} strokeWidth={1.5} aria-hidden />
+        </button>
+
+        <button
+          type="button"
+          className="relative flex size-9 shrink-0 items-center justify-center rounded-[18px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] text-[var(--color-icon-default)]"
+          aria-label="Notificaciones"
+        >
+          <Bell size={16} strokeWidth={1.5} aria-hidden />
+          <span
+            aria-hidden
+            className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-[var(--color-status-danger-fg)]"
+          />
+        </button>
+
         <button
           type="button"
           className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-nachipa-primary)] px-5 text-[13px] font-semibold leading-[19px] text-white"
@@ -128,7 +215,9 @@ export function Panel() {
           <Download size={18} strokeWidth={1.5} aria-hidden />
           Exportar resumen
         </button>
-      </div>
+
+        <UserMenu />
+      </header>
 
       <div className="flex gap-4">
         <div className="flex min-w-0 flex-1 flex-col gap-4">
@@ -298,104 +387,161 @@ export function Panel() {
           </div>
         </div>
 
-        <div className="flex w-[min(454px,38%)] shrink-0 flex-col gap-4">
-          <div className="grid grid-cols-2 gap-3.5">
+        <div className="flex w-[min(470px,38%)] shrink-0 flex-col gap-4">
+          <div className="grid grid-cols-2 gap-4">
             {(
               [
-                {
-                  title: "Por nave",
-                  labels: ["POL", "DIA", "ATL", "PIO", "AUS"],
-                  heights: [48, 72, 58, 80, 44],
-                },
-                {
-                  title: "Por curso",
-                  labels: ["1.13", "1.19", "2.03", "6.1", "1.14"],
-                  heights: [55, 68, 42, 78, 50],
-                },
+                { title: "Por nave", series: porNaveCapsules },
+                { title: "Por curso", series: porCursoCapsules },
               ] as const
             ).map((chart) => (
               <div
                 key={chart.title}
-                className="rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-4"
+                className="flex flex-col gap-2.5 overflow-hidden rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-4"
               >
-                <p className="mb-3 text-[13px] font-semibold text-[var(--color-nachipa-title)]">
-                  {chart.title}
-                </p>
-                <div className="flex h-28 items-end justify-between gap-1 px-0.5">
-                  {chart.heights.map((h, i) => (
-                    <div
-                      key={chart.labels[i]}
-                      className="flex flex-1 flex-col items-center gap-1"
-                    >
-                      <div className="flex w-full max-w-6 flex-col justify-end gap-0.5">
-                        <div
-                          className="w-full rounded-t-sm bg-[var(--color-chart-primary-soft)]"
-                          style={{ height: `${h * 0.35}px` }}
-                        />
-                        <div
-                          className="w-full rounded-t-sm bg-[var(--color-chart-primary)]"
-                          style={{ height: `${h * 0.55}px` }}
-                        />
-                      </div>
-                      <span className="text-[10px] text-[var(--color-nachipa-muted)]">
-                        {chart.labels[i]}
-                      </span>
-                    </div>
-                  ))}
+                <div className="flex items-center gap-2">
+                  <p className="min-w-0 flex-1 text-[15px] font-semibold leading-[21px] text-[var(--color-nachipa-title)]">
+                    {chart.title}
+                  </p>
+                  <button
+                    type="button"
+                    className="shrink-0 text-[13px] font-semibold leading-[19px] text-[var(--color-nachipa-primary)]"
+                  >
+                    Ver
+                  </button>
                 </div>
-                <div className="mt-2 flex gap-3 text-[11px] text-[var(--color-nachipa-muted)]">
-                  <span className="flex items-center gap-1">
-                    <span className="size-2 rounded-sm bg-[var(--color-chart-primary-soft)]" />
-                    31-60 d
+
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1.5 text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
+                    <span
+                      className="size-[7px] rounded-full bg-[var(--color-chart-primary-soft)]"
+                      aria-hidden
+                    />
+                    31–60 d
                   </span>
-                  <span className="flex items-center gap-1">
-                    <span className="size-2 rounded-sm bg-[var(--color-chart-primary)]" />
-                    0-30 d
+                  <span className="flex items-center gap-1.5 text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
+                    <span
+                      className="size-[7px] rounded-full bg-[var(--color-chart-primary)]"
+                      aria-hidden
+                    />
+                    0–30 d
                   </span>
+                </div>
+
+                {/* Plot · cápsulas: soft detrás + solid delante, mismo baseline. */}
+                <div className="relative h-[172px] w-full">
+                  <div
+                    className="absolute left-6 right-0 top-0 h-px bg-[var(--color-chart-grid)]"
+                    aria-hidden
+                  />
+                  <div
+                    className="absolute left-6 right-0 top-[75px] h-px bg-[var(--color-chart-grid)]"
+                    aria-hidden
+                  />
+                  <div
+                    className="absolute left-6 right-0 top-[150px] h-px bg-[var(--color-chart-grid)]"
+                    aria-hidden
+                  />
+                  <span className="absolute left-0 top-[-8px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+                    8
+                  </span>
+                  <span className="absolute left-0 top-[67px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+                    4
+                  </span>
+                  <span className="absolute left-0 top-[142px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+                    0
+                  </span>
+
+                  <div className="absolute bottom-[22px] left-6 right-0 flex h-[150px] items-end justify-between px-1">
+                    {chart.series.map((col) => (
+                      <div
+                        key={col.label}
+                        className="relative flex h-full w-6 flex-col items-center justify-end"
+                      >
+                        {col.soft > 0 ? (
+                          <div
+                            className="absolute bottom-0 rounded-[6px] bg-[var(--color-chart-primary-soft)]"
+                            style={{
+                              width: CAPSULE_W,
+                              height: capsulePx(col.soft),
+                            }}
+                            aria-hidden
+                          />
+                        ) : null}
+                        {col.solid > 0 ? (
+                          <div
+                            className="absolute bottom-0 rounded-[6px] bg-[var(--color-chart-primary)]"
+                            style={{
+                              width: CAPSULE_W,
+                              height: capsulePx(col.solid),
+                            }}
+                            aria-hidden
+                          />
+                        ) : null}
+                        <span className="absolute -bottom-5 text-center text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+                          {col.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             ))}
           </div>
 
           <div className="rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-[18px]">
-            <h2 className="mb-4 text-[15px] font-semibold leading-[21px] text-[var(--color-nachipa-title)]">
-              Cumplimiento por nave
-            </h2>
-            <div className="flex flex-col gap-4">
+            <div className="mb-4 flex items-center gap-2">
+              <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-[21px] text-[var(--color-nachipa-title)]">
+                Cumplimiento por nave
+              </h2>
+              <button
+                type="button"
+                className="shrink-0 text-[13px] font-semibold leading-[19px] text-[var(--color-nachipa-primary)]"
+              >
+                Ver todo
+              </button>
+            </div>
+            <div className="flex flex-col gap-[10px]">
               {naves.map((nave) => (
-                <div key={nave.name}>
-                  <div className="mb-1.5 flex items-start justify-between gap-2">
-                    <div className="flex min-w-0 items-start gap-2">
-                      <Ship
-                        size={16}
-                        strokeWidth={1.5}
-                        className="mt-0.5 shrink-0 text-[var(--color-nav-icon)]"
-                        aria-hidden
-                      />
+                <div
+                  key={nave.name}
+                  className="flex items-start gap-3 px-2.5 py-1"
+                >
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-[var(--color-nav-item-active-bg)]">
+                    <Ship
+                      size={18}
+                      strokeWidth={1.5}
+                      className="text-[var(--color-nav-icon)]"
+                      aria-hidden
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                        <p className="text-[13px] font-medium leading-[19px] text-[var(--color-nachipa-title)]">
                           {nave.name}
                         </p>
-                        <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                        <p className="text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
                           {nave.meta}
                         </p>
                       </div>
+                      <p className="text-[13px] font-semibold tabular-nums leading-[19px] text-[var(--color-nachipa-title)]">
+                        {nave.pct}%
+                      </p>
                     </div>
-                    <p className="text-[13px] font-semibold tabular-nums text-[var(--color-nachipa-title)]">
-                      {nave.pct}%
-                    </p>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-[var(--color-chart-track)]">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${nave.pct}%`,
-                        background:
-                          nave.tone === "warn"
-                            ? "var(--color-chart-critical)"
-                            : "var(--color-chart-primary)",
-                      }}
-                    />
+                    {/* Track 6px como Figma 133:5008. */}
+                    <div className="h-1.5 overflow-hidden rounded-[3px] bg-[var(--color-chart-track)]">
+                      <div
+                        className="h-full rounded-[3px]"
+                        style={{
+                          width: `${nave.pct}%`,
+                          background:
+                            nave.tone === "warn"
+                              ? "var(--color-chart-critical)"
+                              : "var(--color-chart-primary)",
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               ))}

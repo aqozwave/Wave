@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
-import { LayoutDashboard } from "lucide-react";
 import { Navigate, Outlet, Route, Routes } from "react-router";
 import { AppShell } from "./components/AppShell/AppShell";
-import { HealthStatus } from "./components/HealthStatus/HealthStatus";
 import { PanelSkeleton } from "./components/PanelSkeleton/PanelSkeleton";
 import { useAuth } from "./lib/auth/AuthContext";
 import { Login } from "./pages/Login/Login";
@@ -45,22 +43,14 @@ function ShellLayout() {
 
   if (!ready) {
     return (
-      <AppShell
-        breadcrumb="Panel global"
-        breadcrumbIcon={LayoutDashboard}
-        actions={<HealthStatus />}
-      >
+      <AppShell>
         <PanelSkeleton />
       </AppShell>
     );
   }
 
   return (
-    <AppShell
-      breadcrumb="Panel global"
-      breadcrumbIcon={LayoutDashboard}
-      actions={<HealthStatus />}
-    >
+    <AppShell>
       <div className="animate-enter">
         <Outlet />
       </div>
