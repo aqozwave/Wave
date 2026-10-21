@@ -88,9 +88,55 @@ export const listBusinessesResponseSchema = z
   })
   .openapi("ListBusinessesResponse");
 
-/** Respuesta de create. */
+/** Respuesta de create / get / patch / delete. */
 export const createBusinessResponseSchema = businessResponseSchema;
+export const getBusinessResponseSchema = businessResponseSchema;
+export const updateBusinessResponseSchema = businessResponseSchema;
+export const deleteBusinessResponseSchema = businessResponseSchema;
+
+/** Params `:id` uuid. */
+export const businessIdParamsSchema = z.object({
+  id: z.uuid(),
+});
+
+export const getBusinessRequestSchema = z.object({
+  params: businessIdParamsSchema,
+});
+
+export const deleteBusinessRequestSchema = z.object({
+  params: businessIdParamsSchema,
+});
+
+/**
+ * Campos que un admin de empresa puede editar (opción A).
+ * Sin rut / name / state.
+ */
+export const businessAdminEditableSchema = z.object({
+  giro: optionalText,
+  country: optionalText,
+  commune: optionalText,
+  city: optionalText,
+  phone: optionalText,
+  email: optionalEmail,
+  description: optionalText,
+});
+
+/**
+ * Body PATCH: cualquier campo de create en parcial.
+ * El service recorta según rol (superadmin vs admin).
+ */
+export const updateBusinessBodySchema = businessFieldsSchema
+  .partial()
+  .refine((body) => Object.keys(body).length > 0, {
+    message: "Debe enviar al menos un campo para actualizar",
+  });
+
+export const updateBusinessRequestSchema = z.object({
+  params: businessIdParamsSchema,
+  body: updateBusinessBodySchema,
+});
 
 export type CreateBusinessBody = z.infer<typeof createBusinessBodySchema>;
 export type ListBusinessesQuery = z.infer<typeof listBusinessesQuerySchema>;
 export type BusinessResponse = z.infer<typeof businessResponseSchema>;
+export type UpdateBusinessBody = z.infer<typeof updateBusinessBodySchema>;

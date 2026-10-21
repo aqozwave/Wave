@@ -1,0 +1,49 @@
+meta {
+  name: Patch business
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/businesses/{{businessId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "giro": "Transporte marítimo de peces vivos",
+    "phone": "+56 9 0000 0000"
+  }
+}
+
+docs {
+  Superadmin: puede enviar rut/name/state también.
+  Admin: solo contacto (giro, country, commune, city, phone, email, description).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("businessId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y businessId en el entorno local");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.giro: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

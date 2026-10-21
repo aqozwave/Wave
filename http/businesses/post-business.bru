@@ -44,6 +44,13 @@ script:pre-request {
   }
 }
 
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body && body.id) {
+    bru.setEnvVar("businessId", body.id);
+  }
+}
+
 assert {
   res.status: eq 201
   res.body.id: isDefined

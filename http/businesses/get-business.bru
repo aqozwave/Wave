@@ -1,0 +1,38 @@
+meta {
+  name: Get business
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/businesses/{{businessId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Definí businessId (p. ej. del Post business o Get businesses).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("businessId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y businessId en el entorno local");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+  res.body.name: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -28,7 +28,11 @@ import {
 import {
   createBusinessBodySchema,
   createBusinessResponseSchema,
+  deleteBusinessResponseSchema,
+  getBusinessResponseSchema,
   listBusinessesResponseSchema,
+  updateBusinessBodySchema,
+  updateBusinessResponseSchema,
 } from "../modules/businesses/businesses.schemas.js";
 import { healthResponseSchema } from "../modules/health/health.schemas.js";
 
@@ -437,6 +441,84 @@ registry.registerPath({
     401: { description: "Sin token" },
     403: { description: "No superadmin" },
     409: { description: "Nombre duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/businesses/{id}",
+  tags: ["Businesses"],
+  summary: "Obtener empresa",
+  description: "Detalle por id. Tenant: 404 si no es la suya (no superadmin).",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Empresa",
+      content: {
+        "application/json": { schema: getBusinessResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrada o sin acceso" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/businesses/{id}",
+  tags: ["Businesses"],
+  summary: "Actualizar empresa",
+  description:
+    "Superadmin: todos los campos. Admin: solo contacto (opción A).",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateBusinessBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Empresa actualizada",
+      content: {
+        "application/json": { schema: updateBusinessResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Campo no permitido para el rol" },
+    404: { description: "No encontrada" },
+    409: { description: "Nombre duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/businesses/{id}",
+  tags: ["Businesses"],
+  summary: "Eliminar empresa (soft)",
+  description:
+    "Solo superadmin. Marca deletedAt y state=false. 409 si hay usuarios activos.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Empresa soft-deleted",
+      content: {
+        "application/json": { schema: deleteBusinessResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No superadmin" },
+    404: { description: "No encontrada" },
+    409: { description: "Tiene dependencias" },
   },
 });
 

@@ -1,0 +1,39 @@
+meta {
+  name: Delete business
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/businesses/{{businessId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Soft delete (solo superadmin). 409 si hay usuarios activos con ese businessId.
+  Tras 200, Get business → 404 y no aparece en el listado.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("businessId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y businessId en el entorno local");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.deletedAt: isDefined
+  res.body.state: eq false
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
