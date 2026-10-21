@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Navigate, useNavigate } from "react-router";
+import { Link, Navigate, useNavigate } from "react-router";
 import {
   Clock,
   Eye,
@@ -75,14 +75,16 @@ export function Login() {
 
   return (
     <div className="flex min-h-full bg-white">
-      <aside className="relative hidden w-[720px] shrink-0 overflow-hidden lg:block">
+      {/* 50% como Figma A1 (antes w-[720px] dejaba la foto pegada a la izquierda). */}
+      <aside className="relative hidden w-1/2 shrink-0 overflow-hidden lg:block">
         <img
           src={heroUrl}
           alt=""
-          className="absolute inset-0 size-full object-cover"
+          // Enfoca jaulas/wellboats (centro-derecha), no la orilla de la izq. de la foto.
+          className="absolute inset-0 size-full object-cover object-[62%_42%]"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-[rgba(31,120,242,0.78)] to-[rgba(1,102,217,0.82)]" />
-        <div className="relative flex flex-col items-center gap-4 px-12 pt-[110px]">
+        <div className="absolute inset-0 bg-gradient-to-b from-[rgba(31,120,242,0.72)] to-[rgba(1,102,217,0.76)]" />
+        <div className="relative flex flex-col items-center gap-4 px-10 pt-[96px] xl:px-14">
           <p className="text-[11px] font-semibold uppercase tracking-[3.3px] text-white">
             Nachipa Wellboats
           </p>
@@ -180,12 +182,12 @@ export function Login() {
             />
 
             <div className="flex w-full justify-end">
-              <span
-                className="cursor-default text-[13px] font-semibold leading-[19px] text-[var(--color-nachipa-primary)] opacity-50"
-                title="Próximamente"
+              <Link
+                to="/forgot-password"
+                className="text-[13px] font-semibold leading-[19px] text-[var(--color-nachipa-primary)] hover:underline"
               >
                 ¿Olvidaste tu contraseña?
-              </span>
+              </Link>
             </div>
 
             {error ? (
@@ -205,12 +207,12 @@ export function Login() {
               <span className="text-[var(--color-nachipa-secondary)]">
                 ¿No confirmaste tu cuenta?
               </span>
-              <span
-                className="cursor-default font-semibold text-[var(--color-nachipa-primary)] opacity-50"
-                title="Próximamente"
+              <Link
+                to="/resend-confirmation"
+                className="font-semibold text-[var(--color-nachipa-primary)] hover:underline"
               >
                 Reenviar correo
-              </span>
+              </Link>
             </p>
           </div>
 

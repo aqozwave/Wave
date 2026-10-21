@@ -4,8 +4,12 @@ import { AppShell } from "./components/AppShell/AppShell";
 import { PanelSkeleton } from "./components/PanelSkeleton/PanelSkeleton";
 import { useAuth } from "./lib/auth/AuthContext";
 import { useIdleTimeout } from "./lib/auth/useIdleTimeout";
+import { ConfirmEmail } from "./pages/ConfirmEmail/ConfirmEmail";
+import { ForgotPassword } from "./pages/ForgotPassword/ForgotPassword";
 import { Login } from "./pages/Login/Login";
 import { Panel } from "./pages/Panel/Panel";
+import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmation";
+import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
 
 /**
  * Exige access token y aplica idle 1h: sin actividad → logout + /login.
@@ -72,11 +76,15 @@ function ShellLayout() {
   );
 }
 
-/** Rutas de la web: login público + panel protegido. */
+/** Rutas de la web: auth pública + panel protegido. */
 export function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/confirm-email" element={<ConfirmEmail />} />
+      <Route path="/resend-confirmation" element={<ResendConfirmation />} />
       <Route element={<RequireAuth />}>
         <Route element={<ShellLayout />}>
           <Route index element={<Panel />} />

@@ -17,7 +17,7 @@ headers {
 
 body:json {
   {
-    "email": "superadmin@nachipa.local",
+    "email": "fsoto@nachipa-w.com",
     "password": "Password1!"
   }
 }
@@ -26,7 +26,7 @@ assert {
   res.status: eq 200
   res.body.accessToken: isDefined
   res.body.refreshToken: isDefined
-  res.body.user.email: eq superadmin@nachipa.local
+  res.body.user.email: eq fsoto@nachipa-w.com
 }
 
 script:post-response {

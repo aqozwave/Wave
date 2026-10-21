@@ -19,23 +19,31 @@ async function main() {
 
   const passwordHash = await hashPassword("Password1!");
 
+  // Correo real de Francisco: los mails de Resend llegan; .local rebotaba.
+  const superadminEmail = "fsoto@nachipa-w.com";
+
   await prisma.user.upsert({
     where: { legacyMongoId: "seed-superadmin" },
     update: {
+      email: superadminEmail,
+      username: "fsoto",
+      firstName: "Francisco",
+      lastName: "Soto",
       passwordHash,
       confirmed: true,
       state: true,
       deletedAt: null,
       roleId: role.id,
+      internalRol: "superadmin",
     },
     create: {
       legacyMongoId: "seed-superadmin",
       run: "1-9",
-      username: "superadmin",
+      username: "fsoto",
       passwordHash,
-      firstName: "francisco",
-      lastName: "soto",
-      email: "superadmin@nachipa.local",
+      firstName: "Francisco",
+      lastName: "Soto",
+      email: superadminEmail,
       internalRol: "superadmin",
       roleId: role.id,
       confirmed: true,

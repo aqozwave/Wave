@@ -166,3 +166,73 @@ export async function logoutRequest(accessToken: string): Promise<void> {
     throw toApiError(res, body);
   }
 }
+
+/** Respuesta genérica con mensaje (forgot / resend). */
+export type MessageSuccess = {
+  message: string;
+};
+
+/** POST /auth/forgot-password — siempre 200 con mensaje fijo. */
+export async function forgotPasswordRequest(
+  email: string,
+): Promise<MessageSuccess> {
+  const res = await fetch("/api/v1/auth/forgot-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw toApiError(res, body);
+  }
+  return body as MessageSuccess;
+}
+
+/** POST /auth/resend-confirmation — siempre 200 con mensaje fijo. */
+export async function resendConfirmationRequest(
+  email: string,
+): Promise<MessageSuccess> {
+  const res = await fetch("/api/v1/auth/resend-confirmation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw toApiError(res, body);
+  }
+  return body as MessageSuccess;
+}
+
+/** POST /auth/reset-password — cambia la clave con el token del mail. */
+export async function resetPasswordRequest(
+  token: string,
+  password: string,
+): Promise<MessageSuccess> {
+  const res = await fetch("/api/v1/auth/reset-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, password }),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw toApiError(res, body);
+  }
+  return body as MessageSuccess;
+}
+
+/** POST /auth/confirm-email — activa la cuenta con el token del mail. */
+export async function confirmEmailRequest(
+  token: string,
+): Promise<MessageSuccess> {
+  const res = await fetch("/api/v1/auth/confirm-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw toApiError(res, body);
+  }
+  return body as MessageSuccess;
+}
