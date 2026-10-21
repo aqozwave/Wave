@@ -1,0 +1,24 @@
+# Postgres local de Wave. Solo desarrollo: no usar estas credenciales fuera de la máquina.
+services:
+  postgres:
+    image: postgres:16
+    container_name: wave-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: wave
+      POSTGRES_PASSWORD: wave
+      POSTGRES_DB: wave
+      # Evita el error de collation de Alpine en macOS con la shadow DB de Prisma.
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    volumes:
+      - wave_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wave -d wave"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  wave_pg_data:

@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+/* Tokens = code syntax de Figma (S1 · Panel global / Nav Superadmin). */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-brand: "Poppins", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-navy: #004c8c;
+  --color-brand-sky: #5bc1e7;
+
+  --color-nachipa-primary: #1d6fe8;
+  --color-nachipa-title: #18181b;
+  --color-nachipa-secondary: #6b6b73;
+  --color-nachipa-body: #3f3f46;
+  --color-nachipa-placeholder: #a1a1aa;
+  --color-nachipa-muted: #a1a1aa;
+  --color-nachipa-bg-page: #fbfbfb;
+  --color-nachipa-border-subtle: #efeff1;
+
+  --color-nav-bg: #ffffff;
+  --color-nav-border: #efeff1;
+  --color-nav-logo: #004c8c;
+  --color-nav-section: #a1a1aa;
+  --color-nav-icon: #6b6b73;
+  --color-nav-text: #3f3f46;
+  --color-nav-user-name: #18181b;
+  --color-nav-user-meta: #6b6b73;
+  --color-nav-item-active-bg: #f1f1f3;
+  --color-nav-item-active-fg: #18181b;
+
+  --color-tremor-background: #ffffff;
+  --color-tremor-border: #e7e7ea;
+  --color-icon-default: #3f3f46;
+  --color-surface: #fbfbfb;
+  --color-white: #ffffff;
+
+  --color-status-info-fg: #0284c7;
+  --color-status-info-bg: #e0f2fe;
+  --color-status-ok: #16a34a;
+  --color-status-error: #dc2626;
+  --color-status-pending: #d97706;
+  --color-status-danger-fg: #dc2626;
+  --color-status-danger-bg: #fef2f2;
+  --color-status-success-fg: #16a34a;
+  --color-status-success-bg: #dcfce7;
+  --color-status-warning-fg: #d97706;
+  --color-status-warning-bg: #fef3c7;
+  --color-status-neutral-fg: #6b6b73;
+  --color-status-neutral-bg: #f4f4f5;
+  --color-kpi-indigo: #1d6fe8;
+  --color-kpi-indigo-soft: #e0ecfd;
+  --color-chart-primary: #1d6fe8;
+  --color-chart-primary-soft: #cfe0fb;
+  --color-chart-grid: #efeff1;
+  --color-chart-track: #f1f1f3;
+  --color-chart-critical: #f59e0b;
+  --color-table-head-bg: #f8f9fb;
+  --color-table-head-text: #6b6b73;
+
+  --radius-md: 8px;
+  --radius-full: 9999px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-nachipa-bg-page);
+  color: var(--color-nachipa-title);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-brand {
+  font-family: var(--font-brand);
+}

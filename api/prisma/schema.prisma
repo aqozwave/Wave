@@ -1,0 +1,71 @@
+// Convenciones: IDs uuid; deletedAt en User y Role; tablas snake_case plural con @@map.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleDataScope {
+  all
+  business
+  location
+  area
+  self
+}
+
+model Role {
+  id            String        @id @default(uuid()) @db.Uuid
+  legacyMongoId String?       @unique @map("legacy_mongo_id")
+  key           String
+  name          String
+  description   String        @default("")
+  isSystem      Boolean       @default(false) @map("is_system")
+  dataScope     RoleDataScope @map("data_scope")
+  /// [{ resource, actions: string[] }] — mismo shape que el portal viejo.
+  permissions   Json          @default("[]")
+  state         Boolean       @default(true)
+  deletedAt     DateTime?     @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  users         User[]
+
+  @@unique([key])
+  @@map("roles")
+}
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  legacyMongoId String?   @unique @map("legacy_mongo_id")
+  run           String
+  username      String
+  passwordHash  String    @map("password_hash")
+  firstName     String    @map("first_name")
+  lastName      String    @map("last_name")
+  email         String
+  pendingEmail  String?   @map("pending_email")
+  internalRol   String    @default("user") @map("internal_rol")
+  roleId        String?   @map("role_id") @db.Uuid
+  role          Role?     @relation(fields: [roleId], references: [id])
+  state         Boolean   @default(true)
+  confirmed     Boolean   @default(false)
+  // FK reales cuando existan Business / Location / Area (secciones 2–4).
+  businessId    String?   @map("business_id") @db.Uuid
+  locationId    String?   @map("location_id") @db.Uuid
+  areaId        String?   @map("area_id") @db.Uuid
+  tokenVersion  Int       @default(0) @map("token_version")
+  lastLoginAt   DateTime? @map("last_login_at") @db.Timestamptz
+  lastLoginIp   String?   @map("last_login_ip")
+  loginAttempts Int       @default(0) @map("login_attempts")
+  lockUntil     DateTime? @map("lock_until") @db.Timestamptz
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([email])
+  @@index([username])
+  @@map("users")
+}

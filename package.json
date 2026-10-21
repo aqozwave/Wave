@@ -1,0 +1,22 @@
+{
+  "name": "wave",
+  "private": true,
+  "workspaces": [
+    "api",
+    "web"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "npm run dev -w @wave/api",
+    "dev:web": "npm run dev -w @wave/web",
+    "dev:api": "npm run dev -w @wave/api",
+    "typecheck": "npm run typecheck -w @wave/api && npm run typecheck -w @wave/web",
+    "build:web": "npm run build -w @wave/web",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:studio": "npm run db:studio -w @wave/api",
+    "db:migrate": "npm run db:migrate -w @wave/api"
+  }
+}
