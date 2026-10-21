@@ -7,37 +7,72 @@ alwaysApply: true
 
 La IA implementa; Francisco revisa y aprueba. El contexto del repo está en `wave-project.mdc` (stack, secciones, auth, diseño, zonas sensibles).
 
+## Cambio de modo
+- Este modo está siempre activo. Si Francisco escribe `@modo-yo-construyo` o dice "modo yo construyo", ese modo (él programa, tú enseñas) **reemplaza a este** hasta que diga "vuelve al modo IA construye". Nunca aplican los dos a la vez.
 
 ## 0. Alcance estricto (regla más importante)
-- Haz **exactamente** lo que Francisco pidió en el mensaje actual, ni más ni menos. Lo pedido manda sobre cualquier plantilla o ciclo de este archivo.
-- Si dice "no hagas X" (por ejemplo, "no hagas el frontend"), X no se toca, aunque el ciclo normal lo incluya.
-- Un pedido puntual ("copia los tokens de Figma") es **una sola tarea**: se hace solo eso (el archivo de tokens), sin pantallas, componentes ni rutas.
-- Tras terminar el pedido, **detente**: presenta (§7) y espera. No encadenes el paso siguiente por iniciativa propia.
-- Si para cumplir el pedido haría falta algo más grande, o dudas del alcance, pregunta antes (una pregunta, con opciones).
-- Los ciclos de §2 (ruta + pantalla) aplican solo cuando Francisco pide construir una ruta o feature; no son una lista de tareas por defecto.
+
+Haz exactamente lo que Francisco pidió en el mensaje actual, ni más ni menos. Lo pedido manda sobre cualquier plantilla o ciclo de este archivo.
+Si dice “no hagas X” (por ejemplo, “no hagas el frontend”), X no se toca, aunque el ciclo normal lo incluya.
+Un pedido puntual (“copia los tokens de Figma”) es una sola tarea: se hace solo eso (el archivo de tokens), sin pantallas, componentes ni rutas.
+Tras terminar el pedido, detente: presenta (§7) y espera. No encadenes el paso siguiente por iniciativa propia.
+Si para cumplir el pedido haría falta algo más grande, o dudas del alcance, pregunta antes (una pregunta, con opciones).
+Los ciclos de §2 (ruta + pantalla) aplican solo cuando Francisco pide construir una ruta o feature; no son una lista de tareas por defecto.
+
+Antes de crear o modificar archivos
+
+Lista los archivos que vas a crear o modificar (ruta y una línea de por qué) y espera mi OK.
+Solo toca los archivos de esa lista. Si durante el trabajo hace falta otro, detente y pregunta.
+Si el pedido es de una sola línea o un archivo ya conocido, puedes avisar y hacerlo en el mismo mensaje.
+
+Nunca, sin que yo lo pida explícitamente
+
+Crear carpetas o módulos nuevos (web/, api/, http/, docs/, features/, pages/).
+Crear .env, .env.\*, docker-compose.yml, Dockerfile, ci.yml ni archivos de configuración.
+Crear o correr migraciones, ni cambiar schema.prisma.
+Crear pantallas, componentes, rutas, hooks, estilos o assets que no estén en el pedido.
+Ejecutar npm install ni agregar dependencias.
+Tocar archivos que ya existen y que el pedido no menciona.
+Refactorizar, renombrar, reformatear o “mejorar” código existente.
+Anticipar trabajo futuro (“ya que estamos”, “para dejarlo listo”, “por si acaso”).
+
+Si algo parece faltar
+
+Dilo en el resumen como “Falta / sugerencia”, sin hacerlo. Yo decido si se hace.
+
+Al terminar cada tarea
+
+Muestra la lista de archivos creados o modificados. Si hay alguno que no estaba en la lista aprobada, márcalo y explica por qué.
+No empieces la siguiente tarea. Espera mi aprobación.
 
 ## 1. Rol y herramientas
+
 - La IA escribe el código del paso, lo prueba y lo presenta. No espera a que Francisco lo escriba.
 - Puede leer Linear, Notion y Figma (specs y diseño) y actualizar avances.
 
 ## 2. Tamaño del paso
+
 Cuando Francisco pide una ruta o feature, un paso es una ruta completa: schemas Zod, service, controller, routes, request en `http/` y su pantalla web. Una sección se construye ruta por ruta, en el orden de `wave-project.mdc` §7: tabla → Prisma Studio → endpoint en Bruno → pantalla → ETL.
 
 ## 3. Puede hacer sin preguntar
+
 - Crear y editar los archivos del paso.
 - Correr `npx tsc --noEmit`, lint y build.
 - Un commit por paso aprobado, en inglés: `feat(api): …`, `feat(web): …`, `chore(etl): …`.
 - Push y PR solo cuando Francisco diga "listo".
 
 ## 4. Siempre con aprobación previa
+
 - Cambios en `schema.prisma` (proponer, esperar OK, recién entonces `prisma migrate dev` en la BD local).
 - Instalar o actualizar dependencias: proponer con qué problema resuelve, estado de mantenimiento y alternativa sin la librería.
 - Decisiones abiertas de `wave-project.mdc` §10, contratos de API y reglas de negocio no escritas (máximo 3 preguntas, con opciones).
 
 ## 5. Nunca sin pedido explícito
+
 Merge, borrar archivos, tocar `.env*` o secretos, `prisma migrate reset`, ETL con `--apply`, `migrate deploy` contra staging/prod, escribir en la Mongo de producción, refactorizar código que ya funciona, renombrar "para mejorar", agregar features no pedidas, comandos destructivos. Nunca commitear tokens ni códigos MFA en `http/`.
 
 ## 6. Estilo de código
+
 - Código en inglés, comentarios en español.
 - Toda función con regla de negocio lleva comentario del porqué.
 - Estructura robusta, lógica interna simple y lineal. Sin abstracciones, `try/catch` ni configuración especulativa.
@@ -45,6 +80,7 @@ Merge, borrar archivos, tocar `.env*` o secretos, `prisma migrate reset`, ETL co
 - Seguir las convenciones de `wave-project.mdc` §3.3 (error `{ code, message, details? }`, `/api/v1`, paginación, nombres Prisma).
 
 ## 7. Cómo presentar cada paso
+
 1. Resumen corto.
 2. Archivos tocados.
 3. Diff.
@@ -53,15 +89,18 @@ Merge, borrar archivos, tocar `.env*` o secretos, `prisma migrate reset`, ETL co
 6. Qué queda fuera.
 7. Qué sigue.
 8. "En una frase": la regla de negocio del paso en lenguaje simple.
-Después, esperar aprobación. Si hiciste algo que Francisco probablemente no habría escrito así, decí por qué.
+   Después, esperar aprobación. Si hiciste algo que Francisco probablemente no habría escrito así, decí por qué.
 
 ## 8. Sin evidencia no hay éxito
+
 No decir "funciona" sin haberlo ejecutado (Bruno, `tsc`, build). Si algo no se pudo probar, decirlo. Si el CI queda en rojo, se arregla antes de seguir.
 
 ## 9. Verificación de sección
+
 No se empieza la sección siguiente hasta cerrar la actual con: happy path, un error esperado, integración con lo anterior y regresión (login, refresh y una ruta protegida). Entregar los pasos concretos con resultado esperado.
 
 ## 10. Plantilla de arranque
+
 ```
 Sección N — [nombre]
 Objetivo: [una frase]
