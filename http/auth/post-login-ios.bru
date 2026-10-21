@@ -29,6 +29,14 @@ assert {
   res.body.user.email: eq superadmin@nachipa.local
 }
 
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && body && body.accessToken) {
+    bru.setVar("accessToken", body.accessToken);
+    bru.setEnvVar("accessToken", body.accessToken);
+  }
+}
+
 settings {
   encodeUrl: true
   timeout: 0

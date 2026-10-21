@@ -22,10 +22,6 @@ body:json {
   }
 }
 
-vars:pre-request {
-  baseUrl: http://localhost:3000
-}
-
 assert {
   res.status: eq 200
   res.body.accessToken: isDefined
@@ -33,8 +29,12 @@ assert {
 }
 
 script:post-response {
-  if (res.status === 200 && res.body.accessToken) {
-    bru.setEnvVar("accessToken", res.body.accessToken);
+  // Guarda el Bearer para Get me y el resto de rutas protegidas.
+  // setVar = colección (siempre); setEnvVar = entorno local (si está activo).
+  const body = res.getBody();
+  if (res.getStatus() === 200 && body && body.accessToken) {
+    bru.setVar("accessToken", body.accessToken);
+    bru.setEnvVar("accessToken", body.accessToken);
   }
 }
 

@@ -1,11 +1,14 @@
+import { useEffect, useState } from "react";
 import { LayoutDashboard } from "lucide-react";
 import { Navigate, Outlet, Route, Routes } from "react-router";
 import { AppShell } from "./components/AppShell/AppShell";
 import { HealthStatus } from "./components/HealthStatus/HealthStatus";
+import { PanelSkeleton } from "./components/PanelSkeleton/PanelSkeleton";
 import { useAuth } from "./lib/auth/AuthContext";
 import { Login } from "./pages/Login/Login";
 import { Panel } from "./pages/Panel/Panel";
 
+/** Redirige a /login si no hay access token en memoria. */
 function RequireAuth() {
   const { accessToken } = useAuth();
 
@@ -16,18 +19,56 @@ function RequireAuth() {
   return <Outlet />;
 }
 
+/**
+ * Shell del portal: al entrar (post-login) espera /me con skeleton
+ * y recién entonces monta el Panel con animación de entrada.
+ */
 function ShellLayout() {
+  const { hydrateSession } = useAuth();
+  // false hasta completar la primera hidratación (evita flash del Panel).
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      await hydrateSession();
+      if (!cancelled) {
+        setReady(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateSession]);
+
+  if (!ready) {
+    return (
+      <AppShell
+        breadcrumb="Panel global"
+        breadcrumbIcon={LayoutDashboard}
+        actions={<HealthStatus />}
+      >
+        <PanelSkeleton />
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell
       breadcrumb="Panel global"
       breadcrumbIcon={LayoutDashboard}
       actions={<HealthStatus />}
     >
-      <Outlet />
+      <div className="animate-enter">
+        <Outlet />
+      </div>
     </AppShell>
   );
 }
 
+/** Rutas de la web: login público + panel protegido. */
 export function App() {
   return (
     <Routes>

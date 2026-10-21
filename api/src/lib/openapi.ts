@@ -6,13 +6,22 @@ import { z } from "./zod.js";
 import {
   loginBodySchema,
   loginResponseSchema,
+  meResponseSchema,
 } from "../modules/auth/auth.schemas.js";
 import { healthResponseSchema } from "../modules/health/health.schemas.js";
 
 const registry = new OpenAPIRegistry();
 
+/** Header X-Client para login web vs iOS. */
 const loginHeadersSchema = z.object({
   "x-client": z.enum(["web", "ios"]),
+});
+
+/** Esquema Bearer para rutas protegidas en Swagger. */
+registry.registerComponent("securitySchemes", "bearerAuth", {
+  type: "http",
+  scheme: "bearer",
+  bearerFormat: "JWT",
 });
 
 registry.registerPath({
@@ -65,6 +74,27 @@ registry.registerPath({
   },
 });
 
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/auth/me",
+  tags: ["Auth"],
+  summary: "Usuario actual",
+  description: "Devuelve el perfil del access token (Bearer).",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Perfil autenticado",
+      content: {
+        "application/json": {
+          schema: meResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token o token inválido" },
+  },
+});
+
+/** Documento OpenAPI 3 para Swagger UI y clientes tipados. */
 export function buildOpenApiDocument() {
   const generator = new OpenApiGeneratorV3(registry.definitions);
 

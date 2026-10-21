@@ -78,3 +78,40 @@ body {
 .font-brand {
   font-family: var(--font-brand);
 }
+
+/* Entrada suave del contenido tras el skeleton post-login. */
+@keyframes wave-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-enter {
+  animation: wave-enter 320ms ease-out both;
+}
+
+/* Shimmer de skeletons (carga de /me y bloques del panel). */
+@keyframes wave-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.animate-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-nav-item-active-bg) 0%,
+    #e8e8ec 50%,
+    var(--color-nav-item-active-bg) 100%
+  );
+  background-size: 200% 100%;
+  animation: wave-shimmer 1.2s ease-in-out infinite;
+}

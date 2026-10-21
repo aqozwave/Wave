@@ -117,3 +117,22 @@ export async function loginUser(input: LoginBody): Promise<LoginResponse> {
 
   return issueTokens(updated);
 }
+
+/**
+ * Perfil del usuario ya autenticado (id viene del JWT).
+ * Relee la BD para no confiar solo en claims del token.
+ */
+export async function getMe(userId: string): Promise<{ user: AuthUser }> {
+  const user = await prisma.user.findFirst({
+    where: {
+      id: userId,
+      deletedAt: null,
+    },
+  });
+
+  if (!user || !user.state) {
+    throw new AppError(401, "unauthorized", "Sesión inválida");
+  }
+
+  return { user: toAuthUser(user) };
+}

@@ -33,6 +33,14 @@ export const loginResponseSchema = z
   })
   .openapi("LoginResponse");
 
+/** Respuesta de GET /me: perfil del usuario autenticado. */
+export const meResponseSchema = z
+  .object({
+    user: authUserSchema,
+  })
+  .openapi("MeResponse");
+
 export type LoginBody = z.infer<typeof loginBodySchema>;
 export type LoginResponse = z.infer<typeof loginResponseSchema>;
 export type AuthUser = z.infer<typeof authUserSchema>;
+export type MeResponse = z.infer<typeof meResponseSchema>;
