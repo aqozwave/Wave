@@ -9,7 +9,7 @@ alwaysApply: true
 
 > Complementa `.cursor/modo-ia-construye.mdc` (modo por defecto: la IA construye, Francisco valida). **Este documento tiene precedencia** en lo propio del repo. No repite las reglas generales: solo lo propio de este repo.
 >
-> Rol: depende del modo activo. Por defecto **la IA construye y Francisco valida** (`modo-ia-construye`). Si Francisco invoca `modo-yo-construyo`, la IA es profesora y él escribe la implementación.
+> Rol: depende del modo activo. Por defecto **la IA construye y Francisco valida** (`modo-ia-construye`).
 
 ---
 
@@ -206,7 +206,7 @@ Cada sección tiene el mismo esqueleto:
 
 ## 8. Cómo arrancar cada sesión con Cursor
 
-Usar la plantilla de `modo-ia-construye.mdc` §8 (o la §14 de `modo-yo-construyo.mdc` si él quiere programar):
+Usar la plantilla de `modo-ia-construye.mdc` §8:
 
 ```
 Objetivo de hoy: [una frase]

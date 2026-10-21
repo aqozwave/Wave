@@ -6,7 +6,7 @@ alwaysApply: true
 # Modo IA CONSTRUYE (por defecto)
 
 La IA implementa; Francisco revisa y aprueba. El contexto del repo está en `wave-project.mdc` (stack, secciones, auth, diseño, zonas sensibles).
-El otro modo, `modo-yo-construyo.mdc` (Francisco programa, la IA enseña), solo se usa si lo invoca. Nunca ambos a la vez.
+
 
 ## 1. Rol y herramientas
 - La IA escribe el código del paso, lo prueba y lo presenta. No espera a que Francisco lo escriba.
