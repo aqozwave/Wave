@@ -112,3 +112,57 @@ export async function meRequest(accessToken: string): Promise<MeSuccess> {
 
   return body as MeSuccess;
 }
+
+/**
+ * POST /api/v1/auth/refresh (web): usa cookie HttpOnly; no manda refresh en body.
+ * Devuelve nuevo accessToken (+ Set-Cookie con refresh rotado).
+ */
+export async function refreshRequest(): Promise<LoginSuccess> {
+  const res = await fetch("/api/v1/auth/refresh", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Client": "web",
+    },
+    credentials: "include",
+    body: "{}",
+  });
+
+  const body: unknown = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw toApiError(res, body);
+  }
+
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("accessToken" in body) ||
+    typeof (body as LoginSuccess).accessToken !== "string" ||
+    !("user" in body)
+  ) {
+    throw new ApiError(500, "invalid_response", "Respuesta inválida del refresh");
+  }
+
+  return body as LoginSuccess;
+}
+
+/**
+ * POST /api/v1/auth/logout: invalida JWT en servidor y borra cookie refresh.
+ * Si falla la red igual conviene limpiar el cliente.
+ */
+export async function logoutRequest(accessToken: string): Promise<void> {
+  const res = await fetch("/api/v1/auth/logout", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "X-Client": "web",
+    },
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    throw toApiError(res, body);
+  }
+}

@@ -2,12 +2,23 @@ import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
   loginResponseSchema,
+  logoutResponseSchema,
   meResponseSchema,
+  refreshResponseSchema,
   type LoginBody,
+  type RefreshBody,
 } from "./auth.schemas.js";
-import { getMe, loginUser } from "./auth.service.js";
+import {
+  getMe,
+  loginUser,
+  logoutUser,
+  refreshSession,
+} from "./auth.service.js";
 
-/** Clientes que el login distingue vía header X-Client. */
+/** Nombre de la cookie HttpOnly del refresh (web). */
+const REFRESH_COOKIE = "refreshToken";
+
+/** Clientes que el login/refresh distinguen vía header X-Client. */
 type ClientKind = "web" | "ios";
 
 /** Lee y valida X-Client; sin él no sabemos dónde poner el refresh. */
@@ -23,18 +34,49 @@ function readClient(req: Request): ClientKind {
   );
 }
 
+/** Parsea una cookie por nombre desde el header Cookie (sin cookie-parser). */
+function readCookie(req: Request, name: string): string | undefined {
+  const header = req.header("cookie");
+  if (!header) {
+    return undefined;
+  }
+
+  for (const part of header.split(";")) {
+    const trimmed = part.trim();
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) {
+      continue;
+    }
+    const key = trimmed.slice(0, eq);
+    if (key !== name) {
+      continue;
+    }
+    return decodeURIComponent(trimmed.slice(eq + 1));
+  }
+
+  return undefined;
+}
+
 /** Cookie HttpOnly del refresh para el cliente web (mismo origen vía proxy). */
 function setRefreshCookie(res: Response, refreshToken: string): void {
   // 7 días en ms — alineado al default JWT_REFRESH_EXPIRES_IN.
   const maxAgeMs = 7 * 24 * 60 * 60 * 1000;
   const parts = [
-    `refreshToken=${refreshToken}`,
+    `${REFRESH_COOKIE}=${refreshToken}`,
     "HttpOnly",
     "Path=/",
     "SameSite=Lax",
     `Max-Age=${Math.floor(maxAgeMs / 1000)}`,
   ];
   res.append("Set-Cookie", parts.join("; "));
+}
+
+/** Borra la cookie de refresh (logout web). */
+function clearRefreshCookie(res: Response): void {
+  res.append(
+    "Set-Cookie",
+    `${REFRESH_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`,
+  );
 }
 
 /** POST /login — emite tokens; web: refresh en cookie; ios: refresh en body. */
@@ -65,5 +107,60 @@ export async function meHandler(req: Request, res: Response): Promise<void> {
 
   const result = await getMe(req.user.id);
   const bodyOut = meResponseSchema.parse(result);
+  res.status(200).json(bodyOut);
+}
+
+/**
+ * POST /refresh — nuevo access (+ refresh rotado).
+ * Web: refresh en cookie. iOS: refresh en body.
+ */
+export async function refreshHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const client = readClient(req);
+  const body = (req.body ?? {}) as RefreshBody;
+
+  const refreshToken =
+    client === "web"
+      ? readCookie(req, REFRESH_COOKIE)
+      : body.refreshToken;
+
+  if (!refreshToken) {
+    throw new AppError(401, "invalid_refresh", "Refresh requerido");
+  }
+
+  const result = await refreshSession(refreshToken);
+
+  if (client === "web") {
+    setRefreshCookie(res, result.refreshToken!);
+    const bodyOut = refreshResponseSchema.parse({
+      user: result.user,
+      accessToken: result.accessToken,
+    });
+    res.status(200).json(bodyOut);
+    return;
+  }
+
+  const bodyOut = refreshResponseSchema.parse(result);
+  res.status(200).json(bodyOut);
+}
+
+/**
+ * POST /logout — invalida JWT (tokenVersion++) y borra cookie web.
+ * Exige Bearer válido.
+ */
+export async function logoutHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+
+  await logoutUser(req.user.id);
+  clearRefreshCookie(res);
+
+  const bodyOut = logoutResponseSchema.parse({ ok: true });
   res.status(200).json(bodyOut);
 }

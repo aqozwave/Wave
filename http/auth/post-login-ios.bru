@@ -34,6 +34,10 @@ script:post-response {
   if (res.getStatus() === 200 && body && body.accessToken) {
     bru.setVar("accessToken", body.accessToken);
     bru.setEnvVar("accessToken", body.accessToken);
+    if (body.refreshToken) {
+      bru.setVar("refreshToken", body.refreshToken);
+      bru.setEnvVar("refreshToken", body.refreshToken);
+    }
   }
 }
 

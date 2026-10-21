@@ -11,7 +11,7 @@ export type AccessPayload = {
 };
 
 /** Claims del refresh JWT; `kind` evita usarlo como access. */
-type RefreshPayload = {
+export type RefreshPayload = {
   sub: string;
   v: number;
   kind: "refresh";
@@ -52,4 +52,22 @@ export function verifyAccessToken(token: string): AccessPayload {
     throw new jwt.JsonWebTokenError("Access token inválido");
   }
   return decoded as AccessPayload;
+}
+
+/**
+ * Verifica el refresh token (secreto distinto + kind === "refresh").
+ * Así un access JWT no sirve para renovar sesión.
+ */
+export function verifyRefreshToken(token: string): RefreshPayload {
+  const decoded = jwt.verify(token, requireEnv("JWT_REFRESH_SECRET"));
+  if (
+    typeof decoded !== "object" ||
+    decoded === null ||
+    !("sub" in decoded) ||
+    !("kind" in decoded) ||
+    decoded.kind !== "refresh"
+  ) {
+    throw new jwt.JsonWebTokenError("Refresh token inválido");
+  }
+  return decoded as RefreshPayload;
 }

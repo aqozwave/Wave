@@ -1,0 +1,43 @@
+meta {
+  name: Post refresh (web)
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/refresh
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  X-Client: web
+}
+
+body:json {
+  {}
+}
+
+script:pre-request {
+  // La cookie refreshToken la dejó Post login (web). Sin ella → 401.
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && body && body.accessToken) {
+    bru.setVar("accessToken", body.accessToken);
+    bru.setEnvVar("accessToken", body.accessToken);
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.accessToken: isDefined
+  res.body.user.email: eq superadmin@nachipa.local
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

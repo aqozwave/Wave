@@ -2,12 +2,24 @@ import type { User } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
 import { verifyPassword } from "../../lib/password.js";
 import { prisma } from "../../lib/prisma.js";
-import { signAccessToken, signRefreshToken } from "../../lib/tokens.js";
-import type { AuthUser, LoginBody, LoginResponse } from "./auth.schemas.js";
+import {
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+} from "../../lib/tokens.js";
+import type {
+  AuthUser,
+  LoginBody,
+  LoginResponse,
+  RefreshResponse,
+} from "./auth.schemas.js";
 
+/** Intentos fallidos antes de bloquear la cuenta. */
 const MAX_LOGIN_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5);
+/** Minutos de bloqueo tras superar MAX_LOGIN_ATTEMPTS. */
 const LOCK_MINUTES = Number(process.env.LOGIN_LOCK_MINUTES ?? 15);
 
+/** Proyecta User de Prisma al contrato AuthUser (sin secretos). */
 function toAuthUser(user: User): AuthUser {
   return {
     id: user.id,
@@ -23,6 +35,7 @@ function toAuthUser(user: User): AuthUser {
   };
 }
 
+/** Emite access + refresh firmados con la tokenVersion actual. */
 function issueTokens(user: User): LoginResponse {
   const accessToken = signAccessToken({
     sub: user.id,
@@ -135,4 +148,45 @@ export async function getMe(userId: string): Promise<{ user: AuthUser }> {
   }
 
   return { user: toAuthUser(user) };
+}
+
+/**
+ * Renueva access (y rota refresh) a partir de un refresh JWT válido.
+ * Si tokenVersion no coincide, la sesión ya fue invalidada (logout).
+ */
+export async function refreshSession(
+  refreshToken: string,
+): Promise<RefreshResponse> {
+  let payload;
+  try {
+    payload = verifyRefreshToken(refreshToken);
+  } catch {
+    throw new AppError(401, "invalid_refresh", "Refresh inválido o expirado");
+  }
+
+  const user = await prisma.user.findFirst({
+    where: {
+      id: payload.sub,
+      deletedAt: null,
+    },
+  });
+
+  if (!user || !user.state || user.tokenVersion !== payload.v) {
+    throw new AppError(401, "invalid_refresh", "Refresh inválido o expirado");
+  }
+
+  return issueTokens(user);
+}
+
+/**
+ * Invalida todos los JWT del usuario subiendo tokenVersion.
+ * El access/refresh viejos dejan de pasar authenticate / refresh.
+ */
+export async function logoutUser(userId: string): Promise<void> {
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      tokenVersion: { increment: 1 },
+    },
+  });
 }

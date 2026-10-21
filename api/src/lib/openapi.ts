@@ -6,14 +6,17 @@ import { z } from "./zod.js";
 import {
   loginBodySchema,
   loginResponseSchema,
+  logoutResponseSchema,
   meResponseSchema,
+  refreshBodySchema,
+  refreshResponseSchema,
 } from "../modules/auth/auth.schemas.js";
 import { healthResponseSchema } from "../modules/health/health.schemas.js";
 
 const registry = new OpenAPIRegistry();
 
-/** Header X-Client para login web vs iOS. */
-const loginHeadersSchema = z.object({
+/** Header X-Client para login / refresh web vs iOS. */
+const clientHeadersSchema = z.object({
   "x-client": z.enum(["web", "ios"]),
 });
 
@@ -50,7 +53,7 @@ registry.registerPath({
   description:
     "Autentica con email y password. Header X-Client: web | ios. Web recibe refresh en cookie HttpOnly; iOS en el body.",
   request: {
-    headers: loginHeadersSchema,
+    headers: clientHeadersSchema,
     body: {
       content: {
         "application/json": {
@@ -75,6 +78,37 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/refresh",
+  tags: ["Auth"],
+  summary: "Refresh",
+  description:
+    "Emite nuevo access token. Web: cookie refreshToken. iOS: body.refreshToken.",
+  request: {
+    headers: clientHeadersSchema,
+    body: {
+      content: {
+        "application/json": {
+          schema: refreshBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Tokens renovados",
+      content: {
+        "application/json": {
+          schema: refreshResponseSchema,
+        },
+      },
+    },
+    400: { description: "X-Client inválido" },
+    401: { description: "Refresh inválido o ausente" },
+  },
+});
+
+registry.registerPath({
   method: "get",
   path: "/api/v1/auth/me",
   tags: ["Auth"],
@@ -87,6 +121,27 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: meResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token o token inválido" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/logout",
+  tags: ["Auth"],
+  summary: "Logout",
+  description:
+    "Invalida la sesión (tokenVersion++) y borra la cookie refresh en web.",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Sesión cerrada",
+      content: {
+        "application/json": {
+          schema: logoutResponseSchema,
         },
       },
     },

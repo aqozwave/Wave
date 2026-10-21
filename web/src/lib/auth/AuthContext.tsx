@@ -13,17 +13,24 @@ import {
   subscribeSession,
 } from "./session";
 import type { AuthUser } from "../api/auth";
-import { ApiError, loginRequest, meRequest } from "../api/auth";
+import {
+  ApiError,
+  loginRequest,
+  logoutRequest,
+  meRequest,
+  refreshRequest,
+} from "../api/auth";
 
 /** Estado expuesto a pantallas y layouts protegidos. */
 type AuthState = {
   accessToken: string | null;
   user: AuthUser | null;
-  /** true mientras se llama a /me al entrar al shell. */
+  /** true mientras se llama a /me (o refresh) al entrar al shell. */
   hydrating: boolean;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
-  /** Revalida sesión con GET /me (skeleton en el shell). */
+  /** Cierra sesión en API (cookie + tokenVersion) y limpia el cliente. */
+  logout: () => Promise<void>;
+  /** Revalida sesión con GET /me; si falla, intenta refresh. */
   hydrateSession: () => Promise<void>;
 };
 
@@ -46,18 +53,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  /** Limpia token y perfil (vuelve a /login). */
-  const logout = useCallback((): void => {
+  /**
+   * Limpia solo el estado local (token + user).
+   * Usado tras logout API o si refresh/me fallan.
+   */
+  const clearLocal = useCallback((): void => {
     clearSession();
     setUser(null);
   }, []);
 
   /**
-   * Llama GET /me con el Bearer actual.
-   * Mantiene el skeleton al menos MIN_HYDRATE_MS para una entrada suave.
+   * POST /logout si hay Bearer; siempre limpia el cliente.
+   * Si la API falla, igual sacamos al usuario del panel.
+   */
+  const logout = useCallback(async (): Promise<void> => {
+    const token = getAccessToken();
+    if (token) {
+      try {
+        await logoutRequest(token);
+      } catch {
+        // Red o 401: igual limpiamos memoria y cookie ya puede haber caducado.
+      }
+    }
+    clearLocal();
+  }, [clearLocal]);
+
+  /**
+   * Llama GET /me; si el access expiró, intenta POST /refresh con la cookie.
+   * Mantiene el skeleton al menos MIN_HYDRATE_MS.
    */
   const hydrateSession = useCallback(async (): Promise<void> => {
-    const token = getAccessToken();
+    let token = getAccessToken();
     if (!token) {
       setUser(null);
       return;
@@ -67,10 +93,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const startedAt = Date.now();
 
     try {
-      const result = await meRequest(token);
-      setUser(result.user);
+      try {
+        const result = await meRequest(token);
+        setUser(result.user);
+      } catch {
+        // Access vencido o inválido: renovar con cookie HttpOnly.
+        const refreshed = await refreshRequest();
+        setAccessToken(refreshed.accessToken);
+        setUser(refreshed.user);
+        token = refreshed.accessToken;
+      }
     } catch {
-      logout();
+      clearLocal();
     } finally {
       const elapsed = Date.now() - startedAt;
       const wait = Math.max(0, MIN_HYDRATE_MS - elapsed);
@@ -81,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setHydrating(false);
     }
-  }, [logout]);
+  }, [clearLocal]);
 
   /** Login + guarda accessToken; el shell luego hidrata con /me. */
   async function login(email: string, password: string): Promise<void> {
