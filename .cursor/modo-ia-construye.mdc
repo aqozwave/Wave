@@ -1,0 +1,63 @@
+---
+description: MODO IA CONSTRUYE (por defecto en Wave). La IA escribe el código por pasos; Francisco valida y aprueba cada paso.
+alwaysApply: true
+---
+
+# Modo IA CONSTRUYE (por defecto)
+
+La IA implementa; Francisco revisa y aprueba. El contexto del repo está en `wave-project.mdc` (stack, secciones, auth, diseño, zonas sensibles).
+El otro modo, `modo-yo-construyo.mdc` (Francisco programa, la IA enseña), solo se usa si lo invoca. Nunca ambos a la vez.
+
+## 1. Rol y herramientas
+- La IA escribe el código del paso, lo prueba y lo presenta. No espera a que Francisco lo escriba.
+- Puede leer Linear, Notion y Figma (specs y diseño) y actualizar avances.
+
+## 2. Tamaño del paso
+Una ruta completa por paso: schemas Zod, service, controller, routes, request en `http/` y su pantalla web. Una sección se construye ruta por ruta, en el orden de `wave-project.mdc` §7: tabla → Prisma Studio → endpoint en Bruno → pantalla → ETL.
+
+## 3. Puede hacer sin preguntar
+- Crear y editar los archivos del paso.
+- Correr `npx tsc --noEmit`, lint y build.
+- Un commit por paso aprobado, en inglés: `feat(api): …`, `feat(web): …`, `chore(etl): …`.
+- Push y PR solo cuando Francisco diga "listo".
+
+## 4. Siempre con aprobación previa
+- Cambios en `schema.prisma` (proponer, esperar OK, recién entonces `prisma migrate dev` en la BD local).
+- Instalar o actualizar dependencias: proponer con qué problema resuelve, estado de mantenimiento y alternativa sin la librería.
+- Decisiones abiertas de `wave-project.mdc` §10, contratos de API y reglas de negocio no escritas (máximo 3 preguntas, con opciones).
+
+## 5. Nunca sin pedido explícito
+Merge, borrar archivos, tocar `.env*` o secretos, `prisma migrate reset`, ETL con `--apply`, `migrate deploy` contra staging/prod, escribir en la Mongo de producción, refactorizar código que ya funciona, renombrar "para mejorar", agregar features no pedidas, comandos destructivos. Nunca commitear tokens ni códigos MFA en `http/`.
+
+## 6. Estilo de código
+- Código en inglés, comentarios en español.
+- Toda función con regla de negocio lleva comentario del porqué.
+- Estructura robusta, lógica interna simple y lineal. Sin abstracciones, `try/catch` ni configuración especulativa.
+- Un componente = una carpeta; sin archivos de más.
+- Seguir las convenciones de `wave-project.mdc` §3.3 (error `{ code, message, details? }`, `/api/v1`, paginación, nombres Prisma).
+
+## 7. Cómo presentar cada paso
+1. Resumen corto.
+2. Archivos tocados.
+3. Diff.
+4. Cómo probarlo (request de Bruno y resultado esperado).
+5. Supuestos tomados.
+6. Qué queda fuera.
+7. Qué sigue.
+8. "En una frase": la regla de negocio del paso en lenguaje simple.
+Después, esperar aprobación. Si hiciste algo que Francisco probablemente no habría escrito así, decí por qué.
+
+## 8. Sin evidencia no hay éxito
+No decir "funciona" sin haberlo ejecutado (Bruno, `tsc`, build). Si algo no se pudo probar, decirlo. Si el CI queda en rojo, se arregla antes de seguir.
+
+## 9. Verificación de sección
+No se empieza la sección siguiente hasta cerrar la actual con: happy path, un error esperado, integración con lo anterior y regresión (login, refresh y una ruta protegida). Entregar los pasos concretos con resultado esperado.
+
+## 10. Plantilla de arranque
+```
+Sección N — [nombre]
+Objetivo: [una frase]
+Ruta(s): [método y ruta]
+Fuera de alcance: [qué no tocar]
+Empezá con la primera ruta, presentala según §7 y esperá mi aprobación.
+```

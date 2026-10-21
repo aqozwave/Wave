@@ -1,0 +1,286 @@
+---
+description: Contexto y plan del proyecto Wave — "Portal Nachipa Wellboats" (reescritura desde cero: TypeScript + Express 5 + Prisma + PostgreSQL + React)
+alwaysApply: true
+---
+
+# Wave (Portal Nachipa Wellboats) — Contexto del proyecto
+
+> **Nombres:** el sistema se llama **Wave** en código (repo, paquetes, variables de entorno, logs). En la interfaz, el nombre visible para el usuario es **Portal Nachipa Wellboats** (título de pestaña, login, correos).
+
+> Complementa `.cursor/modo-ia-construye.mdc` (modo por defecto: la IA construye, Francisco valida). **Este documento tiene precedencia** en lo propio del repo. No repite las reglas generales: solo lo propio de este repo.
+>
+> Rol: depende del modo activo. Por defecto **la IA construye y Francisco valida** (`modo-ia-construye`). Si Francisco invoca `modo-yo-construyo`, la IA es profesora y él escribe la implementación.
+
+---
+
+## 1. Qué es este proyecto
+
+- Reescritura **desde cero** del Portal Nachipa actual (repo `Prisma`: Express 5 + MongoDB/Mongoose + React 18 JS).
+- Es un **sistema nuevo y separado**. No se copia código del sistema viejo: se usa solo como **referencia funcional** (qué hace cada pantalla y endpoint).
+- Los datos de Mongo se modelan como **base relacional** en PostgreSQL y se cargan con un ETL. La carga a producción es **al final**, pero el ETL se escribe y se prueba **sección por sección** contra un clon (ver §7).
+- La API sirve a **dos clientes**: la web React y una app iOS (SwiftUI) que se hará después.
+
+---
+
+## 2. Stack
+
+| Capa | Tecnología |
+|---|---|
+| Lenguaje | **TypeScript** (strict) en API y web |
+| API | Node LTS + **Express 5** |
+| Validación / contratos | **Zod**, con un middleware propio `validate(schema)` |
+| ORM / migraciones | **Prisma ORM** (`prisma migrate`) |
+| Base de datos | **PostgreSQL** (local en Docker) |
+| Email | **Resend** + plantillas con React Email |
+| Docs API | OpenAPI desde los schemas Zod (librería a decidir en Sección 0, p. ej. `zod-to-openapi` + `swagger-ui-express`) |
+| Colección HTTP | **Bruno** (colección versionada en `http/`, dentro del repo) |
+| Web | React + Vite + Tailwind 4 + React Router + TanStack Query |
+| Cliente tipado web | Generado desde el OpenAPI (decisión #5) |
+| Cliente iOS (futuro) | `swift-openapi-generator` desde el mismo OpenAPI |
+
+> Todas las librerías de esta tabla siguen sujetas a §8 de las reglas generales: **antes de instalar cada una, proponela y esperá mi OK**.
+>
+> **Python queda como complemento futuro** (ETL, reportes y KPIs, IoT), no como backend de Wave.
+
+---
+
+## 3. Arquitectura
+
+### 3.1 Estructura de carpetas (propuesta, confirmar en Sección 0)
+
+```
+wave/
+├── api/
+│   ├── prisma/
+│   │   ├── schema.prisma
+│   │   └── migrations/
+│   ├── src/
+│   │   ├── app.ts              ← crea la app Express y monta middlewares globales y routers
+│   │   ├── server.ts           ← arranca el listen
+│   │   ├── middlewares/        ← authenticate, requireRole, validate, errorHandler
+│   │   ├── lib/                ← prisma (cliente único), resend, logger
+│   │   ├── modules/
+│   │   │   └── <domain>/
+│   │   │       ├── <domain>.routes.ts
+│   │   │       ├── <domain>.controller.ts
+│   │   │       ├── <domain>.schemas.ts
+│   │   │       └── <domain>.service.ts
+│   │   ├── jobs/
+│   │   └── emails/             ← plantillas React Email
+│   └── etl/                    ← scripts Mongo → Postgres, uno por entidad
+├── web/
+│   └── src/
+│       ├── pages/<Page>/
+│       ├── components/<Component>/
+│       └── lib/api/            ← cliente HTTP / tipos generados
+└── http/                       ← colección Bruno (archivos .bru), una carpeta por módulo
+```
+
+### 3.2 Capas de la API (fijas, no se fusionan — §5 general)
+
+`routes` → `controller` → `schemas` (Zod) → `service` → Prisma Client
+
+- **routes:** `express.Router()` con la cadena explícita de middlewares por ruta: `authenticate` → `requireRole` → `validate(schema)` → controller. Sin lógica.
+- **controller:** lee `req`, llama al service, arma la respuesta HTTP con `res.status().json()`; la respuesta pasa por el schema de salida (`schema.parse`) para no filtrar campos. No toca Prisma.
+- **schemas:** Zod de params, query, body y response. Es el **contrato** (§3.1 general: contrato primero).
+- **service:** reglas de negocio + acceso a datos con Prisma. No conoce `req` ni `res`.
+
+```mermaid
+flowchart LR
+    W[Web React] -->|cookie refresh + Bearer| R
+    I[App iOS] -->|Bearer + refresh en Keychain| R
+    R[routes] --> C[controller]
+    C --> S[service]
+    S --> P[(Prisma → PostgreSQL)]
+    S --> E[Resend]
+    J[jobs] --> S
+```
+
+### 3.3 Convenciones
+
+- Modelos Prisma en `PascalCase` singular, tablas en `snake_case` plural con `@@map`. Campos en `camelCase` con `@map` a `snake_case`.
+- Todas las tablas migradas desde Mongo llevan `legacyMongoId String? @unique @map("legacy_mongo_id")`.
+- Fechas: `DateTime` → `timestamptz`. La API responde ISO 8601.
+- Rutas bajo `/api/v1`.
+- Formato único de error: `{ code, message, details? }`. Sin stack trace en la respuesta.
+- Paginación con `page` / `limit` → `{ items, total, page, limit }` (confirmar en Sección 0).
+- Commits: `feat(api): …` / `feat(web): …` / `chore(etl): …`.
+
+### 3.4 Bruno (colección HTTP)
+
+- La colección vive en `http/` dentro del repo y se versiona con git: queda igual en Mac y Windows.
+- Una carpeta por módulo (`http/health`, `http/auth`, `http/businesses`…), un archivo `.bru` por request.
+- Entornos de Bruno `local` y `staging` con `baseUrl` y el token como variable; **los secretos no se commitean** (variables secretas de Bruno o `.env` ignorado).
+- Login guarda el access token en una variable de entorno con un script post-response, para reutilizarlo en las rutas protegidas.
+- Cada ruta nueva se agrega a la colección (§9 general) y esas mismas requests son los pasos de la verificación de sección (§6.3).
+
+---
+
+## 4. Auth para dos clientes
+
+| Cliente | Access token | Refresh token |
+|---|---|---|
+| Web | En memoria, header `Authorization: Bearer` | Cookie HttpOnly, mismo origen vía proxy Vite |
+| iOS | Header `Authorization: Bearer` | En el body de la respuesta; la app lo guarda en Keychain |
+
+- El mismo endpoint de login sirve a ambos. Cómo distingue el cliente se decide en la Sección 1 (pausa §11).
+- Las contraseñas siguen con **bcrypt**, así los hashes del sistema viejo migran sin forzar un reset.
+
+---
+
+## 5. Zonas sensibles — no se tocan
+
+- Archivos `.env*` y secretos (JWT, `RESEND_API_KEY`, `DATABASE_URL`, `MONGO_URI`).
+- La **BD Mongo de producción** se usa solo en **lectura**, y solo desde los scripts ETL.
+- Scripts ETL con `--apply`, `prisma migrate reset` y cualquier `DROP`: **no se ejecutan** sin pedido explícito.
+- `prisma migrate deploy` contra staging/prod: nunca sin pedido explícito.
+- Envío real de correos: en desarrollo, Resend solo con el dominio/destinatarios de prueba.
+
+---
+
+## 6. Tests — override de §9 general
+
+- Al arrancar **no hay runner**. La regla §9 queda suspendida hasta que yo decida agregar uno (propuesta en Sección 0, pausa §8).
+- La verificación **manual es obligatoria**: cada ruta nueva se prueba a mano en **Bruno** y se guarda en `http/`.
+- **No suspende §6.3**: cada sección cierra con su verificación de punta a punta + regresión.
+
+---
+
+## 7. Plan de secciones (vertical slices)
+
+Orden fijado por dependencias de FK. **No se pasa a la siguiente sin la verificación de sección cumplida** (§6.3 general).
+
+Cada sección tiene el mismo esqueleto:
+
+1. **Contrato:** modelo Prisma + schemas Zod de request/response.
+2. **Migración:** `prisma migrate dev` con nombre descriptivo.
+3. **Backend:** service → controller → routes, y sus requests en Bruno.
+4. **Web:** página que consume el endpoint con datos reales.
+5. **ETL:** script `etl/<entity>.ts` que lleva esa entidad desde el clon de Mongo, en dry-run y luego con `--apply` contra la BD local.
+6. **Verificación de sección** + regresión de Auth.
+
+**Forma de avanzar (la que me sirve para aprender):**
+
+- Primero la **ruta base** (`/health`) probada en Bruno, después **auth**, y luego cada entidad.
+- En cada paso que cree o cambie tablas, **mostrame cómo verlas reales** en **Prisma Studio** (`npx prisma studio`): que existan, sus columnas y relaciones, y las filas que dejó el seed o el ETL.
+- Cada endpoint nuevo se prueba en Bruno **antes** de conectarlo a la pantalla.
+- Orden visible en cada sección: tabla creada → vista en Prisma Studio → endpoint probado en Bruno → pantalla con datos reales.
+
+| # | Sección | Entidades (Mongo → Postgres) | Pantallas web de referencia (sistema viejo) | Verificación clave |
+|---|---|---|---|---|
+| 0 | Fundaciones | — | Shell con layout + indicador de salud de la API | `GET /api/v1/health` 200 en Bruno y visible en la web; Swagger abre; migración vacía aplica |
+| 1 | Auth y usuarios | User, Role, LoginChallenge | Login, Register, ConfirmEmail, ResendConfirmation, ForgotPassword, ResetPassword, Profile | Login 200 / 401; ruta protegida 401 sin token y 200 con token; refresh; correo de confirmación vía Resend; bloqueo por intentos |
+| 2 | Empresas | Business | EmpresasPage | CRUD; solo superadmin crea |
+| 3 | Ubicaciones | Location | LocationPage | FK a Business; aislamiento por empresa |
+| 4 | Áreas | Area | AreaPage | FK a Location; `User.areaId` obligatorio excepto superadmin |
+| 5 | Catálogos | Rank, AcademicDegree, CompetencyCertificate, Course, Muelle, Travesia | RolPage, TituloPage, CertificadoPage, CursosHomePage, MuellePage | Aislamiento por `businessId`; FK inexistente rechazada |
+| 6 | Roles y permisos (admin) | Role (UI de gestión) | RolesPage | Cambiar un permiso cambia el acceso real a una ruta |
+| 7 | Tripulantes | CrewMember, CrewMemberDocument, CrewMemberMuelle, CrewMemberTravesia | ActivosPage, EmbarcadosPage | Ficha completa; subida y descarga de documentos; aislamiento |
+| 8 | Cursos de tripulantes | CrewMemberCourse, CompetencyCertificateCourse | Cursos por tripulante | Vencimientos calculados correctos contra datos migrados |
+| 9 | Notificaciones | NotificationOutbox, settings | NotificacionesVencimientoPage, OutboxNotificacionesPage | Job genera filas en outbox; envío por Resend; reintento ante fallo |
+| 10 | Auditoría y sistema | ActivityLog, SystemAnnouncement, SystemState | ActivityLogsPage, anuncios | Acciones de secciones previas quedan registradas |
+| 11 | Dashboard / KPIs | Lecturas agregadas | Dashboard | Endpoints `/api/v1/dashboard/*` listos también para iOS |
+| 12 | Corte a producción | Todas | — | ETL completo sobre clon fresco; conteos y checksums por tabla; smoke test; plan de rollback |
+
+### Verificaciones obligatorias en secciones con tenant (2–10)
+
+| Prueba | Esperado |
+|---|---|
+| Usuario de empresa A pide recurso de empresa B | 403/404, nunca los datos |
+| Crear recurso sin `businessId` (no superadmin) | Rechazado por validación |
+| FK a entidad inexistente | Error de validación, nunca fila huérfana |
+| Superadmin sin `areaId` | Permitido (única excepción) |
+
+### Verificación del ETL en cada sección
+
+| Prueba | Esperado |
+|---|---|
+| Dry-run | Reporta cuántos documentos migraría y cuáles fallarían, sin escribir |
+| `--apply` sobre BD local vacía | Conteo Postgres = conteo Mongo (menos los descartados reportados) |
+| Re-ejecutar `--apply` | Idempotente: no duplica (upsert por `legacyMongoId`) |
+| FK resueltas | Ninguna fila apunta a un `legacyMongoId` que no exista |
+
+**Regresión mínima al cerrar cada sección:** login, refresh y una ruta protegida de Auth, más el happy path de la sección anterior.
+
+---
+
+## 8. Cómo arrancar cada sesión con Cursor
+
+Usar la plantilla de `modo-ia-construye.mdc` §8 (o la §14 de `modo-yo-construyo.mdc` si él quiere programar):
+
+```
+Objetivo de hoy: [una frase]
+Slice/feature: Sección N — [nombre]
+Alcance: [qué SÍ entra]
+Fuera de alcance: [qué NO entra]
+
+Empezá con el plan y el diagrama. No escribas la implementación todavía,
+pero sí mostrame el código de referencia explicado según §2,
+con cierre "En una frase" y Glosario del paso.
+```
+
+- Una sección se parte en **micro-tareas** (§6). Si el plan de una sección tiene más de ~5 pasos, partila.
+- En el glosario, este stack agrega términos nuevos para mí: `Router`, `Request<Params, ResBody, ReqBody, Query>`, `NextFunction`, declaration merging de `req.user`, `z.infer`, `prisma.$transaction`, `include` / `select`, `@relation`, `@@map`, `upsert`, y en Bruno: entornos, variables y scripts post-response. Explicalos la primera vez que aparezcan.
+
+---
+
+## 9. Referencia al sistema viejo
+
+- Repo local (solo lectura): `/Users/daeselixir/Desktop/DEVELOPMENTS/Prisma` (`core-api/` + `client/`).
+- Se puede **leer** para entender reglas de negocio (modelos en `core-api/src/models`, services en `core-api/src/services`, jobs en `core-api/src/jobs`).
+- **No se modifica** ese repo desde este proyecto.
+- Al citar el sistema viejo, indicar ruta y líneas verificadas (§2.2 general).
+
+### Diseño
+
+- **Fuente de verdad visual:** archivo Figma del design system de Wave (https://www.figma.com/design/7g6AyBtnWuq8cEBT2WsK5f).
+- Tokens = variables de Figma (colecciones `Primitives`, `Color`, `Layout`). Cada variable tiene su nombre CSS en code syntax (`var(--…)`): usar esos nombres en el `@theme` de Tailwind 4.
+- **Estilo visual: neutro tipo SaaS moderno** (referencia FlowAI): fondo gris muy claro (`neutral/50–100`), tarjetas blancas con borde de 1 px y casi sin sombra, radios de 12–16 px, grises `neutral/*` para el texto y **acento navy Nachipa `#004c8c`** (botón principal, links, ítem activo con fondo gris suave y texto oscuro). El color se reserva para los estados (verde, ámbar, rojo). KPIs tipo tarjeta-en-tarjeta con variación semanal; tablas con encabezado gris redondeado y acciones en texto (Ver · Editar).
+- **Tipografía: Inter** (misma base que Havko). Escala UI 12 / 13 / 15 / 20 / 28 / 40. Regular para cuerpo, Semi Bold para títulos y KPIs, Bold solo en portadas. Números de tabla y montos con `tabular-nums`, alineados a la derecha. Estilos de texto `Heading/*`, `Body/*`, `Label/*`, `Caption/*`, `Overline/*`.
+- **Íconos: Lucide** vía `lucide-react` (kit Havko): 20×20, `strokeWidth={1.5}`, sin relleno, un solo color (`--color-icon-default`; `status/*` en estados). El nombre en Figma `icon/<categoría>/<nombre>` es el mismo nombre de Lucide. No usar otra familia ni íconos náuticos decorativos. `lucide-react` se propone según §8 antes de instalar.
+- Componentes en Figma = componentes React (una carpeta por componente, §5 general): Button, IconButton, TextField, SearchInput, Select, Checkbox, StatusChip, InfoBanner, Toast, SidebarItem, Sidebar, Topbar, Tab, KpiCard, TableHeaderCell, TableCell, TablePagination, ToolbarControl, Modal.
+- Tablas = patrón **DataTable** (ver pantallas Embarcados y Panel en Figma): encabezado gris neutro con orden por columna, filas de 44–52 px con borde suave, checkbox de selección, celda Persona (avatar + nombre + RUN), celda Fecha (fecha + chip + "Vence en N d"), menú kebab en Acciones y toolbar compacta (h32) dentro de la tarjeta.
+- Pantallas de referencia en la página `Screens`: Login, Panel principal, Empresas, Empresas + modal, Tripulantes embarcados.
+- Un componente se porta a TSX cuando una pantalla de la sección actual lo necesita, no antes.
+- Si Figma y el portal viejo difieren, preguntar cuál manda (§11).
+
+---
+
+## 10. Decisiones pendientes (pausa §11 — preguntar antes de asumir)
+
+| # | Decisión | Opciones | Se resuelve en |
+|---|---|---|---|
+| 1 | ~~Nombre del sistema~~ **Resuelto:** Wave (código) / Portal Nachipa Wellboats (visible) | — | — |
+| 2 | Monorepo o dos repos; gestor de paquetes | npm workspaces / pnpm / repos separados | Sección 0 |
+| 3 | Tipo de ID | `uuid` / `cuid` / `bigint` autoincremental | Sección 0 |
+| 4 | Soft delete | `deletedAt` en todas las tablas / solo en algunas | Sección 0 |
+| 5 | Cliente tipado en web | `openapi-typescript` + `openapi-fetch` / `orval` / schemas Zod compartidos | Sección 0 |
+| 6 | ~~Colección HTTP~~ **Resuelto:** Bruno, colección en `http/` | — | — |
+| 7 | Runner de tests | Ninguno por ahora / Vitest + Supertest | Sección 0 |
+| 8 | ~~Cómo distingue el login web vs iOS~~ **Resuelto:** Header `X-Client: web \| ios` (un solo `/login`) | — | Sección 1 |
+| 9 | Almacenamiento de archivos | Disco local / Cloudflare R2 / S3 | Sección 7 |
+| 10 | Jobs | `node-cron` / BullMQ (requiere Redis) | Sección 9 |
+| 11 | Hosting de API, web y Postgres | A definir | Sección 12 |
+| 12 | Base Notion para registrar micro-tareas (§6.2) | La que yo indique | Antes de Sección 0 |
+
+---
+
+## 11. Estado
+
+| # | Sección | Estado |
+|---|---|---|
+| 0 | Fundaciones | Hecha (health, Prisma baseline, Bruno, web HealthStatus) |
+| 1 | Auth y usuarios | En curso — API core OK (RBAC, login+MFA, JWT, `/me`); falta logout Bruno, register/confirm/reset, Login UI + idle 1h, OpenAPI auth |
+| 2 | Empresas | Pendiente |
+| 3 | Ubicaciones | Pendiente |
+| 4 | Áreas | Pendiente |
+| 5 | Catálogos | Pendiente |
+| 6 | Roles y permisos | Pendiente |
+| 7 | Tripulantes | Pendiente |
+| 8 | Cursos de tripulantes | Pendiente |
+| 9 | Notificaciones | Pendiente |
+| 10 | Auditoría y sistema | Pendiente |
+| 11 | Dashboard / KPIs | Pendiente |
+| 12 | Corte a producción | Pendiente |
+
+Un paso a la vez, con mi confirmación antes de avanzar. **Ninguna sección se marca hecha sin su verificación cumplida.**
