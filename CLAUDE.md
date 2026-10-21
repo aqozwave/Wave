@@ -1,6 +1,6 @@
 # Wave — Portal Nachipa Wellboats
 
-Leer siempre:
+Las reglas viven en `.cursor/rules/` (una sola fuente para Cursor y Claude Code):
 
-1. @.cursor/modo-ia-construye.mdc — la IA construye por pasos, Francisco valida y aprueba.
-2. @.cursor/wave-project.mdc — contexto del repo (stack, secciones, auth, diseño, zonas sensibles).
+@.cursor/rules/modo-ia-construye.mdc
+@.cursor/rules/wave-project.mdc

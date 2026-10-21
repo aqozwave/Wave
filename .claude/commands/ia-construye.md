@@ -1,3 +1,3 @@
-Activa el modo IA CONSTRUYE (por defecto). Lee `.cursor/modo-ia-construye.mdc` y `.cursor/wave-project.mdc` y síguelos.
+Activa el modo IA CONSTRUYE. Lee `.cursor/rules/modo-ia-construye.mdc` y `.cursor/rules/wave-project.mdc` y síguelos.
 
 Tarea: $ARGUMENTS

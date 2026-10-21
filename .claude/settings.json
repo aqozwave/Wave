@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npx tsc --noEmit)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Bash(git merge:*)",
+      "Bash(git push --force:*)",
+      "Bash(npx prisma migrate reset:*)",
+      "Bash(npx prisma migrate deploy:*)",
+      "Bash(rm -rf:*)"
+    ]
+  }
+}
