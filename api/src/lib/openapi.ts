@@ -6,6 +6,8 @@ import { z } from "./zod.js";
 import {
   confirmEmailBodySchema,
   confirmEmailResponseSchema,
+  forgotPasswordBodySchema,
+  forgotPasswordResponseSchema,
   loginBodySchema,
   loginResponseSchema,
   logoutResponseSchema,
@@ -16,6 +18,8 @@ import {
   registerResponseSchema,
   resendConfirmationBodySchema,
   resendConfirmationResponseSchema,
+  resetPasswordBodySchema,
+  resetPasswordResponseSchema,
 } from "../modules/auth/auth.schemas.js";
 import { healthResponseSchema } from "../modules/health/health.schemas.js";
 
@@ -141,6 +145,66 @@ registry.registerPath({
     },
     400: { description: "Validación" },
     502: { description: "Fallo al enviar con Resend" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/forgot-password",
+  tags: ["Auth"],
+  summary: "Forgot password",
+  description:
+    "Solicita enlace de reset. Respuesta siempre igual (anti-enumeración).",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: forgotPasswordBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Mensaje genérico",
+      content: {
+        "application/json": {
+          schema: forgotPasswordResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación" },
+    502: { description: "Fallo al enviar con Resend" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/reset-password",
+  tags: ["Auth"],
+  summary: "Reset password",
+  description:
+    "Cambia la contraseña con el token del correo. Invalida sesiones previas (tokenVersion++).",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: resetPasswordBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Contraseña actualizada",
+      content: {
+        "application/json": {
+          schema: resetPasswordResponseSchema,
+        },
+      },
+    },
+    400: { description: "Token inválido/expirado o validación" },
+    403: { description: "Usuario desactivado" },
   },
 });
 

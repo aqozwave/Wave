@@ -2,13 +2,26 @@ import { createHash, randomBytes } from "node:crypto";
 import { EmailTokenPurpose } from "@prisma/client";
 import { prisma } from "./prisma.js";
 
-/** Minutos de validez del enlace de confirmación (24h, como el portal viejo). */
+/** Minutos de validez del enlace de confirmación (24h por defecto). */
 const CONFIRM_EXPIRES_MINUTES = Number(
   process.env.EMAIL_CONFIRM_EXPIRES_MINUTES ?? 1440,
 );
 
+/** Minutos de validez del enlace de reset (1h por defecto). */
+const RESET_EXPIRES_MINUTES = Number(
+  process.env.EMAIL_RESET_EXPIRES_MINUTES ?? 60,
+);
+
 /** Bytes del token en claro (32 → 64 hex). */
 const TOKEN_BYTES = 32;
+
+/** Caducidad según el propósito del token. */
+function expiresMinutesFor(purpose: EmailTokenPurpose): number {
+  if (purpose === EmailTokenPurpose.reset_password) {
+    return RESET_EXPIRES_MINUTES;
+  }
+  return CONFIRM_EXPIRES_MINUTES;
+}
 
 /** SHA-256 hex del token en claro (así no guardamos el secreto en BD). */
 export function hashEmailToken(plain: string): string {
@@ -31,7 +44,7 @@ export async function issueEmailToken(
   const plain = createPlainEmailToken();
   const tokenHash = hashEmailToken(plain);
   const expiresAt = new Date(
-    Date.now() + CONFIRM_EXPIRES_MINUTES * 60 * 1000,
+    Date.now() + expiresMinutesFor(purpose) * 60 * 1000,
   );
 
   // Un solo confirm activo por usuario: marcamos usados los anteriores.

@@ -148,3 +148,44 @@ export type ResendConfirmationBody = z.infer<
 export type ResendConfirmationResponse = z.infer<
   typeof resendConfirmationResponseSchema
 >;
+
+/** Body de “olvidé mi contraseña” (público; anti-enumeración). */
+export const forgotPasswordBodySchema = z.object({
+  email: z.email().trim().toLowerCase(),
+});
+
+export const forgotPasswordRequestSchema = z.object({
+  body: forgotPasswordBodySchema,
+});
+
+export const forgotPasswordResponseSchema = z
+  .object({
+    message: z.string(),
+  })
+  .openapi("ForgotPasswordResponse");
+
+export type ForgotPasswordBody = z.infer<typeof forgotPasswordBodySchema>;
+export type ForgotPasswordResponse = z.infer<
+  typeof forgotPasswordResponseSchema
+>;
+
+/** Body de reset: token del mail + nueva contraseña. */
+export const resetPasswordBodySchema = z.object({
+  token: z.string().min(1),
+  // Misma barra mínima que register.
+  password: z.string().min(8),
+});
+
+export const resetPasswordRequestSchema = z.object({
+  body: resetPasswordBodySchema,
+});
+
+export const resetPasswordResponseSchema = z
+  .object({
+    message: z.string(),
+    user: authUserSchema,
+  })
+  .openapi("ResetPasswordResponse");
+
+export type ResetPasswordBody = z.infer<typeof resetPasswordBodySchema>;
+export type ResetPasswordResponse = z.infer<typeof resetPasswordResponseSchema>;

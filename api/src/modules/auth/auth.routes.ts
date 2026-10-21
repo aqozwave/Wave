@@ -4,19 +4,23 @@ import { requireSuperadmin } from "../../middlewares/requireSuperadmin.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   confirmEmailHandler,
+  forgotPasswordHandler,
   loginHandler,
   logoutHandler,
   meHandler,
   refreshHandler,
   registerHandler,
   resendConfirmationHandler,
+  resetPasswordHandler,
 } from "./auth.controller.js";
 import {
   confirmEmailRequestSchema,
+  forgotPasswordRequestSchema,
   loginRequestSchema,
   refreshRequestSchema,
   registerRequestSchema,
   resendConfirmationRequestSchema,
+  resetPasswordRequestSchema,
 } from "./auth.schemas.js";
 
 /** Rutas de autenticación bajo /api/v1/auth. */
@@ -50,6 +54,24 @@ authRouter.post(
   validate(resendConfirmationRequestSchema),
   (req, res, next) => {
     resendConfirmationHandler(req, res).catch(next);
+  },
+);
+
+// Público: pide enlace de reset (mensaje fijo).
+authRouter.post(
+  "/forgot-password",
+  validate(forgotPasswordRequestSchema),
+  (req, res, next) => {
+    forgotPasswordHandler(req, res).catch(next);
+  },
+);
+
+// Público: aplica nueva contraseña con el token del correo.
+authRouter.post(
+  "/reset-password",
+  validate(resetPasswordRequestSchema),
+  (req, res, next) => {
+    resetPasswordHandler(req, res).catch(next);
   },
 );
 

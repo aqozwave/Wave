@@ -2,17 +2,21 @@ import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
   confirmEmailResponseSchema,
+  forgotPasswordResponseSchema,
   loginResponseSchema,
   logoutResponseSchema,
   meResponseSchema,
   refreshResponseSchema,
   registerResponseSchema,
   resendConfirmationResponseSchema,
+  resetPasswordResponseSchema,
   type ConfirmEmailBody,
+  type ForgotPasswordBody,
   type LoginBody,
   type RefreshBody,
   type RegisterBody,
   type ResendConfirmationBody,
+  type ResetPasswordBody,
 } from "./auth.schemas.js";
 import {
   confirmEmailAccount,
@@ -21,7 +25,9 @@ import {
   logoutUser,
   refreshSession,
   registerUser,
+  requestPasswordReset,
   resendAccountConfirmation,
+  resetPasswordWithToken,
 } from "./auth.service.js";
 
 /** Nombre de la cookie HttpOnly del refresh (web). */
@@ -211,5 +217,31 @@ export async function resendConfirmationHandler(
   const body = req.body as ResendConfirmationBody;
   const result = await resendAccountConfirmation(body.email);
   const bodyOut = resendConfirmationResponseSchema.parse(result);
+  res.status(200).json(bodyOut);
+}
+
+/**
+ * POST /forgot-password — pide reset; mensaje fijo (anti-enumeración).
+ */
+export async function forgotPasswordHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const body = req.body as ForgotPasswordBody;
+  const result = await requestPasswordReset(body.email);
+  const bodyOut = forgotPasswordResponseSchema.parse(result);
+  res.status(200).json(bodyOut);
+}
+
+/**
+ * POST /reset-password — aplica nueva contraseña con el token del mail.
+ */
+export async function resetPasswordHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const body = req.body as ResetPasswordBody;
+  const result = await resetPasswordWithToken(body.token, body.password);
+  const bodyOut = resetPasswordResponseSchema.parse(result);
   res.status(200).json(bodyOut);
 }

@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { render } from "@react-email/render";
 import { isEmailConfigured, sendEmail } from "../lib/resend.js";
 import { ConfirmEmail } from "./ConfirmEmail.js";
+import { getLogoAttachment } from "./emailBrand.js";
 
 /** Base del front para armar el enlace del correo. */
 const WEB_APP_URL = (
@@ -75,5 +76,6 @@ export async function sendConfirmEmail(
     to: input.to,
     subject: SUBJECT,
     html,
+    attachments: [getLogoAttachment()],
   });
 }

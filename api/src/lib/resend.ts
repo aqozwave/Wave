@@ -27,11 +27,19 @@ function getResendClient(): Resend | null {
   return client;
 }
 
+/** Adjunto opcional (logo inline vía contentId → cid: en el HTML). */
+export type EmailAttachment = {
+  filename: string;
+  content: Buffer;
+  contentId?: string;
+};
+
 /** Parámetros mínimos de un envío transaccional. */
 export type SendEmailInput = {
   to: string;
   subject: string;
   html: string;
+  attachments?: EmailAttachment[];
 };
 
 /**
@@ -53,6 +61,7 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
     to: input.to,
     subject: input.subject,
     html: input.html,
+    attachments: input.attachments,
   });
 
   if (error) {

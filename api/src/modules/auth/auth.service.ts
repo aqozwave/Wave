@@ -1,5 +1,6 @@
 import { EmailTokenPurpose, type User } from "@prisma/client";
 import { sendConfirmEmail } from "../../emails/sendConfirmEmail.js";
+import { sendResetPasswordEmail } from "../../emails/sendResetPassword.js";
 import { AppError } from "../../lib/errors.js";
 import {
   hashEmailToken,
@@ -15,12 +16,14 @@ import {
 import type {
   AuthUser,
   ConfirmEmailResponse,
+  ForgotPasswordResponse,
   LoginBody,
   LoginResponse,
   RefreshResponse,
   RegisterBody,
   RegisterResponse,
   ResendConfirmationResponse,
+  ResetPasswordResponse,
 } from "./auth.schemas.js";
 
 /** Intentos fallidos antes de bloquear la cuenta. */
@@ -356,6 +359,105 @@ export async function confirmEmailAccount(
 
   return {
     message: "Cuenta confirmada. Ya puedes iniciar sesión.",
+    user: toAuthUser(user),
+  };
+}
+
+/**
+ * Mensaje fijo de forgot-password (anti-enumeración).
+ */
+const PASSWORD_RESET_REQUEST_MESSAGE =
+  "Si el correo está registrado, recibirás un enlace para restablecer la contraseña.";
+
+/**
+ * Emite EmailToken reset_password y envía (o stubbea) el correo.
+ */
+async function issueAndSendPasswordReset(user: User): Promise<void> {
+  const { plain, expiresAt } = await issueEmailToken(
+    user.id,
+    EmailTokenPurpose.reset_password,
+  );
+
+  await sendResetPasswordEmail({
+    to: user.email,
+    firstName: user.firstName,
+    plainToken: plain,
+    expiresAt,
+  });
+}
+
+/**
+ * Solicita reset: siempre el mismo mensaje; solo envía si hay usuario activo.
+ */
+export async function requestPasswordReset(
+  email: string,
+): Promise<ForgotPasswordResponse> {
+  const user = await prisma.user.findFirst({
+    where: {
+      email,
+      deletedAt: null,
+      state: true,
+    },
+  });
+
+  if (user) {
+    await issueAndSendPasswordReset(user);
+  }
+
+  return { message: PASSWORD_RESET_REQUEST_MESSAGE };
+}
+
+/**
+ * Cambia la contraseña con el token del correo.
+ * Invalida el token y sube tokenVersion (cierra sesiones previas).
+ */
+export async function resetPasswordWithToken(
+  plainToken: string,
+  newPassword: string,
+): Promise<ResetPasswordResponse> {
+  const tokenHash = hashEmailToken(plainToken);
+
+  const record = await prisma.emailToken.findFirst({
+    where: {
+      tokenHash,
+      purpose: EmailTokenPurpose.reset_password,
+      usedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    include: { user: true },
+  });
+
+  if (!record || record.user.deletedAt) {
+    throw new AppError(
+      400,
+      "invalid_reset_token",
+      "Enlace de restablecimiento inválido o expirado",
+    );
+  }
+
+  if (!record.user.state) {
+    throw new AppError(403, "user_disabled", "Usuario desactivado");
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+
+  const [, user] = await prisma.$transaction([
+    prisma.emailToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    }),
+    prisma.user.update({
+      where: { id: record.userId },
+      data: {
+        passwordHash,
+        // Cierra access/refresh emitidos antes del cambio.
+        tokenVersion: { increment: 1 },
+      },
+    }),
+  ]);
+
+  return {
+    message: "Contraseña actualizada. Ya puedes iniciar sesión.",
     user: toAuthUser(user),
   };
 }
