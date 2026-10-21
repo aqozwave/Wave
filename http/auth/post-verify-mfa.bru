@@ -23,20 +23,37 @@ body:json {
 }
 
 docs {
-  Tras Post login (web) con MFA: copiá challengeId y el código del mail (o stub en log) a las vars del entorno.
-  No commitear códigos reales.
+  Orden obligatorio:
+  1) Post login (web) → llena mfaChallengeId (sin accessToken).
+  2) Environments → local → pegá el código del mail en mfaCode → Save.
+  3) Corré ESTE request (Post verify-mfa). El script guarda accessToken.
+  4) Recién ahí Get me.
+  Pegar mfaCode solo NO llena accessToken. No commitear códigos.
 }
 
 script:pre-request {
-  if (!bru.getEnvVar("mfaChallengeId") || !bru.getEnvVar("mfaCode")) {
-    throw new Error("Definí mfaChallengeId y mfaCode en el entorno local");
+  // Leemos del entorno activo (evita {{mfaCode}} literal si no interpola).
+  const challengeId = bru.getEnvVar("mfaChallengeId");
+  const code = String(bru.getEnvVar("mfaCode") ?? "").trim();
+  if (!challengeId || !code) {
+    throw new Error(
+      "Save el entorno local con mfaChallengeId + mfaCode, y corré este Post verify-mfa (no Get me)",
+    );
   }
+  req.setBody(
+    JSON.stringify({
+      challengeId,
+      code,
+    }),
+  );
 }
 
 script:post-response {
-  if (res.status === 200 && res.body.accessToken) {
-    bru.setVar("accessToken", res.body.accessToken);
-    bru.setEnvVar("accessToken", res.body.accessToken);
+  const body = res.getBody();
+  if (res.getStatus() !== 200 || !body) return;
+  if (body.accessToken) {
+    bru.setVar("accessToken", body.accessToken);
+    bru.setEnvVar("accessToken", body.accessToken);
   }
 }
 

@@ -15,10 +15,13 @@ auth:bearer {
 }
 
 script:pre-request {
-  // Sin login previo el literal "{{accessToken}}" llega a la API y responde 401.
+  // Sin token el literal "{{accessToken}}" llega a la API y responde 401.
+  // Con MFA: Login → pegar mfaCode → Post verify-mfa → recién ahí hay accessToken.
   const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
   if (!token) {
-    throw new Error("Elegí el entorno local y corré antes Post login (web)");
+    throw new Error(
+      "Sin accessToken. Con MFA: Post login (web) → mfaCode del mail → Post verify-mfa → Get me",
+    );
   }
 }
 

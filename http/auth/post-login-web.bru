@@ -35,12 +35,16 @@ assert {
 script:post-response {
   const body = res.getBody();
   if (res.getStatus() !== 200 || !body) return;
+  // MFA: no hay token aún; limpiamos uno viejo para no engañar a Get me.
+  if (body.mfaRequired && body.challengeId) {
+    bru.setEnvVar("mfaChallengeId", body.challengeId);
+    bru.setEnvVar("accessToken", "");
+    bru.setVar("accessToken", "");
+    return;
+  }
   if (body.accessToken) {
     bru.setVar("accessToken", body.accessToken);
     bru.setEnvVar("accessToken", body.accessToken);
-  }
-  if (body.mfaRequired && body.challengeId) {
-    bru.setEnvVar("mfaChallengeId", body.challengeId);
   }
 }
 
