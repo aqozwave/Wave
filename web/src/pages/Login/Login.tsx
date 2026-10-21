@@ -66,7 +66,6 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   /** Si hay challenge, mostramos el paso MFA en lugar del form de clave. */
   const [mfa, setMfa] = useState<MfaChallenge | null>(null);
   const [mfaCode, setMfaCode] = useState("");
@@ -95,7 +94,6 @@ export function Login() {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError(null);
     setSubmitting(true);
 
     try {
@@ -111,11 +109,11 @@ export function Login() {
       showToast("Sesión iniciada correctamente.", "success");
       navigate("/", { replace: true });
     } catch (err) {
+      // Feedback solo por Toast (Figma), no alert inline en el form.
       const message =
         err instanceof ApiError
           ? err.message
           : "No se pudo iniciar sesión. Reintentá.";
-      setError(message);
       showToast(message, "danger");
     } finally {
       setSubmitting(false);
@@ -127,7 +125,6 @@ export function Login() {
     if (!mfa) {
       return;
     }
-    setError(null);
     setSubmitting(true);
     try {
       await verifyMfa(mfa.challengeId, mfaCode.trim());
@@ -136,7 +133,6 @@ export function Login() {
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : "Código inválido. Reintentá.";
-      setError(message);
       showToast(message, "danger");
       // Baja el contador local al fallar (el API no expone remainingAttempts en error).
       if (err instanceof ApiError && err.code === "mfa_invalid_code") {
@@ -162,7 +158,6 @@ export function Login() {
     if (!mfa || resendIn > 0) {
       return;
     }
-    setError(null);
     setSubmitting(true);
     try {
       const next = await resendMfaRequest(mfa.challengeId);
@@ -179,7 +174,6 @@ export function Login() {
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : "No se pudo reenviar el código.";
-      setError(message);
       showToast(message, "danger");
       if (err instanceof ApiError && err.code === "mfa_code_expired") {
         setMfa(null);
@@ -195,7 +189,6 @@ export function Login() {
   function onUseAnotherAccount() {
     setMfa(null);
     setMfaCode("");
-    setError(null);
     setAttemptsLeft(MFA_MAX_ATTEMPTS);
     setResendIn(0);
   }
@@ -278,15 +271,6 @@ export function Login() {
                 El código expira en {expiresMinutes} minutos · Intentos
                 restantes: {attemptsLeft}
               </p>
-
-              {error ? (
-                <p
-                  role="alert"
-                  className="w-full rounded-[var(--radius-md)] border border-[var(--color-status-danger-fg)]/20 bg-[var(--color-status-danger-bg)] px-3 py-2 text-[13px] text-[var(--color-status-danger-fg)]"
-                >
-                  {error}
-                </p>
-              ) : null}
 
               <Button
                 type="submit"
@@ -394,15 +378,6 @@ export function Login() {
                   ¿Olvidaste tu contraseña?
                 </Link>
               </div>
-
-              {error ? (
-                <p
-                  role="alert"
-                  className="w-full rounded-[var(--radius-md)] border border-[var(--color-status-danger-fg)]/20 bg-[var(--color-status-danger-bg)] px-3 py-2 text-[13px] text-[var(--color-status-danger-fg)]"
-                >
-                  {error}
-                </p>
-              ) : null}
 
               <Button
                 type="submit"

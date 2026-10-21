@@ -4,31 +4,32 @@ import { Lock } from "lucide-react";
 import { AuthFormLayout } from "../../components/AuthFormLayout/AuthFormLayout";
 import { Button } from "../../components/Button/Button";
 import { TextField } from "../../components/TextField/TextField";
+import { useToast } from "../../components/Toast/ToastProvider";
 import { ApiError, resetPasswordRequest } from "../../lib/api/auth";
 
 /**
  * Aplica nueva contraseña con ?token= del correo (POST /auth/reset-password).
+ * Errores y éxito por Toast.
  */
 export function ResetPassword() {
+  const { showToast } = useToast();
   const [params] = useSearchParams();
   const token = params.get("token")?.trim() ?? "";
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError(null);
 
     if (password.length < 8) {
-      setError("La contraseña debe tener al menos 8 caracteres.");
+      showToast("La contraseña debe tener al menos 8 caracteres.", "danger");
       return;
     }
     if (password !== confirm) {
-      setError("Las contraseñas no coinciden.");
+      showToast("Las contraseñas no coinciden.", "danger");
       return;
     }
 
@@ -36,11 +37,13 @@ export function ResetPassword() {
     try {
       await resetPasswordRequest(token, password);
       setDone(true);
+      showToast("Contraseña actualizada.", "success");
     } catch (err) {
-      setError(
+      showToast(
         err instanceof ApiError
           ? err.message
           : "No se pudo actualizar la contraseña.",
+        "danger",
       );
     } finally {
       setSubmitting(false);
@@ -69,12 +72,12 @@ export function ResetPassword() {
       subtitle="Elegí una contraseña de al menos 8 caracteres"
     >
       {done ? (
-        <p
-          role="status"
-          className="w-full rounded-[var(--radius-md)] border border-[var(--color-status-success-fg)]/20 bg-[var(--color-status-success-bg)] px-3 py-2 text-center text-[13px] text-[var(--color-status-success-fg)]"
-        >
+        <p className="w-full text-center text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
           Contraseña actualizada. Ya podés{" "}
-          <Link to="/login" className="font-semibold underline">
+          <Link
+            to="/login"
+            className="font-semibold text-[var(--color-nachipa-primary)] hover:underline"
+          >
             iniciar sesión
           </Link>
           .
@@ -105,14 +108,6 @@ export function ResetPassword() {
             required
             leadingIcon={<Lock strokeWidth={1.5} aria-hidden />}
           />
-          {error ? (
-            <p
-              role="alert"
-              className="w-full rounded-[var(--radius-md)] border border-[var(--color-status-danger-fg)]/20 bg-[var(--color-status-danger-bg)] px-3 py-2 text-[13px] text-[var(--color-status-danger-fg)]"
-            >
-              {error}
-            </p>
-          ) : null}
           <Button
             type="submit"
             disabled={submitting || !password || !confirm}

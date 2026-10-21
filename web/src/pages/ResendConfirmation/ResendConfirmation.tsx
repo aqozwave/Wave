@@ -3,29 +3,32 @@ import { Mail } from "lucide-react";
 import { AuthFormLayout } from "../../components/AuthFormLayout/AuthFormLayout";
 import { Button } from "../../components/Button/Button";
 import { TextField } from "../../components/TextField/TextField";
+import { useToast } from "../../components/Toast/ToastProvider";
 import { ApiError, resendConfirmationRequest } from "../../lib/api/auth";
 
 /**
  * Reenvía el mail de confirmación (POST /auth/resend-confirmation).
+ * Feedback por Toast (sin alert inline en el form).
  */
 export function ResendConfirmation() {
+  const { showToast } = useToast();
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [doneMessage, setDoneMessage] = useState<string | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError(null);
     setSubmitting(true);
     try {
       const result = await resendConfirmationRequest(email.trim());
       setDoneMessage(result.message);
+      showToast(result.message, "success");
     } catch (err) {
-      setError(
+      showToast(
         err instanceof ApiError
           ? err.message
           : "No se pudo reenviar el correo. Reintentá.",
+        "danger",
       );
     } finally {
       setSubmitting(false);
@@ -38,10 +41,7 @@ export function ResendConfirmation() {
       subtitle="Si tu cuenta aún no está activada, te mandamos un nuevo enlace"
     >
       {doneMessage ? (
-        <p
-          role="status"
-          className="w-full rounded-[var(--radius-md)] border border-[var(--color-status-success-fg)]/20 bg-[var(--color-status-success-bg)] px-3 py-2 text-center text-[13px] text-[var(--color-status-success-fg)]"
-        >
+        <p className="w-full text-center text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
           {doneMessage}
         </p>
       ) : (
@@ -61,14 +61,6 @@ export function ResendConfirmation() {
             required
             leadingIcon={<Mail strokeWidth={1.5} aria-hidden />}
           />
-          {error ? (
-            <p
-              role="alert"
-              className="w-full rounded-[var(--radius-md)] border border-[var(--color-status-danger-fg)]/20 bg-[var(--color-status-danger-bg)] px-3 py-2 text-[13px] text-[var(--color-status-danger-fg)]"
-            >
-              {error}
-            </p>
-          ) : null}
           <Button type="submit" disabled={submitting || !email}>
             {submitting ? "Enviando…" : "Reenviar correo"}
           </Button>

@@ -3,30 +3,32 @@ import { Mail } from "lucide-react";
 import { AuthFormLayout } from "../../components/AuthFormLayout/AuthFormLayout";
 import { Button } from "../../components/Button/Button";
 import { TextField } from "../../components/TextField/TextField";
+import { useToast } from "../../components/Toast/ToastProvider";
 import { ApiError, forgotPasswordRequest } from "../../lib/api/auth";
 
 /**
  * Solicita enlace de reset (POST /auth/forgot-password).
- * Mensaje genérico aunque el email no exista.
+ * Feedback por Toast; mensaje genérico aunque el email no exista.
  */
 export function ForgotPassword() {
+  const { showToast } = useToast();
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [doneMessage, setDoneMessage] = useState<string | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError(null);
     setSubmitting(true);
     try {
       const result = await forgotPasswordRequest(email.trim());
       setDoneMessage(result.message);
+      showToast(result.message, "success");
     } catch (err) {
-      setError(
+      showToast(
         err instanceof ApiError
           ? err.message
           : "No se pudo enviar el correo. Reintentá.",
+        "danger",
       );
     } finally {
       setSubmitting(false);
@@ -39,10 +41,7 @@ export function ForgotPassword() {
       subtitle="Te enviamos un enlace si el correo está registrado"
     >
       {doneMessage ? (
-        <p
-          role="status"
-          className="w-full rounded-[var(--radius-md)] border border-[var(--color-status-success-fg)]/20 bg-[var(--color-status-success-bg)] px-3 py-2 text-center text-[13px] text-[var(--color-status-success-fg)]"
-        >
+        <p className="w-full text-center text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
           {doneMessage}
         </p>
       ) : (
@@ -62,14 +61,6 @@ export function ForgotPassword() {
             required
             leadingIcon={<Mail strokeWidth={1.5} aria-hidden />}
           />
-          {error ? (
-            <p
-              role="alert"
-              className="w-full rounded-[var(--radius-md)] border border-[var(--color-status-danger-fg)]/20 bg-[var(--color-status-danger-bg)] px-3 py-2 text-[13px] text-[var(--color-status-danger-fg)]"
-            >
-              {error}
-            </p>
-          ) : null}
           <Button type="submit" disabled={submitting || !email}>
             {submitting ? "Enviando…" : "Enviar enlace"}
           </Button>

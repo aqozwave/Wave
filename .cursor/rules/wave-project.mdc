@@ -270,7 +270,7 @@ con cierre "En una frase" y Glosario del paso.
 | # | Sección | Estado |
 |---|---|---|
 | 0 | Fundaciones | Hecha (health, Prisma baseline, Bruno, web HealthStatus) |
-| 1 | Auth y usuarios | En curso — API core OK (RBAC, login+MFA, JWT, `/me`); falta logout Bruno, register/confirm/reset, Login UI + idle 1h, OpenAPI auth |
+| 1 | Auth y usuarios | Hecha — login+MFA, JWT, `/me`, refresh, logout, register/confirm/reset, Toast, idle 1h, Bruno + OpenAPI auth |
 | 2 | Empresas | Pendiente |
 | 3 | Ubicaciones | Pendiente |
 | 4 | Áreas | Pendiente |
