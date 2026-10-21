@@ -7,7 +7,7 @@ alwaysApply: true
 
 > **Nombres:** el sistema se llama **Wave** en código (repo, paquetes, variables de entorno, logs). En la interfaz, el nombre visible para el usuario es **Portal Nachipa Wellboats** (título de pestaña, login, correos).
 
-> Complementa `.cursor/modo-ia-construye.mdc` (modo por defecto: la IA construye, Francisco valida). **Este documento tiene precedencia** en lo propio del repo. No repite las reglas generales: solo lo propio de este repo.
+> Complementa `.cursor/rules/modo-ia-construye.mdc` (modo por defecto: la IA construye, Francisco valida). **Este documento tiene precedencia** en lo propio del repo. No repite las reglas generales: solo lo propio de este repo.
 >
 > Rol: depende del modo activo. Por defecto **la IA construye y Francisco valida** (`modo-ia-construye`).
 
