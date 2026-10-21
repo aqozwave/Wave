@@ -1,0 +1,35 @@
+meta {
+  name: Post business forbidden
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/businesses
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "intruso"
+  }
+}
+
+docs {
+  Sin Bearer → 401. Con token de no-superadmin → 403 (probar cuando exista ese usuario).
+}
+
+assert {
+  res.status: eq 401
+  res.body.code: eq unauthorized
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

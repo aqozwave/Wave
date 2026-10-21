@@ -25,6 +25,11 @@ import {
   resetPasswordResponseSchema,
   verifyMfaBodySchema,
 } from "../modules/auth/auth.schemas.js";
+import {
+  createBusinessBodySchema,
+  createBusinessResponseSchema,
+  listBusinessesResponseSchema,
+} from "../modules/businesses/businesses.schemas.js";
 import { healthResponseSchema } from "../modules/health/health.schemas.js";
 
 const registry = new OpenAPIRegistry();
@@ -372,6 +377,66 @@ registry.registerPath({
       },
     },
     401: { description: "Sin token o token inválido" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/businesses",
+  tags: ["Businesses"],
+  summary: "Listar empresas",
+  description:
+    "Superadmin: todas. Admin/user: solo la suya. Requiere Bearer.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().optional(),
+      limit: z.coerce.number().int().positive().max(100).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": {
+          schema: listBusinessesResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token o token inválido" },
+    403: { description: "Usuario sin empresa asignada" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/businesses",
+  tags: ["Businesses"],
+  summary: "Crear empresa",
+  description: "Solo superadmin. Nombre único entre no borradas.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: createBusinessBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Empresa creada",
+      content: {
+        "application/json": {
+          schema: createBusinessResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "No superadmin" },
+    409: { description: "Nombre duplicado" },
   },
 });
 

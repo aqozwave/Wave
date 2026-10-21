@@ -27,11 +27,22 @@ export function validate(schema: RequestSchema) {
     if (parsed.data.body !== undefined) {
       req.body = parsed.data.body;
     }
+    // Express 5: query/params son getters; la asignación simple no pisa el valor.
     if (parsed.data.query !== undefined) {
-      req.query = parsed.data.query as Request["query"];
+      Object.defineProperty(req, "query", {
+        value: parsed.data.query,
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      });
     }
     if (parsed.data.params !== undefined) {
-      req.params = parsed.data.params as Request["params"];
+      Object.defineProperty(req, "params", {
+        value: parsed.data.params,
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      });
     }
 
     next();

@@ -1,0 +1,56 @@
+meta {
+  name: Post business
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/businesses
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "nachipa wellboats demo",
+    "rut": "76.000.000-0",
+    "giro": "Transporte marítimo",
+    "country": "Chile",
+    "commune": "Puerto Montt",
+    "city": "Puerto Montt",
+    "email": "contacto@nachipa-w.com"
+  }
+}
+
+docs {
+  Solo superadmin. Tras 201, volvé a correr Get businesses.
+  Si el nombre ya existe (no borrado) → 409.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error(
+      "Sin accessToken. Corré login + verify-mfa antes (entorno local).",
+    );
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.name: eq nachipa wellboats demo
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
