@@ -163,7 +163,7 @@ erDiagram
 **Tabla:** `users` · **Soft delete:** sí (`deleted_at`)  
 **Índices:** `(email)`, `(username)` · **UK:** `legacy_mongo_id`  
 **FK hoy:** `role_id` → `roles.id` · `business_id` → `businesses.id`  
-**FK pendientes:** `location_id` (S3); `area_id` (S4) — columnas sin constraint aún  
+**FK:** `location_id` → `locations.id` (S3) · **pendiente:** `area_id` (S4)  
 **Referencias:** portal viejo `Prisma/core-api/src/models/User.js` · Wave Auth Sección 1
 
 | # | Prisma | Columna Postgres | Tipo | N | D | Notas |
@@ -182,7 +182,7 @@ erDiagram
 | 12 | `state` | `state` | `boolean` | | `true` | |
 | 13 | `confirmed` | `confirmed` | `boolean` | | `false` | mail de confirmación |
 | 14 | `businessId` | `business_id` | `uuid` | ✓ | | FK → `businesses.id`; Idx |
-| 15 | `locationId` | `location_id` | `uuid` | ✓ | | placeholder S3 |
+| 15 | `locationId` | `location_id` | `uuid` | ✓ | | FK → `locations.id` |
 | 16 | `areaId` | `area_id` | `uuid` | ✓ | | placeholder S4 |
 | 17 | `tokenVersion` | `token_version` | `int` | | `0` | invalida JWT en logout |
 | 18 | `lastLoginAt` | `last_login_at` | `timestamptz` | ✓ | | |
@@ -271,7 +271,7 @@ Alineado a `Prisma/core-api/src/models/Business.js`.
 
 **Campo Mongo no llevado (por ahora):** `deletedBy` (ObjectId → User).
 
-**Relaciones Prisma:** `users User[]`.
+**Relaciones Prisma:** `users User[]`, `locations Location[]`.
 
 **Permisos (opción A, 2026-10-21):**
 
@@ -291,6 +291,39 @@ Alineado a `Prisma/core-api/src/models/Business.js`.
 | Schemas Zod | `Prisma/core-api/src/schemas/business/business.schemas.js` |
 | Service | `Prisma/core-api/src/services/business/business.service.js` |
 | UI | `Prisma/client/src/pages/EmpresasPage.jsx` |
+
+---
+
+## `locations` — modelo Prisma `Location` (Sección 3)
+
+Alineado a `Prisma/core-api/src/models/Location.js`.  
+**Migraciones:** `20261022145716_add_location`, `20261022145722_locations_name_business_active_unique`.
+
+**Tabla:** `locations` · **Soft delete:** sí · **UK:** `legacy_mongo_id`; unique parcial `(business_id, lower(name))` donde `deleted_at IS NULL`  
+**FK:** `business_id` → `businesses.id` (`ON DELETE RESTRICT`) · `users.location_id` → `locations.id`
+
+| # | Prisma | Columna Postgres | Tipo | N | D | Notas / Mongo |
+|---|---|---|---|---|---|---|
+| 1 | `id` | `id` | `uuid` | | `gen_uuid` | PK |
+| 2 | `legacyMongoId` | `legacy_mongo_id` | `text` | ✓ | | UK; ETL desde `_id` |
+| 3 | `name` | `name` | `text` | | | required; unique soft por empresa |
+| 4 | `businessId` | `business_id` | `uuid` | | | FK → `businesses`; Mongo `businessID` |
+| 5 | `country` | `country` | `text` | ✓ | `"Chile"` | |
+| 6 | `commune` | `commune` | `text` | ✓ | | |
+| 7 | `city` | `city` | `text` | ✓ | | |
+| 8 | `phone` | `phone` | `text` | ✓ | | |
+| 9 | `email` | `email` | `text` | ✓ | | |
+| 10 | `description` | `description` | `text` | ✓ | | |
+| 11 | `state` | `state` | `boolean` | | `true` | |
+| 12 | `deletedAt` | `deleted_at` | `timestamptz` | ✓ | | soft delete |
+| 13 | `createdAt` | `created_at` | `timestamptz` | | `now()` | |
+| 14 | `updatedAt` | `updated_at` | `timestamptz` | | auto | |
+
+**Campo Mongo no llevado (por ahora):** `deletedBy`.
+
+**Relaciones Prisma:** `business`, `users User[]`.
+
+**Referencias código viejo:** `Prisma/core-api/src/models/Location.js`, rutas `location/location.routes.js`.
 
 ---
 

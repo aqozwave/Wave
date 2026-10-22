@@ -58,10 +58,11 @@ model User {
   role          Role?     @relation(fields: [roleId], references: [id])
   state         Boolean   @default(true)
   confirmed     Boolean   @default(false)
-  // Tenant: FK a businesses (Sección 2). location/area cuando existan (S3–S4).
+  // Tenant: business (S2), location (S3); area cuando exista (S4).
   businessId    String?   @map("business_id") @db.Uuid
   business      Business? @relation(fields: [businessId], references: [id])
   locationId    String?   @map("location_id") @db.Uuid
+  location      Location? @relation(fields: [locationId], references: [id])
   areaId        String?   @map("area_id") @db.Uuid
   tokenVersion  Int       @default(0) @map("token_version")
   lastLoginAt   DateTime? @map("last_login_at") @db.Timestamptz
@@ -98,9 +99,34 @@ model Business {
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   users         User[]
+  locations     Location[]
 
   @@index([name])
   @@map("businesses")
+}
+
+/// Ubicación (sede) de una empresa. Soft delete; nombre único por business entre no borradas.
+model Location {
+  id            String    @id @default(uuid()) @db.Uuid
+  legacyMongoId String?   @unique @map("legacy_mongo_id")
+  name          String
+  businessId    String    @map("business_id") @db.Uuid
+  business      Business  @relation(fields: [businessId], references: [id])
+  country       String?   @default("Chile")
+  commune       String?
+  city          String?
+  phone         String?
+  email         String?
+  description   String?
+  state         Boolean   @default(true)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  users         User[]
+
+  @@index([businessId])
+  @@index([name, businessId])
+  @@map("locations")
 }
 
 /// Challenge MFA de login: código de 6 dígitos por correo (hash en BD).
