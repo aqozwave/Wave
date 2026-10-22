@@ -7,15 +7,17 @@ import { useIdleTimeout } from "./lib/auth/useIdleTimeout";
 import { ConfirmEmail } from "./pages/ConfirmEmail/ConfirmEmail";
 import { ForgotPassword } from "./pages/ForgotPassword/ForgotPassword";
 import { Login } from "./pages/Login/Login";
+import { Empresas } from "./pages/Empresas/Empresas";
 import { Panel } from "./pages/Panel/Panel";
 import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmation";
 import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
 
 /**
  * Exige access token y aplica idle 1h: sin actividad → logout + /login.
+ * Espera el bootstrap (refresh por cookie) antes de mandar a /login en un F5.
  */
 function RequireAuth() {
-  const { accessToken, logout } = useAuth();
+  const { accessToken, bootstrapped, logout } = useAuth();
   const navigate = useNavigate();
 
   /** Cierra sesión por inactividad (misma ruta que “Cerrar sesión”). */
@@ -27,6 +29,11 @@ function RequireAuth() {
   }, [logout, navigate]);
 
   useIdleTimeout(Boolean(accessToken), onIdle);
+
+  // Todavía intentando recuperar sesión desde la cookie refresh.
+  if (!bootstrapped) {
+    return null;
+  }
 
   if (!accessToken) {
     return <Navigate to="/login" replace />;
@@ -69,7 +76,7 @@ function ShellLayout() {
 
   return (
     <AppShell>
-      <div className="animate-enter">
+      <div className="animate-enter flex min-h-0 min-w-0 flex-1 flex-col">
         <Outlet />
       </div>
     </AppShell>
@@ -88,6 +95,7 @@ export function App() {
       <Route element={<RequireAuth />}>
         <Route element={<ShellLayout />}>
           <Route index element={<Panel />} />
+          <Route path="empresas" element={<Empresas />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

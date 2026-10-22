@@ -12,8 +12,8 @@ type TopbarProps = {
 };
 
 /**
- * Topbar breadcrumb (Figma 2:442): blanco/neutro.
- * Usado en pantallas tipo Empresas; el Panel S1 lleva header propio.
+ * Topbar breadcrumb (Figma 2:442 / S5).
+ * Sin fondo blanco ni borde: hereda el gris de la página (#f9fafc).
  */
 export function Topbar({
   breadcrumb,
@@ -22,7 +22,7 @@ export function Topbar({
   actions,
 }: TopbarProps) {
   return (
-    <header className="flex h-14 w-full shrink-0 items-center gap-3 bg-[var(--color-tremor-background)] px-6">
+    <header className="flex h-[72px] w-full shrink-0 items-center gap-3 bg-transparent px-6">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <BreadcrumbIcon
           size={16}

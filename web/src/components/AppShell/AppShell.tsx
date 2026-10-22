@@ -8,18 +8,17 @@ type AppShellProps = {
 };
 
 /**
- * Shell del portal (Figma S1): sidebar + área main.
- * El header de página (Bienvenido / acciones) vive dentro de cada pantalla.
+ * Shell del portal (Figma S1/S5): sidebar + main.
+ * Sin padding propio: cada pantalla controla scroll y márgenes
+ * (Empresas necesita Topbar a ancho completo sin desbordar).
  */
 export function AppShell({ children }: AppShellProps) {
   return (
-    <div className="flex h-full min-h-0 bg-[var(--color-nachipa-bg-page)]">
+    <div className="flex h-full min-h-0 overflow-hidden bg-[var(--color-nachipa-bg-page)]">
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="min-h-0 flex-1 overflow-auto px-7 py-[22px]">
-          {children}
-        </div>
-      </div>
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {children}
+      </main>
     </div>
   );
 }

@@ -167,7 +167,7 @@ export function Panel() {
     : "usuario";
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-7 py-[22px]">
       {/* Header S1 (133:4710): saludo + búsqueda + iconos + exportar + UserMenu */}
       <header className="flex items-center gap-2.5">
         <div className="min-w-0 flex-1">

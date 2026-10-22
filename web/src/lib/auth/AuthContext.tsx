@@ -27,6 +27,11 @@ import {
 type AuthState = {
   accessToken: string | null;
   user: AuthUser | null;
+  /**
+   * false hasta terminar el bootstrap de arranque (refresh por cookie).
+   * RequireAuth espera esto antes de redirigir a /login.
+   */
+  bootstrapped: boolean;
   /** true mientras se llama a /me (o refresh) al entrar al shell. */
   hydrating: boolean;
   /**
@@ -50,12 +55,47 @@ const AuthContext = createContext<AuthState | null>(null);
 /** Tiempo mínimo del skeleton al entrar (evita flash si /me es muy rápido). */
 const MIN_HYDRATE_MS = 450;
 
+/**
+ * Una sola promesa de bootstrap por carga de página.
+ * Evita doble refresh en StrictMode (rotar cookie dos veces → 401).
+ */
+let bootstrapInFlight: Promise<void> | null = null;
+
+/**
+ * Restaura sesión tras F5: el access vive en memoria y se pierde;
+ * el refresh HttpOnly en cookie permite obtener uno nuevo.
+ */
+async function restoreSessionFromCookie(
+  clearLocal: () => void,
+  setUser: (user: AuthUser | null) => void,
+): Promise<void> {
+  const existing = getAccessToken();
+  if (existing) {
+    try {
+      const result = await meRequest(existing);
+      setUser(result.user);
+      return;
+    } catch {
+      // Access inválido: seguir con refresh.
+    }
+  }
+
+  try {
+    const refreshed = await refreshRequest();
+    setAccessToken(refreshed.accessToken);
+    setUser(refreshed.user);
+  } catch {
+    clearLocal();
+  }
+}
+
 /** Proveedor de sesión: token en memoria + perfil vía /me. */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [accessToken, setTokenState] = useState<string | null>(() =>
     getAccessToken(),
   );
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [bootstrapped, setBootstrapped] = useState(false);
   const [hydrating, setHydrating] = useState(false);
 
   useEffect(() => {
@@ -74,6 +114,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /**
+   * Al montar: si no hay access (recarga), intenta POST /refresh con cookie.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!bootstrapInFlight) {
+      bootstrapInFlight = restoreSessionFromCookie(clearLocal, setUser).finally(
+        () => {
+          bootstrapInFlight = null;
+        },
+      );
+    }
+
+    void bootstrapInFlight.then(() => {
+      if (!cancelled) {
+        setBootstrapped(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clearLocal]);
+
+  /**
    * POST /logout si hay Bearer; siempre limpia el cliente.
    * Si la API falla, igual sacamos al usuario del panel.
    */
@@ -90,32 +155,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearLocal]);
 
   /**
-   * Llama GET /me; si el access expiró, intenta POST /refresh con la cookie.
+   * Revalida /me; si el access falló o no hay token, renueva con cookie.
    * Mantiene el skeleton al menos MIN_HYDRATE_MS.
    */
   const hydrateSession = useCallback(async (): Promise<void> => {
-    let token = getAccessToken();
-    if (!token) {
-      setUser(null);
-      return;
-    }
-
     setHydrating(true);
     const startedAt = Date.now();
 
     try {
-      try {
-        const result = await meRequest(token);
-        setUser(result.user);
-      } catch {
-        // Access vencido o inválido: renovar con cookie HttpOnly.
-        const refreshed = await refreshRequest();
-        setAccessToken(refreshed.accessToken);
-        setUser(refreshed.user);
-        token = refreshed.accessToken;
-      }
-    } catch {
-      clearLocal();
+      await restoreSessionFromCookie(clearLocal, setUser);
     } finally {
       const elapsed = Date.now() - startedAt;
       const wait = Math.max(0, MIN_HYDRATE_MS - elapsed);
@@ -156,6 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         accessToken,
         user,
+        bootstrapped,
         hydrating,
         login,
         verifyMfa,

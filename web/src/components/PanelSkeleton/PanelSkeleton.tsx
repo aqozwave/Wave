@@ -7,7 +7,7 @@ import { Skeleton } from "../Skeleton/Skeleton";
 export function PanelSkeleton() {
   return (
     <div
-      className="flex flex-col gap-6"
+      className="flex flex-1 flex-col gap-6 overflow-auto px-7 py-[22px]"
       role="status"
       aria-busy="true"
       aria-label="Cargando panel"
