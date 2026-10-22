@@ -11,30 +11,25 @@ import {
   listLocationsRequestSchema,
 } from "./locations.schemas.js";
 
-/** Rutas de ubicaciones bajo /api/v1/locations. */
+/**
+ * Rutas de ubicaciones bajo /api/v1/locations.
+ * Express 5: handlers async se pasan directo (rejects → errorHandler).
+ */
 export const locationsRouter = Router();
 
 // Listado: cualquier autenticado; el service filtra por tenant.
 locationsRouter.get(
   "/",
-  (req, res, next) => {
-    authenticate(req, res, next).catch(next);
-  },
+  authenticate,
   validate(listLocationsRequestSchema),
-  (req, res, next) => {
-    listLocationsHandler(req, res).catch(next);
-  },
+  listLocationsHandler,
 );
 
 // Alta: admin o superadmin (portal viejo requireTenantManager).
 locationsRouter.post(
   "/",
-  (req, res, next) => {
-    authenticate(req, res, next).catch(next);
-  },
+  authenticate,
   requireTenantManager,
   validate(createLocationRequestSchema),
-  (req, res, next) => {
-    createLocationHandler(req, res).catch(next);
-  },
+  createLocationHandler,
 );

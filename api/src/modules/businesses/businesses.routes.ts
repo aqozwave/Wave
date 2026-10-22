@@ -17,67 +17,50 @@ import {
   updateBusinessRequestSchema,
 } from "./businesses.schemas.js";
 
-/** Rutas de empresas bajo /api/v1/businesses. */
+/**
+ * Rutas de empresas bajo /api/v1/businesses.
+ * Express 5: handlers async se pasan directo (rejects → errorHandler).
+ */
 export const businessesRouter = Router();
 
 // Listado: cualquier autenticado; el service filtra por tenant.
 businessesRouter.get(
   "/",
-  (req, res, next) => {
-    authenticate(req, res, next).catch(next);
-  },
+  authenticate,
   validate(listBusinessesRequestSchema),
-  (req, res, next) => {
-    listBusinessesHandler(req, res).catch(next);
-  },
+  listBusinessesHandler,
 );
 
 // Alta: solo superadmin (opción A).
 businessesRouter.post(
   "/",
-  (req, res, next) => {
-    authenticate(req, res, next).catch(next);
-  },
+  authenticate,
   requireSuperadmin,
   validate(createBusinessRequestSchema),
-  (req, res, next) => {
-    createBusinessHandler(req, res).catch(next);
-  },
+  createBusinessHandler,
 );
 
 // Detalle por id.
 businessesRouter.get(
   "/:id",
-  (req, res, next) => {
-    authenticate(req, res, next).catch(next);
-  },
+  authenticate,
   validate(getBusinessRequestSchema),
-  (req, res, next) => {
-    getBusinessHandler(req, res).catch(next);
-  },
+  getBusinessHandler,
 );
 
 // Edición: autenticado; service aplica opción A (admin vs superadmin).
 businessesRouter.patch(
   "/:id",
-  (req, res, next) => {
-    authenticate(req, res, next).catch(next);
-  },
+  authenticate,
   validate(updateBusinessRequestSchema),
-  (req, res, next) => {
-    updateBusinessHandler(req, res).catch(next);
-  },
+  updateBusinessHandler,
 );
 
 // Soft delete: solo superadmin.
 businessesRouter.delete(
   "/:id",
-  (req, res, next) => {
-    authenticate(req, res, next).catch(next);
-  },
+  authenticate,
   requireSuperadmin,
   validate(deleteBusinessRequestSchema),
-  (req, res, next) => {
-    deleteBusinessHandler(req, res).catch(next);
-  },
+  deleteBusinessHandler,
 );

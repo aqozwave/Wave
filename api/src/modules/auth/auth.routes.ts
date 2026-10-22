@@ -27,105 +27,68 @@ import {
   verifyMfaRequestSchema,
 } from "./auth.schemas.js";
 
-/** Rutas de autenticación bajo /api/v1/auth. */
+/**
+ * Rutas de autenticación bajo /api/v1/auth.
+ * Express 5: handlers async se pasan directo (rejects → errorHandler).
+ */
 export const authRouter = Router();
 
-// Alta interna: solo superadmin (como el portal viejo; permisos finos en §6).
+// Alta interna: solo superadmin (permisos finos en §6).
 authRouter.post(
   "/register",
-  (req, res, next) => {
-    authenticate(req, res, next).catch(next);
-  },
+  authenticate,
   requireSuperadmin,
   validate(registerRequestSchema),
-  (req, res, next) => {
-    registerHandler(req, res).catch(next);
-  },
+  registerHandler,
 );
 
 // Público: el token del correo demuestra posesión del enlace.
 authRouter.post(
   "/confirm-email",
   validate(confirmEmailRequestSchema),
-  (req, res, next) => {
-    confirmEmailHandler(req, res).catch(next);
-  },
+  confirmEmailHandler,
 );
 
 // Público: reenvío con mensaje fijo (no revela si el email existe).
 authRouter.post(
   "/resend-confirmation",
   validate(resendConfirmationRequestSchema),
-  (req, res, next) => {
-    resendConfirmationHandler(req, res).catch(next);
-  },
+  resendConfirmationHandler,
 );
 
 // Público: pide enlace de reset (mensaje fijo).
 authRouter.post(
   "/forgot-password",
   validate(forgotPasswordRequestSchema),
-  (req, res, next) => {
-    forgotPasswordHandler(req, res).catch(next);
-  },
+  forgotPasswordHandler,
 );
 
 // Público: aplica nueva contraseña con el token del correo.
 authRouter.post(
   "/reset-password",
   validate(resetPasswordRequestSchema),
-  (req, res, next) => {
-    resetPasswordHandler(req, res).catch(next);
-  },
+  resetPasswordHandler,
 );
 
-authRouter.post("/login", validate(loginRequestSchema), (req, res, next) => {
-  loginHandler(req, res).catch(next);
-});
+authRouter.post("/login", validate(loginRequestSchema), loginHandler);
 
 // MFA: verificar código (mismo X-Client que login para cookie/body).
 authRouter.post(
   "/verify-mfa",
   validate(verifyMfaRequestSchema),
-  (req, res, next) => {
-    verifyMfaHandler(req, res).catch(next);
-  },
+  verifyMfaHandler,
 );
 
 authRouter.post(
   "/resend-mfa",
   validate(resendMfaRequestSchema),
-  (req, res, next) => {
-    resendMfaHandler(req, res).catch(next);
-  },
+  resendMfaHandler,
 );
 
-authRouter.post(
-  "/refresh",
-  validate(refreshRequestSchema),
-  (req, res, next) => {
-    refreshHandler(req, res).catch(next);
-  },
-);
+authRouter.post("/refresh", validate(refreshRequestSchema), refreshHandler);
 
-// authenticate → me: Bearer obligatorio; 401 si falta o es inválido.
-authRouter.get(
-  "/me",
-  (req, res, next) => {
-    authenticate(req, res, next).catch(next);
-  },
-  (req, res, next) => {
-    meHandler(req, res).catch(next);
-  },
-);
+// Bearer obligatorio; 401 si falta o es inválido.
+authRouter.get("/me", authenticate, meHandler);
 
-// authenticate → logout: invalida sesión y limpia cookie.
-authRouter.post(
-  "/logout",
-  (req, res, next) => {
-    authenticate(req, res, next).catch(next);
-  },
-  (req, res, next) => {
-    logoutHandler(req, res).catch(next);
-  },
-);
+// Invalida sesión y limpia cookie.
+authRouter.post("/logout", authenticate, logoutHandler);
