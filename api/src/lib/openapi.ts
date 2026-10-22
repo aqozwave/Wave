@@ -35,6 +35,11 @@ import {
   updateBusinessResponseSchema,
 } from "../modules/businesses/businesses.schemas.js";
 import { healthResponseSchema } from "../modules/health/health.schemas.js";
+import {
+  createLocationBodySchema,
+  createLocationResponseSchema,
+  listLocationsResponseSchema,
+} from "../modules/locations/locations.schemas.js";
 
 const registry = new OpenAPIRegistry();
 
@@ -519,6 +524,62 @@ registry.registerPath({
     403: { description: "No superadmin" },
     404: { description: "No encontrada" },
     409: { description: "Tiene dependencias" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/locations",
+  tags: ["Locations"],
+  summary: "Listar ubicaciones",
+  description:
+    "Superadmin: todas (filtro opcional businessId). Admin/user: solo las de su empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().optional(),
+      limit: z.coerce.number().int().positive().max(100).optional(),
+      businessId: z.uuid().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listLocationsResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Usuario sin empresa asignada" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/locations",
+  tags: ["Locations"],
+  summary: "Crear ubicación",
+  description:
+    "Admin o superadmin. Admin: businessId = su empresa. Superadmin: businessId obligatorio. Nombre único por empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createLocationBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Ubicación creada",
+      content: {
+        "application/json": { schema: createLocationResponseSchema },
+      },
+    },
+    400: { description: "Validación o empresa inexistente" },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    409: { description: "Nombre duplicado en la empresa" },
   },
 });
 

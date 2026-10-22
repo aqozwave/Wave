@@ -1,0 +1,69 @@
+meta {
+  name: Post location
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/locations
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Puerto Montt",
+    "businessId": "{{businessId}}",
+    "country": "Chile",
+    "city": "Puerto Montt",
+    "commune": "Puerto Montt"
+  }
+}
+
+docs {
+  Admin o superadmin.
+  Superadmin: businessId obligatorio (usar el de Get businesses / Post business).
+  Admin: businessId se ignora (usa la empresa del token).
+  Nombre único por empresa → 409 si ya existe.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error(
+      "Sin accessToken. Corré login + verify-mfa antes (entorno local).",
+    );
+  }
+  const businessId = bru.getEnvVar("businessId");
+  if (!businessId) {
+    throw new Error(
+      "Sin businessId en el entorno. Corré Get businesses o Post business y guardá el id.",
+    );
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body && body.id) {
+    bru.setEnvVar("locationId", body.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.name: eq puerto montt
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

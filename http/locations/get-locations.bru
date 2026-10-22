@@ -1,0 +1,42 @@
+meta {
+  name: Get locations
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/locations?page=1&limit=20
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Requiere accessToken (login → MFA → verify-mfa).
+  Superadmin: todas. Admin/user: solo las de su empresa.
+  Query opcional: businessId (uuid) para filtrar (útil como superadmin).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error(
+      "Sin accessToken. Corré login + verify-mfa antes (entorno local).",
+    );
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+  res.body.total: isDefined
+  res.body.page: eq 1
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

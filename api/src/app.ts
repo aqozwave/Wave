@@ -6,6 +6,7 @@ import { notFoundHandler } from "./middlewares/notFound.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { businessesRouter } from "./modules/businesses/businesses.routes.js";
 import { healthRouter } from "./modules/health/health.routes.js";
+import { locationsRouter } from "./modules/locations/locations.routes.js";
 
 export function createApp() {
   const app = express();
@@ -21,6 +22,7 @@ export function createApp() {
   app.use("/api/v1/health", healthRouter);
   app.use("/api/v1/auth", authRouter);
   app.use("/api/v1/businesses", businessesRouter);
+  app.use("/api/v1/locations", locationsRouter);
   app.use(notFoundHandler);
   app.use(errorHandler);
 
