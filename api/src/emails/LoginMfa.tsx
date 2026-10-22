@@ -16,7 +16,7 @@ export type LoginMfaProps = {
  */
 export function LoginMfa({ firstName, code, expiresLabel }: LoginMfaProps) {
   // Espaciado visual tipo "380 196".
-  const displayCode = `${code.slice(0, 3)} ${code.slice(3)}`;
+  const displayCode = `${code.slice(0, 3)}${code.slice(3)}`;
 
   return (
     <EmailLayout title="Verificación de acceso">

@@ -11,7 +11,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "db:seed": "tsx --env-file=.env prisma/seed.ts"
+    "db:seed": "tsx --env-file=.env prisma/seed.ts",
+    "etl:business": "tsx --env-file=.env etl/business.ts"
   },
   "prisma": {
     "seed": "tsx --env-file=.env prisma/seed.ts"
@@ -24,6 +25,7 @@
     "argon2": "^0.44.0",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.3",
+    "mongodb": "^6.21.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "resend": "^6.34.1",
