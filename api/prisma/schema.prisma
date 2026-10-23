@@ -73,6 +73,7 @@ model User {
   locationId    String?   @map("location_id") @db.Uuid
   location      Location? @relation(fields: [locationId], references: [id])
   areaId        String?   @map("area_id") @db.Uuid
+  area          Area?     @relation(fields: [areaId], references: [id])
   tokenVersion  Int       @default(0) @map("token_version")
   lastLoginAt   DateTime? @map("last_login_at") @db.Timestamptz
   lastLoginIp   String?   @map("last_login_ip")
@@ -87,6 +88,8 @@ model User {
   @@index([email])
   @@index([username])
   @@index([businessId])
+  @@index([locationId])
+  @@index([areaId])
   @@map("users")
 }
 
@@ -109,6 +112,7 @@ model Business {
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   users         User[]
   locations     Location[]
+  areas         Area[]
 
   @@index([name])
   @@map("businesses")
@@ -134,11 +138,39 @@ model Location {
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz
   users         User[]
+  areas         Area[]
 
   @@index([businessId])
   @@index([name, businessId])
   @@index([kind])
   @@map("locations")
+}
+
+/**
+ * Área dentro de un lugar de trabajo.
+ * locationId obligatorio; businessId desnormalizado (mismo que location.businessId)
+ * para filtrar por empresa sin join. El service valida coherencia location↔business.
+ * Nombre único por location entre no borradas (índice parcial en migración).
+ */
+model Area {
+  id            String    @id @default(uuid()) @db.Uuid
+  legacyMongoId String?   @unique @map("legacy_mongo_id")
+  name          String
+  locationId    String    @map("location_id") @db.Uuid
+  location      Location  @relation(fields: [locationId], references: [id])
+  /// Copia de location.businessId; no se elige aparte en UI.
+  businessId    String    @map("business_id") @db.Uuid
+  business      Business  @relation(fields: [businessId], references: [id])
+  state         Boolean   @default(true)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  users         User[]
+
+  @@index([locationId])
+  @@index([businessId])
+  @@index([name, locationId])
+  @@map("areas")
 }
 
 /// Challenge MFA de login: código de 6 dígitos por correo (hash en BD).

@@ -1,0 +1,58 @@
+meta {
+  name: Post area
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/areas
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Cubierta",
+    "locationId": "{{locationId}}"
+  }
+}
+
+docs {
+  Admin o superadmin. locationId obligatorio (de Get/Post locations).
+  businessId opcional: si se envía debe coincidir con location.businessId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const locationId = bru.getEnvVar("locationId");
+  if (!token || !locationId) {
+    throw new Error("Definí accessToken y locationId en el entorno local");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body && body.id) {
+    bru.setEnvVar("areaId", body.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.locationId: isDefined
+  res.body.businessId: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

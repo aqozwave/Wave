@@ -36,6 +36,15 @@ import {
 } from "../modules/businesses/businesses.schemas.js";
 import { healthResponseSchema } from "../modules/health/health.schemas.js";
 import {
+  createAreaBodySchema,
+  createAreaResponseSchema,
+  deleteAreaResponseSchema,
+  getAreaResponseSchema,
+  listAreasResponseSchema,
+  updateAreaBodySchema,
+  updateAreaResponseSchema,
+} from "../modules/areas/areas.schemas.js";
+import {
   createLocationBodySchema,
   createLocationResponseSchema,
   deleteLocationResponseSchema,
@@ -656,6 +665,138 @@ registry.registerPath({
       description: "Ubicación soft-deleted",
       content: {
         "application/json": { schema: deleteLocationResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    404: { description: "No encontrada" },
+    409: { description: "Tiene dependencias" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/areas",
+  tags: ["Areas"],
+  summary: "Listar áreas",
+  description:
+    "Superadmin: todas (filtros businessId / locationId). Admin/user: solo su empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(100).default(20).optional(),
+      businessId: z.uuid().optional(),
+      locationId: z.uuid().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listAreasResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/areas",
+  tags: ["Areas"],
+  summary: "Crear área",
+  description:
+    "Admin o superadmin. locationId obligatorio. businessId se toma de la location (si se envía, debe coincidir).",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createAreaBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Área creada",
+      content: {
+        "application/json": { schema: createAreaResponseSchema },
+      },
+    },
+    400: { description: "Validación o location/empresa incoherentes" },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    409: { description: "Nombre duplicado en el lugar" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/areas/{id}",
+  tags: ["Areas"],
+  summary: "Obtener área",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Área",
+      content: {
+        "application/json": { schema: getAreaResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrada o sin acceso" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/areas/{id}",
+  tags: ["Areas"],
+  summary: "Actualizar área",
+  description:
+    "Si cambia locationId, se recalcula businessId. businessId enviado debe coincidir con la location.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateAreaBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Área actualizada",
+      content: {
+        "application/json": { schema: updateAreaResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "No permitido" },
+    404: { description: "No encontrada" },
+    409: { description: "Nombre duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/areas/{id}",
+  tags: ["Areas"],
+  summary: "Eliminar área (soft)",
+  description: "409 si hay usuarios activos con ese areaId.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Área soft-deleted",
+      content: {
+        "application/json": { schema: deleteAreaResponseSchema },
       },
     },
     401: { description: "Sin token" },
