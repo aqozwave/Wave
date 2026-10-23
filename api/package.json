@@ -13,7 +13,8 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
     "etl:business": "tsx --env-file=.env etl/business.ts",
-    "etl:location": "tsx --env-file=.env etl/location.ts"
+    "etl:location": "tsx --env-file=.env etl/location.ts",
+    "etl:area": "tsx --env-file=.env etl/area.ts"
   },
   "prisma": {
     "seed": "tsx --env-file=.env prisma/seed.ts"
