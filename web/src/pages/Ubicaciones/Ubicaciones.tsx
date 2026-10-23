@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { MapPin, MoreVertical, Plus, Search } from "lucide-react";
 import { Button } from "../../components/Button/Button";
 import { Modal } from "../../components/Modal/Modal";
@@ -22,6 +29,10 @@ import {
   type LocationWriteBody,
 } from "../../lib/api/locations";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { AreasPanel, type AreasPanelHandle } from "./AreasPanel";
+
+/** Tabs de Flota y operación (Figma D16). */
+type FlotaTab = "locations" | "areas";
 
 /** Opciones de tipo: valor API → etiqueta UI. */
 const KIND_OPTIONS: ReadonlyArray<{ value: LocationKind; label: string }> = [
@@ -76,8 +87,8 @@ function kindLabel(kind: LocationKind | null): string {
 }
 
 /**
- * Pantalla Lugares de trabajo (Configuración → Flota y operación).
- * Lista + modal create/edit; kind nullable para filas migradas.
+ * Pantalla Flota y operación (lugares + áreas).
+ * Tabs Figma D16; lugares con kind; áreas con FK a location.
  */
 export function Ubicaciones() {
   const { accessToken, user } = useAuth();
@@ -87,6 +98,10 @@ export function Ubicaciones() {
   const canManage =
     user?.internalRol === "admin" || user?.internalRol === "superadmin";
 
+  /** Tab activo: lugares de trabajo o áreas. */
+  const [tab, setTab] = useState<FlotaTab>("locations");
+  /** Abre el modal de alta de áreas desde el PageHeader. */
+  const areasPanelRef = useRef<AreasPanelHandle>(null);
   const [items, setItems] = useState<Location[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [loading, setLoading] = useState(true);
@@ -261,7 +276,7 @@ export function Ubicaciones() {
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#f9fafc]">
       <Topbar
-        breadcrumb="Lugares de trabajo"
+        breadcrumb="Flota y operación"
         breadcrumbIcon={MapPin}
         actions={<UserMenu />}
       />
@@ -272,26 +287,86 @@ export function Ubicaciones() {
             { label: "Configuración" },
             { label: "Flota y operación" },
           ]}
-          title="Lugares de trabajo"
-          description={
-            isSuperadmin
-              ? "Administra naves, oficinas y otros lugares de todas las empresas."
-              : "Administra los lugares de trabajo de tu empresa."
-          }
+          title="Flota y operación"
+          description="Naves y oficinas, áreas, muelles y travesías. Las áreas dependen del lugar de trabajo."
           actions={
             canManage ? (
-              <Button
-                type="button"
-                className="!w-auto shrink-0"
-                onClick={openCreate}
-              >
-                <Plus className="size-4" strokeWidth={1.5} aria-hidden />
-                Nuevo lugar
-              </Button>
+              tab === "locations" ? (
+                <Button
+                  type="button"
+                  className="!w-auto shrink-0"
+                  onClick={openCreate}
+                >
+                  <Plus className="size-4" strokeWidth={1.5} aria-hidden />
+                  Nuevo lugar
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  className="!w-auto shrink-0"
+                  onClick={() => areasPanelRef.current?.openCreate()}
+                >
+                  <Plus className="size-4" strokeWidth={1.5} aria-hidden />
+                  Nueva área
+                </Button>
+              )
             ) : undefined
           }
         />
 
+        {/* Tabs Figma D16: Lugares · Áreas (Muelles/Travesías después). */}
+        <div
+          className="flex shrink-0 gap-1.5"
+          role="tablist"
+          aria-label="Secciones de flota"
+        >
+          {(
+            [
+              { id: "locations" as const, label: "Lugares de trabajo" },
+              { id: "areas" as const, label: "Áreas" },
+            ] as const
+          ).map((t) => {
+            const active = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(t.id)}
+                className={[
+                  "inline-flex h-9 items-center rounded-[var(--radius-md)] px-3.5 text-[13px] font-medium",
+                  active
+                    ? "bg-[var(--color-nachipa-tab,#f4f4f5)] text-[var(--color-nachipa-title)]"
+                    : "text-[var(--color-nachipa-secondary)] hover:bg-[var(--color-nachipa-bg-page)]",
+                ].join(" ")}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+          <span
+            className="inline-flex h-9 cursor-default items-center rounded-[var(--radius-md)] px-3.5 text-[13px] text-[var(--color-nachipa-muted)]"
+            title="Próximamente"
+          >
+            Muelles
+          </span>
+          <span
+            className="inline-flex h-9 cursor-default items-center rounded-[var(--radius-md)] px-3.5 text-[13px] text-[var(--color-nachipa-muted)]"
+            title="Próximamente"
+          >
+            Travesías
+          </span>
+        </div>
+
+        {tab === "areas" ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden">
+            <AreasPanel ref={areasPanelRef} />
+          </div>
+        ) : null}
+
+        {tab === "locations" ? (
+          <>
         <label className="flex h-11 w-full max-w-[448px] shrink-0 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white pl-4 pr-3.5">
           <input
             type="search"
@@ -442,6 +517,8 @@ export function Ubicaciones() {
             </p>
           </div>
         </div>
+          </>
+        ) : null}
       </div>
 
       {/* Modal Figma D16 · 164:847 — 640×626, icon badge, grillas. */}
