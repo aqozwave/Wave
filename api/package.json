@@ -12,7 +12,8 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
-    "etl:business": "tsx --env-file=.env etl/business.ts"
+    "etl:business": "tsx --env-file=.env etl/business.ts",
+    "etl:location": "tsx --env-file=.env etl/location.ts"
   },
   "prisma": {
     "seed": "tsx --env-file=.env prisma/seed.ts"
