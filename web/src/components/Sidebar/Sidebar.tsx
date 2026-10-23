@@ -36,7 +36,8 @@ const CONFIG_LINKS: ReadonlyArray<{
 }> = [
   { label: "Resumen", to: null, icon: LayoutGrid },
   { label: "Empresas", to: "/empresas", icon: Building2 },
-  { label: "Flota y operación", to: null, icon: MapPin },
+  /** Lugares de trabajo (naves, oficinas, etc.). */
+  { label: "Flota y operación", to: "/ubicaciones", icon: MapPin },
   { label: "Catálogos maestros", to: null, icon: ClipboardList },
   { label: "Usuarios", to: null, icon: Users },
   { label: "Notificaciones", to: null, icon: Bell },
@@ -67,10 +68,12 @@ export function Sidebar() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [ready, setReady] = useState(false);
-  /** Grupo Configuración abierto si estamos en /empresas o el usuario lo expandió. */
-  const onEmpresas = location.pathname.startsWith("/empresas");
+  /** Rutas bajo Configuración: mantienen el grupo abierto. */
+  const onConfigSection =
+    location.pathname.startsWith("/empresas") ||
+    location.pathname.startsWith("/ubicaciones");
   const onPanel = location.pathname === "/";
-  const [configOpen, setConfigOpen] = useState(onEmpresas);
+  const [configOpen, setConfigOpen] = useState(onConfigSection);
 
   useEffect(() => {
     setCollapsed(readCollapsed());
@@ -78,10 +81,10 @@ export function Sidebar() {
   }, []);
 
   useEffect(() => {
-    if (onEmpresas) {
+    if (onConfigSection) {
       setConfigOpen(true);
     }
-  }, [onEmpresas]);
+  }, [onConfigSection]);
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -149,7 +152,7 @@ export function Sidebar() {
               label="Configuración"
               icon={Settings}
               to="/empresas"
-              active={onEmpresas}
+              active={onConfigSection}
               collapsed
             />
             <SidebarItem label="Sistema" icon={ShieldCheck} collapsed />
@@ -203,7 +206,7 @@ export function Sidebar() {
                 onClick={() => setConfigOpen((v) => !v)}
                 className={[
                   "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
-                  onEmpresas || configOpen
+                  onConfigSection || configOpen
                     ? "font-medium text-[var(--color-nav-item-active-fg)]"
                     : "font-normal text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
                 ].join(" ")}

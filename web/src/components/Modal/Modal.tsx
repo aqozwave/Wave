@@ -1,12 +1,17 @@
 import { useEffect, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { X, type LucideIcon } from "lucide-react";
 
-/** Props del modal centrado (Figma Modal · Nueva empresa · 520px). */
+/** Props del modal centrado (Figma Modal · Overlays + D16). */
 type ModalProps = {
   open: boolean;
   title: string;
-  /** Subtítulo bajo el título (Figma Nueva empresa). */
+  /** Subtítulo bajo el título. */
   subtitle?: string;
+  /**
+   * Ícono del header (Figma IconBadge 40px).
+   * Se muestra en todos los modales que lo pasen.
+   */
+  icon?: LucideIcon;
   onClose: () => void;
   children: ReactNode;
   /**
@@ -14,18 +19,19 @@ type ModalProps = {
    * Quedan fuera del scroll para no alargar la card.
    */
   footer?: ReactNode;
-  /** Ancho; por defecto 520px (Figma 184:12182). Editar usa 720. */
+  /** Ancho; por defecto 520px (Figma). Lugares usa 640. */
   maxWidthClass?: string;
 };
 
 /**
- * Modal overlay + card (Figma S5).
- * Cuerpo con scroll; footer fijo; sombra sin clip.
+ * Modal overlay + card (Figma).
+ * Header con badge de ícono opcional; cuerpo scroll; footer fijo.
  */
 export function Modal({
   open,
   title,
   subtitle,
+  icon: Icon,
   onClose,
   children,
   footer,
@@ -74,26 +80,37 @@ export function Modal({
           <X className="size-4" strokeWidth={1.5} aria-hidden />
         </button>
 
-        <div className="shrink-0 px-7 pb-0 pt-6 pr-12">
-          <h2
-            id="wave-modal-title"
-            className="text-[18px] font-semibold leading-normal text-[var(--color-nachipa-title)]"
-          >
-            {title}
-          </h2>
-          {subtitle ? (
-            <p className="mt-1 text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
-              {subtitle}
-            </p>
+        {/* Header: IconBadge 40 + títulos (Figma 2:549 / 164:848). */}
+        <div className="flex shrink-0 items-start gap-3 px-6 pb-0 pt-5 pr-12">
+          {Icon ? (
+            <span
+              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-status-info-bg)] text-[var(--color-status-info-fg)]"
+              aria-hidden
+            >
+              <Icon className="size-5" strokeWidth={1.5} />
+            </span>
           ) : null}
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h2
+              id="wave-modal-title"
+              className="text-[18px] font-semibold leading-normal text-[var(--color-nachipa-title)]"
+            >
+              {title}
+            </h2>
+            {subtitle ? (
+              <p className="mt-1 text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
+                {subtitle}
+              </p>
+            ) : null}
+          </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-7 py-[18px]">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-[18px]">
           {children}
         </div>
 
         {footer ? (
-          <div className="shrink-0 border-t border-[var(--color-nachipa-border-subtle)] px-7 py-4">
+          <div className="shrink-0 border-t border-[var(--color-nachipa-border-subtle)] px-6 py-4">
             {footer}
           </div>
         ) : null}

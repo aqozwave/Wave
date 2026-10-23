@@ -14,7 +14,7 @@ type TextFieldProps = {
 
 /**
  * Campo de texto con label e íconos (Figma TextField).
- * Usado en Login; focus con borde navy + anillo suave.
+ * Focus: border/focus = brand-sky #5BC1E7 (portal viejo / token Figma).
  */
 export function TextField({
   label,
@@ -37,7 +37,7 @@ export function TextField({
           "flex h-[42px] items-center gap-2.5 overflow-hidden rounded-[var(--radius-md)] border bg-[var(--color-tremor-background)] px-3.5",
           error
             ? "border-[var(--color-status-error)]"
-            : "border-[var(--color-tremor-border)] focus-within:border-[var(--color-brand-navy)] focus-within:ring-2 focus-within:ring-[color-mix(in_srgb,var(--color-brand-navy)_20%,transparent)]",
+            : "border-[var(--color-tremor-border)] focus-within:border-[var(--color-brand-sky)] focus-within:ring-2 focus-within:ring-[color-mix(in_srgb,var(--color-brand-sky)_25%,transparent)]",
         ].join(" ")}
       >
         {leadingIcon ? (

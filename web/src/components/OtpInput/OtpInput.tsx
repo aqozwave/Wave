@@ -120,7 +120,7 @@ export function OtpInput({
           className={[
             "size-11 shrink-0 rounded-[var(--radius-md)] border bg-white text-center text-[18px] font-semibold tabular-nums text-[var(--color-nachipa-title)] outline-none transition",
             "border-[var(--color-tremor-border)]",
-            "focus:border-[var(--color-nachipa-primary)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-nachipa-primary)_20%,transparent)]",
+            "focus:border-[var(--color-brand-sky)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-brand-sky)_25%,transparent)]",
             "disabled:cursor-not-allowed disabled:opacity-60",
           ].join(" ")}
         />

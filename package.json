@@ -9,7 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "npm run dev -w @wave/api",
+    "dev": "npm run dev:api & npm run dev:web & wait",
     "dev:web": "npm run dev -w @wave/web",
     "dev:api": "npm run dev -w @wave/api",
     "typecheck": "npm run typecheck -w @wave/api && npm run typecheck -w @wave/web",
@@ -18,6 +18,7 @@
     "db:down": "docker compose down",
     "db:studio": "npm run db:studio -w @wave/api",
     "db:migrate": "npm run db:migrate -w @wave/api",
-    "etl:business": "npm run etl:business -w @wave/api"
+    "etl:business": "npm run etl:business -w @wave/api",
+    "etl:location": "npm run etl:location -w @wave/api"
   }
 }

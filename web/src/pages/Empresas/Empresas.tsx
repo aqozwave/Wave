@@ -10,6 +10,7 @@ import { Button } from "../../components/Button/Button";
 import { Modal } from "../../components/Modal/Modal";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { TextField } from "../../components/TextField/TextField";
+import { Toggle } from "../../components/Toggle/Toggle";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
@@ -426,6 +427,7 @@ export function Empresas() {
 
       <Modal
         open={modalOpen}
+        icon={Building2}
         title={editing ? "Editar empresa" : "Nueva empresa"}
         subtitle={
           editing
@@ -595,15 +597,21 @@ export function Empresas() {
                 placeholder="contacto@empresa.com"
               />
               {isSuperadmin ? (
-                <label className="flex items-center gap-2 text-[13px] text-[var(--color-nachipa-body)]">
-                  <input
-                    type="checkbox"
+                <div className="flex items-center justify-between gap-4 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] px-3.5 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                      Empresa activa
+                    </p>
+                    <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                      Visible y operable en el portal
+                    </p>
+                  </div>
+                  <Toggle
                     checked={form.state}
-                    onChange={(e) => setField("state", e.target.checked)}
-                    className="size-4 rounded border-[var(--color-tremor-border)]"
+                    onChange={(next) => setField("state", next)}
+                    aria-label="Empresa activa"
                   />
-                  Empresa activa
-                </label>
+                </div>
               ) : null}
             </>
           ) : (

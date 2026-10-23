@@ -11,6 +11,7 @@ import { Empresas } from "./pages/Empresas/Empresas";
 import { Panel } from "./pages/Panel/Panel";
 import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmation";
 import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
+import { Ubicaciones } from "./pages/Ubicaciones/Ubicaciones";
 
 /**
  * Exige access token y aplica idle 1h: sin actividad → logout + /login.
@@ -96,6 +97,7 @@ export function App() {
         <Route element={<ShellLayout />}>
           <Route index element={<Panel />} />
           <Route path="empresas" element={<Empresas />} />
+          <Route path="ubicaciones" element={<Ubicaciones />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
