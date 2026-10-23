@@ -18,7 +18,7 @@
     "db:down": "docker compose down",
     "db:studio": "npm run db:studio -w @wave/api",
     "db:migrate": "npm run db:migrate -w @wave/api",
-    "etl:business": "npm run etl:business -w @wave/api",
-    "etl:location": "npm run etl:location -w @wave/api"
+    "etl:business": "npm run etl:business -w @wave/api --",
+    "etl:location": "npm run etl:location -w @wave/api --"
   }
 }
