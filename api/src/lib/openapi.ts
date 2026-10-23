@@ -38,7 +38,11 @@ import { healthResponseSchema } from "../modules/health/health.schemas.js";
 import {
   createLocationBodySchema,
   createLocationResponseSchema,
+  deleteLocationResponseSchema,
+  getLocationResponseSchema,
   listLocationsResponseSchema,
+  updateLocationBodySchema,
+  updateLocationResponseSchema,
 } from "../modules/locations/locations.schemas.js";
 
 const registry = new OpenAPIRegistry();
@@ -580,6 +584,84 @@ registry.registerPath({
     401: { description: "Sin token" },
     403: { description: "No admin/superadmin" },
     409: { description: "Nombre duplicado en la empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/locations/{id}",
+  tags: ["Locations"],
+  summary: "Obtener ubicación",
+  description: "Detalle por id. Tenant: 404 si no es de su empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Ubicación",
+      content: {
+        "application/json": { schema: getLocationResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrada o sin acceso" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/locations/{id}",
+  tags: ["Locations"],
+  summary: "Actualizar ubicación",
+  description:
+    "Admin o superadmin. Admin no puede mover businessId a otra empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateLocationBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Ubicación actualizada",
+      content: {
+        "application/json": { schema: updateLocationResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "No permitido" },
+    404: { description: "No encontrada" },
+    409: { description: "Nombre duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/locations/{id}",
+  tags: ["Locations"],
+  summary: "Eliminar ubicación (soft)",
+  description:
+    "Admin o superadmin. Marca deletedAt y state=false. 409 si hay usuarios activos.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Ubicación soft-deleted",
+      content: {
+        "application/json": { schema: deleteLocationResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    404: { description: "No encontrada" },
+    409: { description: "Tiene dependencias" },
   },
 });
 

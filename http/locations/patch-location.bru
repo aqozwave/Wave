@@ -1,0 +1,50 @@
+meta {
+  name: Patch location
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/locations/{{locationId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "kind": "vessel",
+    "city": "Puerto Montt",
+    "phone": "+56 65 000 0000"
+  }
+}
+
+docs {
+  Admin o superadmin. Admin no puede cambiar businessId a otra empresa.
+  kind: vessel | office | warehouse | other | null (limpiar clasificación).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("locationId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y locationId en el entorno local");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.city: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

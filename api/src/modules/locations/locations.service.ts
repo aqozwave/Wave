@@ -6,6 +6,7 @@ import type {
   CreateLocationBody,
   ListLocationsQuery,
   LocationResponse,
+  UpdateLocationBody,
 } from "./locations.schemas.js";
 
 /** Actor mínimo para reglas de tenant. */
@@ -16,6 +17,7 @@ function toLocationResponse(row: {
   id: string;
   legacyMongoId: string | null;
   name: string;
+  kind: "vessel" | "office" | "warehouse" | "other" | null;
   businessId: string;
   country: string | null;
   commune: string | null;
@@ -32,6 +34,7 @@ function toLocationResponse(row: {
     id: row.id,
     legacyMongoId: row.legacyMongoId,
     name: row.name,
+    kind: row.kind,
     businessId: row.businessId,
     country: row.country,
     commune: row.commune,
@@ -105,6 +108,23 @@ function resolveCreateBusinessId(
 }
 
 /**
+ * 404 genérico si el actor no puede ver esa empresa
+ * (no filtrar existencia a otra empresa).
+ */
+function assertLocationTenantAccess(
+  actor: Actor,
+  locationBusinessId: string,
+): void {
+  if (actor.internalRol === "superadmin") {
+    return;
+  }
+
+  if (!actor.businessId || actor.businessId !== locationBusinessId) {
+    throw new AppError(404, "location_not_found", "Ubicación no encontrada");
+  }
+}
+
+/**
  * Lista ubicaciones visibles para el actor (paginado).
  */
 export async function listLocations(
@@ -158,6 +178,7 @@ export async function createLocation(
     const row = await prisma.location.create({
       data: {
         name: body.name,
+        kind: body.kind ?? null,
         businessId,
         country: body.country ?? "Chile",
         commune: body.commune ?? null,
@@ -182,4 +203,146 @@ export async function createLocation(
     }
     throw err;
   }
+}
+
+/**
+ * Detalle por id (tenant-aware).
+ */
+export async function getLocationById(
+  actor: Actor,
+  id: string,
+): Promise<LocationResponse> {
+  const row = await prisma.location.findFirst({
+    where: { id, deletedAt: null },
+  });
+
+  if (!row) {
+    throw new AppError(404, "location_not_found", "Ubicación no encontrada");
+  }
+
+  assertLocationTenantAccess(actor, row.businessId);
+  return toLocationResponse(row);
+}
+
+/**
+ * Actualiza ubicación (admin o superadmin).
+ * Admin: no puede cambiar businessId a otra empresa.
+ */
+export async function updateLocation(
+  actor: Actor,
+  id: string,
+  payload: UpdateLocationBody,
+): Promise<LocationResponse> {
+  const existing = await prisma.location.findFirst({
+    where: { id, deletedAt: null },
+  });
+  if (!existing) {
+    throw new AppError(404, "location_not_found", "Ubicación no encontrada");
+  }
+
+  assertLocationTenantAccess(actor, existing.businessId);
+
+  let nextBusinessId = existing.businessId;
+  if (payload.businessId !== undefined) {
+    if (actor.internalRol === "admin") {
+      // Admin queda anclado a su empresa.
+      if (payload.businessId !== actor.businessId) {
+        throw new AppError(
+          403,
+          "forbidden",
+          "No puedes mover la ubicación a otra empresa",
+        );
+      }
+      nextBusinessId = actor.businessId!;
+    } else {
+      nextBusinessId = payload.businessId;
+      const business = await prisma.business.findFirst({
+        where: { id: nextBusinessId, deletedAt: null },
+      });
+      if (!business) {
+        throw new AppError(400, "business_not_found", "Empresa no encontrada");
+      }
+    }
+  }
+
+  const data: Prisma.LocationUpdateInput = {};
+  if (payload.name !== undefined) data.name = payload.name;
+  if (payload.kind !== undefined) data.kind = payload.kind;
+  if (payload.businessId !== undefined) {
+    data.business = { connect: { id: nextBusinessId } };
+  }
+  if (payload.country !== undefined) data.country = payload.country ?? null;
+  if (payload.commune !== undefined) data.commune = payload.commune ?? null;
+  if (payload.city !== undefined) data.city = payload.city ?? null;
+  if (payload.phone !== undefined) data.phone = payload.phone ?? null;
+  if (payload.email !== undefined) data.email = payload.email ?? null;
+  if (payload.description !== undefined) {
+    data.description = payload.description ?? null;
+  }
+  if (payload.state !== undefined) data.state = payload.state;
+
+  try {
+    const updated = await prisma.location.update({
+      where: { id },
+      data,
+    });
+    return toLocationResponse(updated);
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      throw new AppError(
+        409,
+        "duplicate_location_name",
+        "El nombre del lugar de trabajo ya existe en esta empresa",
+      );
+    }
+    throw err;
+  }
+}
+
+/**
+ * Soft delete: deletedAt + state=false.
+ * 409 si hay usuarios activos con esa locationId.
+ */
+export async function deleteLocationById(
+  actor: Actor,
+  id: string,
+): Promise<LocationResponse> {
+  const location = await prisma.location.findFirst({
+    where: { id, deletedAt: null },
+  });
+
+  if (!location) {
+    throw new AppError(404, "location_not_found", "Ubicación no encontrada");
+  }
+
+  assertLocationTenantAccess(actor, location.businessId);
+
+  const activeUsers = await prisma.user.count({
+    where: {
+      locationId: id,
+      deletedAt: null,
+      state: true,
+    },
+  });
+
+  if (activeUsers > 0) {
+    throw new AppError(
+      409,
+      "location_has_dependents",
+      `No se puede eliminar el lugar de trabajo: tiene ${activeUsers} usuario(s) activo(s)`,
+    );
+  }
+
+  const updated = await prisma.location.update({
+    where: { id },
+    data: {
+      deletedAt: new Date(),
+      state: false,
+    },
+  });
+
+  return toLocationResponse(updated);
 }

@@ -1,0 +1,38 @@
+meta {
+  name: Get location
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/locations/{{locationId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Definí locationId (p. ej. del Post location).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("locationId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y locationId en el entorno local");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+  res.body.name: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -23,6 +23,15 @@ enum EmailTokenPurpose {
   reset_password
 }
 
+/// Tipo de lugar de trabajo. Nullable: ETL deja null; se clasifica después en Wave.
+/// UI: vessel=Nave, office=Oficina, warehouse=Bodega, other=Otro.
+enum LocationKind {
+  vessel
+  office
+  warehouse
+  other
+}
+
 model Role {
   id            String        @id @default(uuid()) @db.Uuid
   legacyMongoId String?       @unique @map("legacy_mongo_id")
@@ -105,27 +114,30 @@ model Business {
   @@map("businesses")
 }
 
-/// Ubicación (sede) de una empresa. Soft delete; nombre único por business entre no borradas.
+/// Lugar de trabajo de una empresa. Soft delete; nombre único por business entre no borradas.
 model Location {
-  id            String    @id @default(uuid()) @db.Uuid
-  legacyMongoId String?   @unique @map("legacy_mongo_id")
+  id            String        @id @default(uuid()) @db.Uuid
+  legacyMongoId String?       @unique @map("legacy_mongo_id")
   name          String
-  businessId    String    @map("business_id") @db.Uuid
-  business      Business  @relation(fields: [businessId], references: [id])
-  country       String?   @default("Chile")
+  /// Nave / oficina / bodega / otro; null = sin clasificar (p. ej. migrado).
+  kind          LocationKind?
+  businessId    String        @map("business_id") @db.Uuid
+  business      Business      @relation(fields: [businessId], references: [id])
+  country       String?       @default("Chile")
   commune       String?
   city          String?
   phone         String?
   email         String?
   description   String?
-  state         Boolean   @default(true)
-  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  state         Boolean       @default(true)
+  deletedAt     DateTime?     @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz
   users         User[]
 
   @@index([businessId])
   @@index([name, businessId])
+  @@index([kind])
   @@map("locations")
 }
 

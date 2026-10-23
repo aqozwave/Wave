@@ -4,11 +4,17 @@ import { requireTenantManager } from "../../middlewares/requireTenantManager.js"
 import { validate } from "../../middlewares/validate.js";
 import {
   createLocationHandler,
+  deleteLocationHandler,
+  getLocationHandler,
   listLocationsHandler,
+  updateLocationHandler,
 } from "./locations.controller.js";
 import {
   createLocationRequestSchema,
+  deleteLocationRequestSchema,
+  getLocationRequestSchema,
   listLocationsRequestSchema,
+  updateLocationRequestSchema,
 } from "./locations.schemas.js";
 
 /**
@@ -25,11 +31,37 @@ locationsRouter.get(
   listLocationsHandler,
 );
 
-// Alta: admin o superadmin (portal viejo requireTenantManager).
+// Alta: admin o superadmin.
 locationsRouter.post(
   "/",
   authenticate,
   requireTenantManager,
   validate(createLocationRequestSchema),
   createLocationHandler,
+);
+
+// Detalle por id.
+locationsRouter.get(
+  "/:id",
+  authenticate,
+  validate(getLocationRequestSchema),
+  getLocationHandler,
+);
+
+// Edición: admin o superadmin.
+locationsRouter.patch(
+  "/:id",
+  authenticate,
+  requireTenantManager,
+  validate(updateLocationRequestSchema),
+  updateLocationHandler,
+);
+
+// Soft delete: admin o superadmin.
+locationsRouter.delete(
+  "/:id",
+  authenticate,
+  requireTenantManager,
+  validate(deleteLocationRequestSchema),
+  deleteLocationHandler,
 );

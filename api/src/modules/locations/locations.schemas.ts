@@ -20,7 +20,19 @@ const optionalEmail = z
   .pipe(z.string().email("Formato de correo inválido").optional());
 
 /**
- * Campos de ubicación.
+ * Tipo de lugar de trabajo (API en inglés).
+ * UI: vessel=Nave, office=Oficina, warehouse=Bodega, other=Otro.
+ * null = sin clasificar (ETL / pendiente).
+ */
+export const locationKindSchema = z.enum([
+  "vessel",
+  "office",
+  "warehouse",
+  "other",
+]);
+
+/**
+ * Campos de lugar de trabajo.
  * name en minúsculas (mismo criterio que el portal viejo).
  */
 export const locationFieldsSchema = z.object({
@@ -31,6 +43,8 @@ export const locationFieldsSchema = z.object({
     .transform((v) => v.toLowerCase()),
   /** Obligatorio para superadmin; admin lo ignora (usa su empresa). */
   businessId: z.uuid().optional(),
+  /** Opcional: null/omitido = sin clasificar. */
+  kind: locationKindSchema.nullable().optional(),
   country: optionalText,
   commune: optionalText,
   city: optionalText,
@@ -40,12 +54,13 @@ export const locationFieldsSchema = z.object({
   state: z.boolean().optional(),
 });
 
-/** Una ubicación en respuestas de API. */
+/** Un lugar de trabajo en respuestas de API. */
 export const locationResponseSchema = z
   .object({
     id: z.uuid(),
     legacyMongoId: z.string().nullable(),
     name: z.string(),
+    kind: locationKindSchema.nullable(),
     businessId: z.uuid(),
     country: z.string().nullable(),
     commune: z.string().nullable(),
@@ -88,7 +103,39 @@ export const listLocationsResponseSchema = z
   .openapi("ListLocationsResponse");
 
 export const createLocationResponseSchema = locationResponseSchema;
+export const getLocationResponseSchema = locationResponseSchema;
+export const updateLocationResponseSchema = locationResponseSchema;
+export const deleteLocationResponseSchema = locationResponseSchema;
+
+/** Params `:id` uuid. */
+export const locationIdParamsSchema = z.object({
+  id: z.uuid(),
+});
+
+export const getLocationRequestSchema = z.object({
+  params: locationIdParamsSchema,
+});
+
+export const deleteLocationRequestSchema = z.object({
+  params: locationIdParamsSchema,
+});
+
+/**
+ * Body PATCH: campos parciales.
+ * Admin no puede mover businessId a otra empresa (service).
+ */
+export const updateLocationBodySchema = locationFieldsSchema
+  .partial()
+  .refine((body) => Object.keys(body).length > 0, {
+    message: "Debe enviar al menos un campo para actualizar",
+  });
+
+export const updateLocationRequestSchema = z.object({
+  params: locationIdParamsSchema,
+  body: updateLocationBodySchema,
+});
 
 export type CreateLocationBody = z.infer<typeof createLocationBodySchema>;
 export type ListLocationsQuery = z.infer<typeof listLocationsQuerySchema>;
 export type LocationResponse = z.infer<typeof locationResponseSchema>;
+export type UpdateLocationBody = z.infer<typeof updateLocationBodySchema>;

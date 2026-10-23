@@ -22,6 +22,7 @@ body:json {
   {
     "name": "Puerto Montt",
     "businessId": "{{businessId}}",
+    "kind": "office",
     "country": "Chile",
     "city": "Puerto Montt",
     "commune": "Puerto Montt"
@@ -32,6 +33,7 @@ docs {
   Admin o superadmin.
   Superadmin: businessId obligatorio (usar el de Get businesses / Post business).
   Admin: businessId se ignora (usa la empresa del token).
+  kind opcional: vessel | office | warehouse | other (null = sin clasificar).
   Nombre único por empresa → 409 si ya existe.
 }
 
