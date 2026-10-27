@@ -364,8 +364,9 @@ const RESEND_CONFIRMATION_MESSAGE =
 
 /**
  * Emite EmailToken confirm_email y envía (o stubbea) el correo.
+ * Exportado para alta admin en /users (misma plantilla que register).
  */
-async function issueAndSendConfirmation(user: User): Promise<void> {
+export async function issueAndSendConfirmation(user: User): Promise<void> {
   const { plain, expiresAt } = await issueEmailToken(
     user.id,
     EmailTokenPurpose.confirm_email,

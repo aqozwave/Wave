@@ -14,6 +14,7 @@ import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmatio
 import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
 import { Roles } from "./pages/Roles/Roles";
 import { Ubicaciones } from "./pages/Ubicaciones/Ubicaciones";
+import { Usuarios } from "./pages/Usuarios/Usuarios";
 
 /**
  * Exige access token y aplica idle 1h: sin actividad → logout + /login.
@@ -101,6 +102,7 @@ export function App() {
           <Route path="empresas" element={<Empresas />} />
           <Route path="ubicaciones" element={<Ubicaciones />} />
           <Route path="catalogos" element={<Catalogos />} />
+          <Route path="usuarios" element={<Usuarios />} />
           <Route path="roles" element={<Roles />} />
         </Route>
       </Route>

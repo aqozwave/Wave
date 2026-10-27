@@ -16,6 +16,7 @@ import { portsRouter } from "./modules/ports/ports.routes.js";
 import { ranksRouter } from "./modules/ranks/ranks.routes.js";
 import { rolesRouter } from "./modules/roles/roles.routes.js";
 import { travesiasRouter } from "./modules/travesias/travesias.routes.js";
+import { usersRouter } from "./modules/users/users.routes.js";
 
 export function createApp() {
   const app = express();
@@ -41,6 +42,7 @@ export function createApp() {
   app.use("/api/v1/muelles", muellesRouter);
   app.use("/api/v1/travesias", travesiasRouter);
   app.use("/api/v1/roles", rolesRouter);
+  app.use("/api/v1/users", usersRouter);
   app.use(notFoundHandler);
   app.use(errorHandler);
 

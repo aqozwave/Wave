@@ -127,6 +127,16 @@ import {
   updateLocationBodySchema,
   updateLocationResponseSchema,
 } from "../modules/locations/locations.schemas.js";
+import {
+  createUserBodySchema,
+  createUserResponseSchema,
+  deleteUserResponseSchema,
+  getUserResponseSchema,
+  listUsersResponseSchema,
+  unlockUserResponseSchema,
+  updateUserBodySchema,
+  updateUserResponseSchema,
+} from "../modules/users/users.schemas.js";
 
 const registry = new OpenAPIRegistry();
 
@@ -1930,6 +1940,150 @@ registry.registerPath({
     },
     400: { description: "Rol de sistema" },
     409: { description: "En uso" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/users",
+  tags: ["Users"],
+  summary: "Listar usuarios",
+  description:
+    "Requiere maestros.users:read. Admin solo ve su empresa; superadmin todas.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().optional(),
+      limit: z.coerce.number().int().positive().max(100).optional(),
+      search: z.string().optional(),
+      businessId: z.uuid().optional(),
+      includeInactive: z.enum(["true", "false"]).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listUsersResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/users",
+  tags: ["Users"],
+  summary: "Crear usuario",
+  description:
+    "Requiere maestros.users:create. Envía correo de confirmación (confirmed=false).",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createUserBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Usuario creado",
+      content: {
+        "application/json": { schema: createUserResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    403: { description: "Sin permiso" },
+    409: { description: "Duplicado email/username/run" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/users/{id}",
+  tags: ["Users"],
+  summary: "Obtener usuario",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Usuario",
+      content: {
+        "application/json": { schema: getUserResponseSchema },
+      },
+    },
+    404: { description: "No encontrado o sin acceso" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/users/{id}",
+  tags: ["Users"],
+  summary: "Actualizar usuario",
+  description:
+    "Requiere maestros.users:update. El admin puede cambiar el email directo.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateUserBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Usuario actualizado",
+      content: {
+        "application/json": { schema: updateUserResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrado" },
+    409: { description: "Duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/users/{id}",
+  tags: ["Users"],
+  summary: "Eliminar usuario (soft)",
+  description: "Requiere maestros.users:deactivate. No permite borrarse a sí mismo.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteUserResponseSchema },
+      },
+    },
+    400: { description: "Auto-borrado" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/users/{id}/unlock",
+  tags: ["Users"],
+  summary: "Desbloquear usuario",
+  description: "Limpia loginAttempts y lockUntil.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Desbloqueado",
+      content: {
+        "application/json": { schema: unlockUserResponseSchema },
+      },
+    },
+    404: { description: "No encontrado" },
   },
 });
 

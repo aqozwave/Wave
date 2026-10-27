@@ -39,7 +39,7 @@ const CONFIG_LINKS: ReadonlyArray<{
   /** Lugares de trabajo (naves, oficinas, etc.). */
   { label: "Flota y operación", to: "/ubicaciones", icon: MapPin },
   { label: "Catálogos maestros", to: "/catalogos", icon: ClipboardList },
-  { label: "Usuarios", to: null, icon: Users },
+  { label: "Usuarios", to: "/usuarios", icon: Users },
   { label: "Notificaciones", to: null, icon: Bell },
 ];
 
@@ -72,7 +72,8 @@ export function Sidebar() {
   const onConfigSection =
     location.pathname.startsWith("/empresas") ||
     location.pathname.startsWith("/ubicaciones") ||
-    location.pathname.startsWith("/catalogos");
+    location.pathname.startsWith("/catalogos") ||
+    location.pathname.startsWith("/usuarios");
   /** Rutas bajo Sistema (Figma). */
   const onSystemSection = location.pathname.startsWith("/roles");
   const onPanel = location.pathname === "/";

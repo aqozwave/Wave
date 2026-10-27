@@ -1,0 +1,49 @@
+meta {
+  name: Post user
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/users
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "email": "nuevo.usuario@example.com",
+    "password": "password123",
+    "username": "nuevousuario",
+    "firstName": "Nuevo",
+    "lastName": "Usuario",
+    "run": "11.111.111-1",
+    "businessId": "{{businessId}}",
+    "roleId": "{{roleId}}"
+  }
+}
+
+docs {
+  Requiere maestros.users:create. Envía correo de confirmación.
+  Completar businessId y roleId (o null).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.confirmed: eq false
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
