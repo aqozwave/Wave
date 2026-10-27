@@ -91,6 +91,15 @@ import {
   updateMuelleResponseSchema,
 } from "../modules/muelles/muelles.schemas.js";
 import {
+  createPortBodySchema,
+  createPortResponseSchema,
+  deletePortResponseSchema,
+  getPortResponseSchema,
+  listPortsResponseSchema,
+  updatePortBodySchema,
+  updatePortResponseSchema,
+} from "../modules/ports/ports.schemas.js";
+import {
   createTravesiaBodySchema,
   createTravesiaResponseSchema,
   deleteTravesiaResponseSchema,
@@ -99,6 +108,16 @@ import {
   updateTravesiaBodySchema,
   updateTravesiaResponseSchema,
 } from "../modules/travesias/travesias.schemas.js";
+import {
+  createRoleBodySchema,
+  createRoleResponseSchema,
+  deleteRoleResponseSchema,
+  getRoleResponseSchema,
+  listRolesResponseSchema,
+  permissionCatalogResponseSchema,
+  updateRoleBodySchema,
+  updateRoleResponseSchema,
+} from "../modules/roles/roles.schemas.js";
 import {
   createLocationBodySchema,
   createLocationResponseSchema,
@@ -1392,18 +1411,148 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/v1/muelles",
-  tags: ["Muelles"],
-  summary: "Listar muelles",
+  path: "/api/v1/ports",
+  tags: ["Ports"],
+  summary: "Listar puertos",
   description:
-    "Superadmin: todos (filtros businessId / portName). Admin/user: solo su empresa.",
+    "Superadmin: todos (filtro businessId). Admin/user: solo su empresa.",
   security: [{ bearerAuth: [] }],
   request: {
     query: z.object({
       page: z.coerce.number().int().positive().default(1).optional(),
       limit: z.coerce.number().int().positive().max(100).default(20).optional(),
       businessId: z.uuid().optional(),
-      portName: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listPortsResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/ports",
+  tags: ["Ports"],
+  summary: "Crear puerto",
+  description:
+    "Admin o superadmin. Requiere name. businessId obligatorio para superadmin.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createPortBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Puerto creado",
+      content: {
+        "application/json": { schema: createPortResponseSchema },
+      },
+    },
+    400: { description: "Validación o empresa inexistente" },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    409: { description: "Nombre duplicado en empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/ports/{id}",
+  tags: ["Ports"],
+  summary: "Obtener puerto",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Puerto",
+      content: {
+        "application/json": { schema: getPortResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrado o sin acceso" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/ports/{id}",
+  tags: ["Ports"],
+  summary: "Actualizar puerto",
+  description: "Admin no puede mover el puerto a otra empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updatePortBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Puerto actualizado",
+      content: {
+        "application/json": { schema: updatePortResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "No permitido" },
+    404: { description: "No encontrado" },
+    409: { description: "Nombre duplicado en empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/ports/{id}",
+  tags: ["Ports"],
+  summary: "Eliminar puerto (soft)",
+  description: "Soft delete. Rechaza si hay muelles activos en el puerto.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Puerto soft-deleted",
+      content: {
+        "application/json": { schema: deletePortResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    404: { description: "No encontrado" },
+    409: { description: "Puerto en uso por muelles" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/muelles",
+  tags: ["Muelles"],
+  summary: "Listar muelles",
+  description:
+    "Superadmin: todos (filtros businessId / portId). Admin/user: solo su empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(100).default(20).optional(),
+      businessId: z.uuid().optional(),
+      portId: z.uuid().optional(),
     }),
   },
   responses: {
@@ -1423,7 +1572,7 @@ registry.registerPath({
   tags: ["Muelles"],
   summary: "Crear muelle",
   description:
-    "Admin o superadmin. Requiere name y portName. businessId obligatorio para superadmin.",
+    "Admin o superadmin. Requiere name y portId. businessId obligatorio para superadmin.",
   security: [{ bearerAuth: [] }],
   request: {
     body: {
@@ -1439,7 +1588,7 @@ registry.registerPath({
         "application/json": { schema: createMuelleResponseSchema },
       },
     },
-    400: { description: "Validación o empresa inexistente" },
+    400: { description: "Validación, empresa o puerto inexistente" },
     401: { description: "Sin token" },
     403: { description: "No admin/superadmin" },
     409: { description: "Nombre duplicado en puerto y empresa" },
@@ -1648,6 +1797,139 @@ registry.registerPath({
     401: { description: "Sin token" },
     403: { description: "No admin/superadmin" },
     404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/roles",
+  tags: ["Roles"],
+  summary: "Listar roles",
+  description: "Admin o superadmin. includeInactive=true para inactivos.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      includeInactive: z.enum(["true", "false"]).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado",
+      content: {
+        "application/json": { schema: listRolesResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/roles/catalog",
+  tags: ["Roles"],
+  summary: "Catálogo de permisos",
+  description: "Solo superadmin. Matriz resource/actions para la UI.",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Catálogo",
+      content: {
+        "application/json": { schema: permissionCatalogResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No superadmin" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/roles",
+  tags: ["Roles"],
+  summary: "Crear rol",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createRoleBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Rol creado",
+      content: {
+        "application/json": { schema: createRoleResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    403: { description: "No superadmin" },
+    409: { description: "Duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/roles/{id}",
+  tags: ["Roles"],
+  summary: "Obtener rol",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Rol",
+      content: {
+        "application/json": { schema: getRoleResponseSchema },
+      },
+    },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/roles/{id}",
+  tags: ["Roles"],
+  summary: "Actualizar rol",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateRoleBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Rol actualizado",
+      content: {
+        "application/json": { schema: updateRoleResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/roles/{id}",
+  tags: ["Roles"],
+  summary: "Eliminar rol (soft)",
+  description: "No elimina roles de sistema ni roles con usuarios.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteRoleResponseSchema },
+      },
+    },
+    400: { description: "Rol de sistema" },
+    409: { description: "En uso" },
   },
 });
 

@@ -12,7 +12,9 @@ import { coursesRouter } from "./modules/courses/courses.routes.js";
 import { healthRouter } from "./modules/health/health.routes.js";
 import { locationsRouter } from "./modules/locations/locations.routes.js";
 import { muellesRouter } from "./modules/muelles/muelles.routes.js";
+import { portsRouter } from "./modules/ports/ports.routes.js";
 import { ranksRouter } from "./modules/ranks/ranks.routes.js";
+import { rolesRouter } from "./modules/roles/roles.routes.js";
 import { travesiasRouter } from "./modules/travesias/travesias.routes.js";
 
 export function createApp() {
@@ -35,8 +37,10 @@ export function createApp() {
   app.use("/api/v1/academic-degrees", academicDegreesRouter);
   app.use("/api/v1/competency-certificates", competencyCertificatesRouter);
   app.use("/api/v1/courses", coursesRouter);
+  app.use("/api/v1/ports", portsRouter);
   app.use("/api/v1/muelles", muellesRouter);
   app.use("/api/v1/travesias", travesiasRouter);
+  app.use("/api/v1/roles", rolesRouter);
   app.use(notFoundHandler);
   app.use(errorHandler);
 

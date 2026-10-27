@@ -7,7 +7,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { Anchor, MoreVertical, Search } from "lucide-react";
+import { Anchor, MapPin, MoreVertical, Plus, Search } from "lucide-react";
 import { Button } from "../../components/Button/Button";
 import { Modal } from "../../components/Modal/Modal";
 import { TextField } from "../../components/TextField/TextField";
@@ -24,6 +24,11 @@ import {
   updateMuelleRequest,
   type Muelle,
 } from "../../lib/api/muelles";
+import {
+  createPortRequest,
+  listPortsRequest,
+  type Port,
+} from "../../lib/api/ports";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
 /** API que el header usa para abrir el modal de alta. */
@@ -31,28 +36,17 @@ export type MuellesPanelHandle = {
   openCreate: () => void;
 };
 
-/**
- * Puertos sugeridos (portal viejo). La API acepta cualquier string;
- * sumar acá no requiere migración.
- */
-const SUGGESTED_PORTS = [
-  "Chacabuco",
-  "Calbuco",
-  "Quellón",
-  "Puerto Montt",
-] as const;
-
 /** Form create / edit de muelle. */
 type FormState = {
   name: string;
-  portName: string;
+  portId: string;
   businessId: string;
   state: boolean;
 };
 
 const EMPTY_FORM: FormState = {
   name: "",
-  portName: "",
+  portId: "",
   businessId: "",
   state: true,
 };
@@ -68,7 +62,7 @@ function displayName(value: string): string {
 
 /**
  * Panel Muelles dentro de Flota y operación.
- * Independiente del lugar de trabajo; requiere puerto + nombre.
+ * Puerto desde catálogo; botón + abre modal rápido de nuevo puerto.
  */
 export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel(
   _props,
@@ -81,6 +75,7 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
     user?.internalRol === "admin" || user?.internalRol === "superadmin";
 
   const [items, setItems] = useState<Muelle[]>([]);
+  const [ports, setPorts] = useState<Port[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -90,6 +85,11 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
   const [submitting, setSubmitting] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
 
+  /** Modal anidado: alta rápida de puerto desde el form de muelle. */
+  const [portModalOpen, setPortModalOpen] = useState(false);
+  const [portNameDraft, setPortNameDraft] = useState("");
+  const [portSubmitting, setPortSubmitting] = useState(false);
+
   const businessNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const b of businesses) {
@@ -98,27 +98,30 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
     return map;
   }, [businesses]);
 
-  /** Puertos del select: sugeridos + los ya usados en datos (por si hay otros). */
-  const portOptions = useMemo(() => {
-    const set = new Set<string>(SUGGESTED_PORTS);
-    for (const row of items) {
-      if (row.portName) set.add(row.portName);
-    }
-    if (form.portName) set.add(form.portName);
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
-  }, [items, form.portName]);
+  /**
+   * Puertos del select: misma empresa del form (superadmin)
+   * o todos los visibles (admin = su empresa).
+   */
+  const portsForForm = useMemo(() => {
+    const active = ports.filter((p) => p.state);
+    if (!isSuperadmin) return active;
+    if (!form.businessId) return active;
+    return active.filter((p) => p.businessId === form.businessId);
+  }, [ports, isSuperadmin, form.businessId]);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [muellesResult, bizResult] = await Promise.all([
+      const [muellesResult, portsResult, bizResult] = await Promise.all([
         listMuellesRequest(accessToken),
+        listPortsRequest(accessToken),
         isSuperadmin
           ? listBusinessesRequest(accessToken)
           : Promise.resolve({ items: [] as Business[] }),
       ]);
       setItems(muellesResult.items);
+      setPorts(portsResult.items);
       setBusinesses(bizResult.items);
     } catch (err) {
       showToast(
@@ -158,7 +161,7 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
     setMenuId(null);
     setForm({
       name: row.name,
-      portName: row.portName,
+      portId: row.portId,
       businessId: row.businessId,
       state: row.state,
     });
@@ -169,10 +172,22 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
     setModalOpen(false);
     setEditing(null);
     setForm(EMPTY_FORM);
+    setPortModalOpen(false);
+    setPortNameDraft("");
   }
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [key]: value };
+      // Al cambiar empresa, limpia puerto si no pertenece a esa empresa.
+      if (key === "businessId" && value) {
+        const stillValid = ports.some(
+          (p) => p.id === prev.portId && p.businessId === value,
+        );
+        if (!stillValid) next.portId = "";
+      }
+      return next;
+    });
   }
 
   async function onSubmit(event: FormEvent) {
@@ -182,7 +197,7 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
       showToast("El nombre es requerido.", "danger");
       return;
     }
-    if (!form.portName.trim()) {
+    if (!form.portId) {
       showToast("Elegí el puerto.", "danger");
       return;
     }
@@ -195,12 +210,12 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
     try {
       const body: {
         name: string;
-        portName: string;
+        portId: string;
         state: boolean;
         businessId?: string;
       } = {
         name: form.name.trim(),
-        portName: form.portName.trim(),
+        portId: form.portId,
         state: form.state,
       };
       if (isSuperadmin && form.businessId) {
@@ -223,6 +238,44 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
       );
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function onCreatePort(event: FormEvent) {
+    event.preventDefault();
+    if (!accessToken || !canManage) return;
+    if (!portNameDraft.trim()) {
+      showToast("El nombre del puerto es requerido.", "danger");
+      return;
+    }
+    if (isSuperadmin && !form.businessId) {
+      showToast("Elegí la empresa del muelle antes de crear el puerto.", "danger");
+      return;
+    }
+
+    setPortSubmitting(true);
+    try {
+      const body: { name: string; businessId?: string } = {
+        name: portNameDraft.trim(),
+      };
+      if (isSuperadmin && form.businessId) {
+        body.businessId = form.businessId;
+      }
+      const created = await createPortRequest(accessToken, body);
+      showToast("Puerto creado.", "success");
+      setPorts((prev) =>
+        [...prev, created].sort((a, b) => a.name.localeCompare(b.name, "es")),
+      );
+      setField("portId", created.id);
+      setPortModalOpen(false);
+      setPortNameDraft("");
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo crear el puerto.",
+        "danger",
+      );
+    } finally {
+      setPortSubmitting(false);
     }
   }
 
@@ -395,7 +448,7 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
         open={modalOpen}
         icon={Anchor}
         title={editing ? "Editar muelle" : "Nuevo muelle"}
-        subtitle="Muelle asociado a un puerto, independiente del lugar de trabajo."
+        subtitle="Muelle asociado a un puerto del catálogo."
         onClose={closeModal}
         maxWidthClass="w-full max-w-[520px] sm:w-[520px]"
         footer={
@@ -451,24 +504,40 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
             </label>
           ) : null}
 
-          <label className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5">
             <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
               Puerto *
             </span>
-            <select
-              className={selectClass}
-              value={form.portName}
-              onChange={(e) => setField("portName", e.target.value)}
-              required
-            >
-              <option value="">Seleccionar puerto</option>
-              {portOptions.map((port) => (
-                <option key={port} value={port}>
-                  {port}
-                </option>
-              ))}
-            </select>
-          </label>
+            <div className="flex items-center gap-2">
+              <select
+                className={`${selectClass} min-w-0 flex-1`}
+                value={form.portId}
+                onChange={(e) => setField("portId", e.target.value)}
+                required
+              >
+                <option value="">Seleccionar puerto</option>
+                {portsForForm.map((port) => (
+                  <option key={port.id} value={port.id}>
+                    {port.name}
+                  </option>
+                ))}
+              </select>
+              {canManage ? (
+                <button
+                  type="button"
+                  className="inline-flex size-[42px] shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                  aria-label="Nuevo puerto"
+                  title="Nuevo puerto"
+                  onClick={() => {
+                    setPortNameDraft("");
+                    setPortModalOpen(true);
+                  }}
+                >
+                  <Plus className="size-4" strokeWidth={1.5} aria-hidden />
+                </button>
+              ) : null}
+            </div>
+          </div>
 
           <TextField
             label="Nombre *"
@@ -494,6 +563,59 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
               aria-label="Muelle activo"
             />
           </div>
+        </form>
+      </Modal>
+
+      {/* Alta rápida de puerto sin salir del modal de muelle. */}
+      <Modal
+        open={portModalOpen}
+        icon={MapPin}
+        title="Nuevo puerto"
+        subtitle="Se asocia a la misma empresa del muelle."
+        onClose={() => {
+          setPortModalOpen(false);
+          setPortNameDraft("");
+        }}
+        maxWidthClass="w-full max-w-[420px] sm:w-[420px]"
+        footer={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setPortModalOpen(false);
+                setPortNameDraft("");
+              }}
+              disabled={portSubmitting}
+              className="inline-flex h-9 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-nachipa-tab,#f4f4f5)] px-3.5 text-[13px] font-medium text-[var(--color-nachipa-body)] hover:brightness-95 disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+            <Button
+              type="submit"
+              form="quick-port-form"
+              className="!w-auto !h-9"
+              disabled={portSubmitting}
+            >
+              {portSubmitting ? "Guardando…" : "Crear puerto"}
+            </Button>
+          </div>
+        }
+      >
+        <form
+          id="quick-port-form"
+          onSubmit={onCreatePort}
+          className="flex flex-col gap-4"
+          noValidate
+        >
+          <TextField
+            label="Nombre *"
+            name="quickPortName"
+            value={portNameDraft}
+            onChange={(e) => setPortNameDraft(e.target.value)}
+            required
+            placeholder="Ej. Castro"
+            autoFocus
+          />
         </form>
       </Modal>
     </>

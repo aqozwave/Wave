@@ -73,8 +73,11 @@ export function Sidebar() {
     location.pathname.startsWith("/empresas") ||
     location.pathname.startsWith("/ubicaciones") ||
     location.pathname.startsWith("/catalogos");
+  /** Rutas bajo Sistema (Figma). */
+  const onSystemSection = location.pathname.startsWith("/roles");
   const onPanel = location.pathname === "/";
   const [configOpen, setConfigOpen] = useState(onConfigSection);
+  const [systemOpen, setSystemOpen] = useState(onSystemSection);
 
   useEffect(() => {
     setCollapsed(readCollapsed());
@@ -86,6 +89,12 @@ export function Sidebar() {
       setConfigOpen(true);
     }
   }, [onConfigSection]);
+
+  useEffect(() => {
+    if (onSystemSection) {
+      setSystemOpen(true);
+    }
+  }, [onSystemSection]);
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -156,7 +165,13 @@ export function Sidebar() {
               active={onConfigSection}
               collapsed
             />
-            <SidebarItem label="Sistema" icon={ShieldCheck} collapsed />
+            <SidebarItem
+              label="Sistema"
+              icon={ShieldCheck}
+              to="/roles"
+              active={onSystemSection}
+              collapsed
+            />
           </nav>
 
           <div className="flex justify-center border-t border-[var(--color-nav-border)] p-3">
@@ -294,7 +309,87 @@ export function Sidebar() {
               ) : null}
             </div>
 
-            <SidebarItem label="Sistema" icon={ShieldCheck} expandable />
+            {/* Grupo Sistema (Figma): Roles y permisos. */}
+            <div className="flex w-full flex-col">
+              <button
+                type="button"
+                onClick={() => setSystemOpen((v) => !v)}
+                className={[
+                  "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
+                  onSystemSection || systemOpen
+                    ? "font-medium text-[var(--color-nav-item-active-fg)]"
+                    : "font-normal text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
+                ].join(" ")}
+                aria-expanded={systemOpen}
+              >
+                <ShieldCheck
+                  size={18}
+                  strokeWidth={1.5}
+                  className="text-[var(--color-nav-icon)]"
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1 truncate">Sistema</span>
+                <span
+                  className={[
+                    "inline-flex size-3.5 shrink-0 text-[var(--color-nav-icon)] transition-transform",
+                    systemOpen ? "rotate-90" : "",
+                  ].join(" ")}
+                  aria-hidden
+                >
+                  <svg viewBox="0 0 14 14" className="size-3.5" fill="none">
+                    <path
+                      d="M5 3.5 8.5 7 5 10.5"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+              </button>
+              {systemOpen ? (
+                <div className="animate-submenu-enter mb-1 ml-[18px] flex flex-col gap-0.5 border-l border-[var(--color-nav-border)] pl-1.5">
+                  <Link
+                    to="/roles"
+                    aria-current={onSystemSection ? "page" : undefined}
+                    className={[
+                      "relative flex h-8 items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px]",
+                      onSystemSection
+                        ? "bg-[var(--color-nav-item-active-bg)] font-medium text-[var(--color-nav-item-active-fg)]"
+                        : "text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
+                    ].join(" ")}
+                  >
+                    {onSystemSection ? (
+                      <span
+                        className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--color-nachipa-primary)]"
+                        aria-hidden
+                      />
+                    ) : null}
+                    <ShieldCheck
+                      size={14}
+                      strokeWidth={1.5}
+                      className="shrink-0 text-[var(--color-nav-icon)]"
+                      aria-hidden
+                    />
+                    <span className="min-w-0 truncate">Roles y permisos</span>
+                  </Link>
+                  <span
+                    className="relative flex h-8 cursor-default items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px] text-[var(--color-nachipa-muted)]"
+                    title="Próximamente"
+                  >
+                    <ClipboardList
+                      size={14}
+                      strokeWidth={1.5}
+                      className="shrink-0 text-[var(--color-nav-icon)]"
+                      aria-hidden
+                    />
+                    <span className="min-w-0 truncate">
+                      Registro de actividad
+                    </span>
+                  </span>
+                </div>
+              ) : null}
+            </div>
           </nav>
 
           <div className="border-t border-[var(--color-nav-border)] p-3">

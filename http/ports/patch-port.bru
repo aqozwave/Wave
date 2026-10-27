@@ -1,0 +1,43 @@
+meta {
+  name: Patch port
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/ports/{{portId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Castro Centro"
+  }
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("portId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y portId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.name: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -21,21 +21,22 @@ headers {
 body:json {
   {
     "name": "Muelle norte",
-    "portName": "Puerto Montt",
+    "portId": "{{portId}}",
     "businessId": "{{businessId}}"
   }
 }
 
 docs {
-  Admin o superadmin. name y portName obligatorios.
-  Puertos conocidos del portal viejo: Chacabuco, Calbuco, Quellón, Puerto Montt (texto libre).
+  Admin o superadmin. name y portId obligatorios.
+  Creá el puerto antes (Post port) o usá un portId existente.
 }
 
 script:pre-request {
   const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
   const businessId = bru.getEnvVar("businessId");
-  if (!token || !businessId) {
-    throw new Error("Definí accessToken y businessId en el entorno local");
+  const portId = bru.getEnvVar("portId");
+  if (!token || !businessId || !portId) {
+    throw new Error("Definí accessToken, businessId y portId en el entorno local");
   }
 }
 
@@ -49,6 +50,7 @@ script:post-response {
 assert {
   res.status: eq 201
   res.body.id: isDefined
+  res.body.portId: isDefined
   res.body.portName: isDefined
 }
 

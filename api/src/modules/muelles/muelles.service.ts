@@ -12,23 +12,28 @@ import type {
 /** Actor mínimo para reglas de tenant. */
 type Actor = Pick<AuthUser, "internalRol" | "businessId">;
 
-/** Serializa fila Prisma → contrato Zod. */
-function toMuelleResponse(row: {
+/** Fila muelle con puerto incluido (para serializar portName). */
+type MuelleWithPort = {
   id: string;
   legacyMongoId: string | null;
   name: string;
-  portName: string;
+  portId: string;
   businessId: string;
   state: boolean;
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
-}): MuelleResponse {
+  port: { name: string };
+};
+
+/** Serializa fila Prisma → contrato Zod. */
+function toMuelleResponse(row: MuelleWithPort): MuelleResponse {
   return {
     id: row.id,
     legacyMongoId: row.legacyMongoId,
     name: row.name,
-    portName: row.portName,
+    portId: row.portId,
+    portName: row.port.name,
     businessId: row.businessId,
     state: row.state,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
@@ -36,6 +41,9 @@ function toMuelleResponse(row: {
     updatedAt: row.updatedAt.toISOString(),
   };
 }
+
+/** Include fijo del puerto para respuestas. */
+const portInclude = { port: { select: { name: true } } } as const;
 
 /**
  * Filtro de listado: superadmin ve todos (filtros opcionales);
@@ -51,7 +59,7 @@ function listWhere(
     return {
       ...base,
       ...(query.businessId ? { businessId: query.businessId } : {}),
-      ...(query.portName ? { portName: query.portName } : {}),
+      ...(query.portId ? { portId: query.portId } : {}),
     };
   }
 
@@ -66,7 +74,7 @@ function listWhere(
   return {
     ...base,
     businessId: actor.businessId,
-    ...(query.portName ? { portName: query.portName } : {}),
+    ...(query.portId ? { portId: query.portId } : {}),
   };
 }
 
@@ -116,6 +124,21 @@ function assertMuelleTenantAccess(
   }
 }
 
+/**
+ * Valida que el puerto exista, esté activo y pertenezca a la empresa del muelle.
+ */
+async function assertPortForBusiness(
+  portId: string,
+  businessId: string,
+): Promise<void> {
+  const port = await prisma.port.findFirst({
+    where: { id: portId, deletedAt: null },
+  });
+  if (!port || port.businessId !== businessId) {
+    throw new AppError(400, "port_not_found", "Puerto no encontrado");
+  }
+}
+
 /** Lista muelles visibles para el actor (paginado). */
 export async function listMuelles(
   actor: Actor,
@@ -133,7 +156,8 @@ export async function listMuelles(
     prisma.muelle.count({ where }),
     prisma.muelle.findMany({
       where,
-      orderBy: [{ portName: "asc" }, { name: "asc" }],
+      include: portInclude,
+      orderBy: [{ port: { name: "asc" } }, { name: "asc" }],
       skip,
       take: query.limit,
     }),
@@ -154,6 +178,7 @@ export async function getMuelleById(
 ): Promise<MuelleResponse> {
   const row = await prisma.muelle.findFirst({
     where: { id, deletedAt: null },
+    include: portInclude,
   });
   if (!row) {
     throw new AppError(404, "muelle_not_found", "Muelle no encontrado");
@@ -179,14 +204,17 @@ export async function createMuelle(
     throw new AppError(400, "business_not_found", "Empresa no encontrada");
   }
 
+  await assertPortForBusiness(body.portId, businessId);
+
   try {
     const row = await prisma.muelle.create({
       data: {
         name: body.name,
-        portName: body.portName,
+        portId: body.portId,
         businessId,
         state: body.state ?? true,
       },
+      include: portInclude,
     });
     return toMuelleResponse(row);
   } catch (err) {
@@ -240,10 +268,15 @@ export async function updateMuelle(
     nextBusinessId = payload.businessId;
   }
 
+  const nextPortId = payload.portId ?? existing.portId;
+  await assertPortForBusiness(nextPortId, nextBusinessId);
+
   const data: Prisma.MuelleUpdateInput = {};
   if (payload.name !== undefined) data.name = payload.name;
-  if (payload.portName !== undefined) data.portName = payload.portName;
   if (payload.state !== undefined) data.state = payload.state;
+  if (nextPortId !== existing.portId) {
+    data.port = { connect: { id: nextPortId } };
+  }
   if (nextBusinessId !== existing.businessId) {
     data.business = { connect: { id: nextBusinessId } };
   }
@@ -252,6 +285,7 @@ export async function updateMuelle(
     const updated = await prisma.muelle.update({
       where: { id },
       data,
+      include: portInclude,
     });
     return toMuelleResponse(updated);
   } catch (err) {
@@ -279,6 +313,7 @@ export async function deleteMuelleById(
 ): Promise<MuelleResponse> {
   const muelle = await prisma.muelle.findFirst({
     where: { id, deletedAt: null },
+    include: portInclude,
   });
   if (!muelle) {
     throw new AppError(404, "muelle_not_found", "Muelle no encontrado");
@@ -291,6 +326,7 @@ export async function deleteMuelleById(
       deletedAt: new Date(),
       state: false,
     },
+    include: portInclude,
   });
   return toMuelleResponse(updated);
 }

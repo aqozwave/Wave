@@ -5,6 +5,7 @@ export type Muelle = {
   id: string;
   legacyMongoId: string | null;
   name: string;
+  portId: string;
   portName: string;
   businessId: string;
   state: boolean;
@@ -24,7 +25,7 @@ export type ListMuellesResult = {
 /** Body create / patch. */
 export type MuelleWriteBody = {
   name?: string;
-  portName?: string;
+  portId?: string;
   businessId?: string;
   state?: boolean;
 };
@@ -52,14 +53,14 @@ export async function listMuellesRequest(
   accessToken: string,
   page = 1,
   limit = 100,
-  filters?: { businessId?: string; portName?: string },
+  filters?: { businessId?: string; portId?: string },
 ): Promise<ListMuellesResult> {
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit),
   });
   if (filters?.businessId) params.set("businessId", filters.businessId);
-  if (filters?.portName) params.set("portName", filters.portName);
+  if (filters?.portId) params.set("portId", filters.portId);
   const res = await fetch(`/api/v1/muelles?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });

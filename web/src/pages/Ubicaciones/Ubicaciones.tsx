@@ -31,10 +31,11 @@ import {
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { AreasPanel, type AreasPanelHandle } from "./AreasPanel";
 import { MuellesPanel, type MuellesPanelHandle } from "./MuellesPanel";
+import { PortsPanel, type PortsPanelHandle } from "./PortsPanel";
 import { TravesiasPanel, type TravesiasPanelHandle } from "./TravesiasPanel";
 
 /** Tabs de Flota y operación (Figma D16). */
-type FlotaTab = "locations" | "areas" | "muelles" | "travesias";
+type FlotaTab = "locations" | "areas" | "ports" | "muelles" | "travesias";
 
 /** Opciones de tipo: valor API → etiqueta UI. */
 const KIND_OPTIONS: ReadonlyArray<{ value: LocationKind; label: string }> = [
@@ -89,9 +90,8 @@ function kindLabel(kind: LocationKind | null): string {
 }
 
 /**
- * Pantalla Flota y operación (lugares + áreas + muelles + travesías).
- * Tabs Figma D16; lugares con kind; áreas con FK a location; muelles por puerto;
- * travesías con cuota de pasadas.
+ * Pantalla Flota y operación (lugares + áreas + puertos + muelles + travesías).
+ * Tabs Figma D16; muelles con FK a puerto; travesías con cuota de pasadas.
  */
 export function Ubicaciones() {
   const { accessToken, user } = useAuth();
@@ -101,15 +101,16 @@ export function Ubicaciones() {
   const canManage =
     user?.internalRol === "admin" || user?.internalRol === "superadmin";
 
-  /** Tab activo: lugares, áreas, muelles o travesías. */
+  /** Tab activo de Flota. */
   const [tab, setTab] = useState<FlotaTab>("locations");
   /** Abre el modal de alta de áreas desde el PageHeader. */
   const areasPanelRef = useRef<AreasPanelHandle>(null);
+  /** Abre el modal de alta de puertos desde el PageHeader. */
+  const portsPanelRef = useRef<PortsPanelHandle>(null);
   /** Abre el modal de alta de muelles desde el PageHeader. */
   const muellesPanelRef = useRef<MuellesPanelHandle>(null);
   /** Abre el modal de alta de travesías desde el PageHeader. */
-  const travesiasPanelRef = useRef<TravesiasPanelHandle>(null);
-  const [items, setItems] = useState<Location[]>([]);
+  const travesiasPanelRef = useRef<TravesiasPanelHandle>(null);  const [items, setItems] = useState<Location[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -305,6 +306,8 @@ export function Ubicaciones() {
                   if (tab === "locations") openCreate();
                   else if (tab === "areas")
                     areasPanelRef.current?.openCreate();
+                  else if (tab === "ports")
+                    portsPanelRef.current?.openCreate();
                   else if (tab === "muelles")
                     muellesPanelRef.current?.openCreate();
                   else travesiasPanelRef.current?.openCreate();
@@ -315,15 +318,17 @@ export function Ubicaciones() {
                   ? "Nuevo lugar"
                   : tab === "areas"
                     ? "Nueva área"
-                    : tab === "muelles"
-                      ? "Nuevo muelle"
-                      : "Nueva travesía"}
+                    : tab === "ports"
+                      ? "Nuevo puerto"
+                      : tab === "muelles"
+                        ? "Nuevo muelle"
+                        : "Nueva travesía"}
               </Button>
             ) : undefined
           }
         />
 
-        {/* Tabs Figma D16: Lugares · Áreas · Muelles · Travesías. */}
+        {/* Tabs: Lugares · Áreas · Puertos · Muelles · Travesías. */}
         <div
           className="flex shrink-0 gap-1.5"
           role="tablist"
@@ -333,6 +338,7 @@ export function Ubicaciones() {
             [
               { id: "locations" as const, label: "Lugares de trabajo" },
               { id: "areas" as const, label: "Áreas" },
+              { id: "ports" as const, label: "Puertos" },
               { id: "muelles" as const, label: "Muelles" },
               { id: "travesias" as const, label: "Travesías" },
             ] as const
@@ -361,6 +367,12 @@ export function Ubicaciones() {
         {tab === "areas" ? (
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden">
             <AreasPanel ref={areasPanelRef} />
+          </div>
+        ) : null}
+
+        {tab === "ports" ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden">
+            <PortsPanel ref={portsPanelRef} />
           </div>
         ) : null}
 

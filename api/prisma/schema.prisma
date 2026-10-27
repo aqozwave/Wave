@@ -40,14 +40,38 @@ enum OfficerKind {
 }
 
 /**
+ * Puerto del catálogo por empresa (maestro de muelles).
+ * Nombre único por business entre no borrados (índice parcial en migración).
+ */
+model Port {
+  id            String    @id @default(uuid()) @db.Uuid
+  legacyMongoId String?   @unique @map("legacy_mongo_id")
+  /// Nombre del puerto; casing se conserva (ej. "Puerto Montt").
+  name          String
+  businessId    String    @map("business_id") @db.Uuid
+  business      Business  @relation(fields: [businessId], references: [id])
+  state         Boolean   @default(true)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  muelles       Muelle[]
+
+  @@index([businessId])
+  @@index([name, businessId])
+  @@map("ports")
+}
+
+/**
  * Muelle por puerto y empresa.
- * Único por (portName, name, business) entre no borrados (índice parcial).
+ * Único por (portId, name, business) entre no borrados (índice parcial).
+ * El service valida que port.businessId === muelle.businessId.
  */
 model Muelle {
   id            String    @id @default(uuid()) @db.Uuid
   legacyMongoId String?   @unique @map("legacy_mongo_id")
   name          String
-  portName      String    @map("port_name")
+  portId        String    @map("port_id") @db.Uuid
+  port          Port      @relation(fields: [portId], references: [id])
   businessId    String    @map("business_id") @db.Uuid
   business      Business  @relation(fields: [businessId], references: [id])
   state         Boolean   @default(true)
@@ -56,8 +80,8 @@ model Muelle {
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   @@index([businessId])
-  @@index([portName])
-  @@index([name, portName, businessId])
+  @@index([portId])
+  @@index([name, portId, businessId])
   @@map("muelles")
 }
 
@@ -169,6 +193,7 @@ model Business {
   academicDegrees        AcademicDegree[]
   competencyCertificates CompetencyCertificate[]
   courses                Course[]
+  ports                  Port[]
   muelles                Muelle[]
   travesias              Travesia[]
 

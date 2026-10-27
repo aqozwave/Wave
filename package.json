@@ -26,6 +26,7 @@
     "etl:competency-certificate": "npm run etl:competency-certificate -w @wave/api --",
     "etl:course": "npm run etl:course -w @wave/api --",
     "etl:muelle": "npm run etl:muelle -w @wave/api --",
-    "etl:travesia": "npm run etl:travesia -w @wave/api --"
+    "etl:travesia": "npm run etl:travesia -w @wave/api --",
+    "etl:role": "npm run etl:role -w @wave/api --"
   }
 }

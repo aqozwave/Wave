@@ -1,0 +1,45 @@
+meta {
+  name: Patch role
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/roles/{{roleId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "description": "Actualizado desde Bruno"
+  }
+}
+
+docs {
+  Solo superadmin. Definí roleId en el entorno.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("roleId");
+  if (!token || !id) throw new Error("Definí accessToken y roleId");
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

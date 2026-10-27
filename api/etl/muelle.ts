@@ -7,7 +7,8 @@
  *
  * Idempotente: upsert por legacyMongoId (= Mongo _id).
  * Resuelve businessID → businesses.legacyMongoId.
- * Único lógico: name + portName + business (como portal viejo).
+ * Resuelve / crea Port por (portName, business) y asigna portId.
+ * Único lógico: name + port + business (como portal viejo).
  * Omite docs sin name, portName o businessID.
  * Solo lectura en Mongo.
  */
@@ -34,15 +35,12 @@ function emptyToNull(value: string | null | undefined): string | null {
   return t.length === 0 ? null : t;
 }
 
-/** Nombre en minúsculas (mismo criterio que API Wave). */
+/** Nombre del muelle en minúsculas (mismo criterio que API Wave). */
 function normalizeName(value: string): string {
   return value.trim().toLowerCase();
 }
 
-/**
- * Puerto: trim, conserva casing (API Wave no fuerza lower;
- * unicidad lógica coincide con portal viejo).
- */
+/** Puerto: trim, conserva casing. */
 function normalizePortName(value: string): string {
   return value.trim();
 }
@@ -58,6 +56,36 @@ function idToString(
 /** ¿Hay flag --apply en argv? */
 function wantsApply(): boolean {
   return process.argv.includes("--apply");
+}
+
+/**
+ * Busca o crea el puerto de la empresa por nombre (case-insensitive).
+ * En dry-run solo reporta si existiría.
+ */
+async function resolvePortId(
+  prisma: PrismaClient,
+  businessId: string,
+  portName: string,
+  apply: boolean,
+): Promise<string | null> {
+  const existing = await prisma.port.findFirst({
+    where: {
+      deletedAt: null,
+      businessId,
+      name: { equals: portName, mode: "insensitive" },
+    },
+  });
+  if (existing) return existing.id;
+  if (!apply) return null;
+
+  const created = await prisma.port.create({
+    data: {
+      name: portName,
+      businessId,
+      state: true,
+    },
+  });
+  return created.id;
 }
 
 async function main(): Promise<void> {
@@ -90,6 +118,7 @@ async function main(): Promise<void> {
     let wouldUpsert = 0;
     let skipped = 0;
     let written = 0;
+    let portsCreated = 0;
     const skipReasons: string[] = [];
 
     for (const doc of docs) {
@@ -125,16 +154,33 @@ async function main(): Promise<void> {
 
       const name = normalizeName(rawName);
       const portName = normalizePortName(rawPort);
+
+      const portBefore = await prisma.port.findFirst({
+        where: {
+          deletedAt: null,
+          businessId,
+          name: { equals: portName, mode: "insensitive" },
+        },
+      });
+
+      wouldUpsert += 1;
+      if (!apply) continue;
+
+      const portId = await resolvePortId(prisma, businessId, portName, apply);
+      if (!portId) {
+        skipped += 1;
+        skipReasons.push(`${legacyMongoId}: no se pudo resolver puerto`);
+        continue;
+      }
+      if (!portBefore) portsCreated += 1;
+
       const payload = {
         name,
-        portName,
+        portId,
         businessId,
         state: doc.state ?? true,
         deletedAt: doc.deletedAt ?? null,
       };
-
-      wouldUpsert += 1;
-      if (!apply) continue;
 
       const byLegacy = await prisma.muelle.findUnique({
         where: { legacyMongoId },
@@ -153,8 +199,8 @@ async function main(): Promise<void> {
         where: {
           deletedAt: null,
           businessId,
+          portId,
           name: { equals: name, mode: "insensitive" },
-          portName: { equals: portName, mode: "insensitive" },
         },
       });
       if (sameKey) {
@@ -188,6 +234,7 @@ async function main(): Promise<void> {
     }
 
     if (apply) {
+      console.log(`[etl:muelle] puertos creados al vuelo: ${portsCreated}`);
       console.log(`[etl:muelle] escritos (upsert): ${written}`);
       const totalPg = await prisma.muelle.count();
       console.log(`[etl:muelle] total en Postgres muelles: ${totalPg}`);

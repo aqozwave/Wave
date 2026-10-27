@@ -12,6 +12,7 @@ import { Empresas } from "./pages/Empresas/Empresas";
 import { Panel } from "./pages/Panel/Panel";
 import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmation";
 import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
+import { Roles } from "./pages/Roles/Roles";
 import { Ubicaciones } from "./pages/Ubicaciones/Ubicaciones";
 
 /**
@@ -100,6 +101,7 @@ export function App() {
           <Route path="empresas" element={<Empresas />} />
           <Route path="ubicaciones" element={<Ubicaciones />} />
           <Route path="catalogos" element={<Catalogos />} />
+          <Route path="roles" element={<Roles />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

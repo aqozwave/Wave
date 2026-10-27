@@ -2,7 +2,7 @@ import { z } from "../../lib/zod.js";
 
 /**
  * Campos de muelle.
- * name en minúsculas; portName se conserva (casing importa en unicidad).
+ * name en minúsculas; portId apunta al catálogo Port.
  * businessId opcional en body (admin usa el suyo; superadmin lo exige al crear).
  */
 export const muelleFieldsSchema = z.object({
@@ -11,22 +11,21 @@ export const muelleFieldsSchema = z.object({
     .trim()
     .min(1, "Nombre es requerido")
     .transform((v) => v.toLowerCase()),
-  /** Puerto del muelle (texto libre; UI sugiere valores conocidos). */
-  portName: z
-    .string({ error: "Puerto es requerido" })
-    .trim()
-    .min(1, "Puerto es requerido"),
+  /** Puerto del catálogo (misma empresa que el muelle). */
+  portId: z.uuid({ error: "Puerto es requerido" }),
   /** Empresa dueña. Obligatorio para superadmin al crear. */
   businessId: z.uuid().optional(),
   state: z.boolean().optional(),
 });
 
-/** Un muelle en respuestas de API. */
+/** Un muelle en respuestas de API (incluye nombre del puerto para UI). */
 export const muelleResponseSchema = z
   .object({
     id: z.uuid(),
     legacyMongoId: z.string().nullable(),
     name: z.string(),
+    portId: z.uuid(),
+    /** Nombre del puerto (join); facilita tablas sin fetch extra. */
     portName: z.string(),
     businessId: z.uuid(),
     state: z.boolean(),
@@ -48,7 +47,7 @@ export const listMuellesQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
   businessId: z.uuid().optional(),
-  portName: z.string().trim().min(1).optional(),
+  portId: z.uuid().optional(),
 });
 
 export const listMuellesRequestSchema = z.object({
