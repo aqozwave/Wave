@@ -14,7 +14,13 @@
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
     "etl:business": "tsx --env-file=.env etl/business.ts",
     "etl:location": "tsx --env-file=.env etl/location.ts",
-    "etl:area": "tsx --env-file=.env etl/area.ts"
+    "etl:area": "tsx --env-file=.env etl/area.ts",
+    "etl:rank": "tsx --env-file=.env etl/rank.ts",
+    "etl:academic-degree": "tsx --env-file=.env etl/academicDegree.ts",
+    "etl:competency-certificate": "tsx --env-file=.env etl/competencyCertificate.ts",
+    "etl:course": "tsx --env-file=.env etl/course.ts",
+    "etl:muelle": "tsx --env-file=.env etl/muelle.ts",
+    "etl:travesia": "tsx --env-file=.env etl/travesia.ts"
   },
   "prisma": {
     "seed": "tsx --env-file=.env prisma/seed.ts"

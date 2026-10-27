@@ -32,6 +32,58 @@ enum LocationKind {
   other
 }
 
+/// Oficial de nave asociado a un certificado de competencia (portal viejo).
+/// UI: captain=Capitán, first_pilot=Primer piloto. Null = sin clasificar.
+enum OfficerKind {
+  captain
+  first_pilot
+}
+
+/**
+ * Muelle por puerto y empresa.
+ * Único por (portName, name, business) entre no borrados (índice parcial).
+ */
+model Muelle {
+  id            String    @id @default(uuid()) @db.Uuid
+  legacyMongoId String?   @unique @map("legacy_mongo_id")
+  name          String
+  portName      String    @map("port_name")
+  businessId    String    @map("business_id") @db.Uuid
+  business      Business  @relation(fields: [businessId], references: [id])
+  state         Boolean   @default(true)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([businessId])
+  @@index([portName])
+  @@index([name, portName, businessId])
+  @@map("muelles")
+}
+
+/**
+ * Travesía del catálogo por empresa (cuota de pasadas para oficiales).
+ * requiredPassages solo 10 o 4 (validado en Zod; Int en PG).
+ * Nombre único por business entre no borradas (índice parcial en migración).
+ */
+model Travesia {
+  id               String    @id @default(uuid()) @db.Uuid
+  legacyMongoId    String?   @unique @map("legacy_mongo_id")
+  name             String
+  /// Cuota de pasadas requeridas (10 o 4 en el portal viejo).
+  requiredPassages Int       @map("required_passages")
+  businessId       String    @map("business_id") @db.Uuid
+  business         Business  @relation(fields: [businessId], references: [id])
+  state            Boolean   @default(true)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([businessId])
+  @@index([name, businessId])
+  @@map("travesias")
+}
+
 model Role {
   id            String        @id @default(uuid()) @db.Uuid
   legacyMongoId String?       @unique @map("legacy_mongo_id")
@@ -53,35 +105,35 @@ model Role {
 }
 
 model User {
-  id            String    @id @default(uuid()) @db.Uuid
-  legacyMongoId String?   @unique @map("legacy_mongo_id")
-  run           String
-  username      String
-  passwordHash  String    @map("password_hash")
-  firstName     String    @map("first_name")
-  lastName      String    @map("last_name")
-  email         String
-  pendingEmail  String?   @map("pending_email")
-  internalRol   String    @default("user") @map("internal_rol")
-  roleId        String?   @map("role_id") @db.Uuid
-  role          Role?     @relation(fields: [roleId], references: [id])
-  state         Boolean   @default(true)
-  confirmed     Boolean   @default(false)
+  id              String           @id @default(uuid()) @db.Uuid
+  legacyMongoId   String?          @unique @map("legacy_mongo_id")
+  run             String
+  username        String
+  passwordHash    String           @map("password_hash")
+  firstName       String           @map("first_name")
+  lastName        String           @map("last_name")
+  email           String
+  pendingEmail    String?          @map("pending_email")
+  internalRol     String           @default("user") @map("internal_rol")
+  roleId          String?          @map("role_id") @db.Uuid
+  role            Role?            @relation(fields: [roleId], references: [id])
+  state           Boolean          @default(true)
+  confirmed       Boolean          @default(false)
   // Tenant: business (S2), location (S3); area cuando exista (S4).
-  businessId    String?   @map("business_id") @db.Uuid
-  business      Business? @relation(fields: [businessId], references: [id])
-  locationId    String?   @map("location_id") @db.Uuid
-  location      Location? @relation(fields: [locationId], references: [id])
-  areaId        String?   @map("area_id") @db.Uuid
-  area          Area?     @relation(fields: [areaId], references: [id])
-  tokenVersion  Int       @default(0) @map("token_version")
-  lastLoginAt   DateTime? @map("last_login_at") @db.Timestamptz
-  lastLoginIp   String?   @map("last_login_ip")
-  loginAttempts Int       @default(0) @map("login_attempts")
-  lockUntil     DateTime? @map("lock_until") @db.Timestamptz
-  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  businessId      String?          @map("business_id") @db.Uuid
+  business        Business?        @relation(fields: [businessId], references: [id])
+  locationId      String?          @map("location_id") @db.Uuid
+  location        Location?        @relation(fields: [locationId], references: [id])
+  areaId          String?          @map("area_id") @db.Uuid
+  area            Area?            @relation(fields: [areaId], references: [id])
+  tokenVersion    Int              @default(0) @map("token_version")
+  lastLoginAt     DateTime?        @map("last_login_at") @db.Timestamptz
+  lastLoginIp     String?          @map("last_login_ip")
+  loginAttempts   Int              @default(0) @map("login_attempts")
+  lockUntil       DateTime?        @map("lock_until") @db.Timestamptz
+  deletedAt       DateTime?        @map("deleted_at") @db.Timestamptz
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz
   emailTokens     EmailToken[]
   loginChallenges LoginChallenge[]
 
@@ -95,27 +147,122 @@ model User {
 
 /// Empresa (tenant). Soft delete; nombre único entre no borradas (índice parcial en migración).
 model Business {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  legacyMongoId          String?                 @unique @map("legacy_mongo_id")
+  rut                    String?
+  name                   String
+  giro                   String?
+  country                String?                 @default("Chile")
+  commune                String?
+  city                   String?
+  phone                  String?
+  email                  String?
+  description            String?
+  state                  Boolean                 @default(true)
+  deletedAt              DateTime?               @map("deleted_at") @db.Timestamptz
+  createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz
+  users                  User[]
+  locations              Location[]
+  areas                  Area[]
+  ranks                  Rank[]
+  academicDegrees        AcademicDegree[]
+  competencyCertificates CompetencyCertificate[]
+  courses                Course[]
+  muelles                Muelle[]
+  travesias              Travesia[]
+
+  @@index([name])
+  @@map("businesses")
+}
+
+/**
+ * Rango / cargo marítimo (catálogo por empresa).
+ * Nombre único por business entre no borradas (índice parcial en migración).
+ */
+model Rank {
   id            String    @id @default(uuid()) @db.Uuid
   legacyMongoId String?   @unique @map("legacy_mongo_id")
-  rut           String?
   name          String
-  giro          String?
-  country       String?   @default("Chile")
-  commune       String?
-  city          String?
-  phone         String?
-  email         String?
-  description   String?
+  businessId    String    @map("business_id") @db.Uuid
+  business      Business  @relation(fields: [businessId], references: [id])
   state         Boolean   @default(true)
   deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
-  users         User[]
-  locations     Location[]
-  areas         Area[]
 
-  @@index([name])
-  @@map("businesses")
+  @@index([businessId])
+  @@index([name, businessId])
+  @@map("ranks")
+}
+
+/**
+ * Título académico / marítimo (catálogo por empresa).
+ * Nombre único por business entre no borradas (índice parcial en migración).
+ */
+model AcademicDegree {
+  id            String    @id @default(uuid()) @db.Uuid
+  legacyMongoId String?   @unique @map("legacy_mongo_id")
+  name          String
+  businessId    String    @map("business_id") @db.Uuid
+  business      Business  @relation(fields: [businessId], references: [id])
+  state         Boolean   @default(true)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([businessId])
+  @@index([name, businessId])
+  @@map("academic_degrees")
+}
+
+/**
+ * Certificado de competencia (catálogo por empresa).
+ * officerKind opcional (capitán / primer piloto).
+ * Nombre único por business entre no borradas (índice parcial en migración).
+ */
+model CompetencyCertificate {
+  id            String       @id @default(uuid()) @db.Uuid
+  legacyMongoId String?      @unique @map("legacy_mongo_id")
+  name          String
+  businessId    String       @map("business_id") @db.Uuid
+  business      Business     @relation(fields: [businessId], references: [id])
+  /// Capitán / primer piloto; null = sin clasificar.
+  officerKind   OfficerKind? @map("officer_kind")
+  state         Boolean      @default(true)
+  deletedAt     DateTime?    @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([businessId])
+  @@index([name, businessId])
+  @@index([officerKind])
+  @@map("competency_certificates")
+}
+
+/**
+ * Curso del catálogo por empresa (OMI / formación).
+ * Único por (name, whereTaught, business) entre no borrados (índice parcial).
+ */
+model Course {
+  id            String    @id @default(uuid()) @db.Uuid
+  legacyMongoId String?   @unique @map("legacy_mongo_id")
+  name          String
+  /// Lugar de dictado (institución / sede).
+  whereTaught   String    @map("where_taught")
+  businessId    String    @map("business_id") @db.Uuid
+  business      Business  @relation(fields: [businessId], references: [id])
+  description   String?
+  /// Obligatorio por defecto (portal viejo).
+  isMandatory   Boolean   @default(true) @map("is_mandatory")
+  state         Boolean   @default(true)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([businessId])
+  @@index([name, whereTaught, businessId])
+  @@map("courses")
 }
 
 /// Lugar de trabajo de una empresa. Soft delete; nombre único por business entre no borradas.

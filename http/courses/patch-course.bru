@@ -1,0 +1,44 @@
+meta {
+  name: Patch course
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/courses/{{courseId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "STCW avanzado",
+    "isMandatory": false
+  }
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("courseId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y courseId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.name: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

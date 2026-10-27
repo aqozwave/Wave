@@ -7,6 +7,7 @@ import { useIdleTimeout } from "./lib/auth/useIdleTimeout";
 import { ConfirmEmail } from "./pages/ConfirmEmail/ConfirmEmail";
 import { ForgotPassword } from "./pages/ForgotPassword/ForgotPassword";
 import { Login } from "./pages/Login/Login";
+import { Catalogos } from "./pages/Catalogos/Catalogos";
 import { Empresas } from "./pages/Empresas/Empresas";
 import { Panel } from "./pages/Panel/Panel";
 import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmation";
@@ -98,6 +99,7 @@ export function App() {
           <Route index element={<Panel />} />
           <Route path="empresas" element={<Empresas />} />
           <Route path="ubicaciones" element={<Ubicaciones />} />
+          <Route path="catalogos" element={<Catalogos />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,0 +1,44 @@
+meta {
+  name: Patch competency certificate
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/competency-certificates/{{competencyCertificateId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Oficial de puente",
+    "officerKind": "first_pilot"
+  }
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("competencyCertificateId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y competencyCertificateId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.name: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

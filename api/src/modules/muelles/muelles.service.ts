@@ -1,0 +1,296 @@
+import { Prisma } from "@prisma/client";
+import { AppError } from "../../lib/errors.js";
+import { prisma } from "../../lib/prisma.js";
+import type { AuthUser } from "../auth/auth.schemas.js";
+import type {
+  CreateMuelleBody,
+  ListMuellesQuery,
+  MuelleResponse,
+  UpdateMuelleBody,
+} from "./muelles.schemas.js";
+
+/** Actor mínimo para reglas de tenant. */
+type Actor = Pick<AuthUser, "internalRol" | "businessId">;
+
+/** Serializa fila Prisma → contrato Zod. */
+function toMuelleResponse(row: {
+  id: string;
+  legacyMongoId: string | null;
+  name: string;
+  portName: string;
+  businessId: string;
+  state: boolean;
+  deletedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): MuelleResponse {
+  return {
+    id: row.id,
+    legacyMongoId: row.legacyMongoId,
+    name: row.name,
+    portName: row.portName,
+    businessId: row.businessId,
+    state: row.state,
+    deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Filtro de listado: superadmin ve todos (filtros opcionales);
+ * admin/user solo los de su empresa.
+ */
+function listWhere(
+  actor: Actor,
+  query: ListMuellesQuery,
+): Prisma.MuelleWhereInput {
+  const base: Prisma.MuelleWhereInput = { deletedAt: null };
+
+  if (actor.internalRol === "superadmin") {
+    return {
+      ...base,
+      ...(query.businessId ? { businessId: query.businessId } : {}),
+      ...(query.portName ? { portName: query.portName } : {}),
+    };
+  }
+
+  if (!actor.businessId) {
+    throw new AppError(
+      403,
+      "forbidden",
+      "Tu usuario no tiene una empresa asignada",
+    );
+  }
+
+  return {
+    ...base,
+    businessId: actor.businessId,
+    ...(query.portName ? { portName: query.portName } : {}),
+  };
+}
+
+/**
+ * Resuelve businessId de creación: admin → su empresa;
+ * superadmin → body.businessId obligatorio.
+ */
+function resolveCreateBusinessId(
+  actor: Actor,
+  body: CreateMuelleBody,
+): string {
+  if (actor.internalRol === "admin") {
+    if (!actor.businessId) {
+      throw new AppError(
+        403,
+        "forbidden",
+        "Tu usuario no tiene una empresa asignada",
+      );
+    }
+    return actor.businessId;
+  }
+
+  if (!body.businessId) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "businessId es requerido para crear un muelle",
+    );
+  }
+  return body.businessId;
+}
+
+/**
+ * 404 genérico si el actor no puede ver esa empresa
+ * (no filtrar existencia a otra empresa).
+ */
+function assertMuelleTenantAccess(
+  actor: Actor,
+  muelleBusinessId: string,
+): void {
+  if (actor.internalRol === "superadmin") {
+    return;
+  }
+
+  if (!actor.businessId || actor.businessId !== muelleBusinessId) {
+    throw new AppError(404, "muelle_not_found", "Muelle no encontrado");
+  }
+}
+
+/** Lista muelles visibles para el actor (paginado). */
+export async function listMuelles(
+  actor: Actor,
+  query: ListMuellesQuery,
+): Promise<{
+  items: MuelleResponse[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  const where = listWhere(actor, query);
+  const skip = (query.page - 1) * query.limit;
+
+  const [total, rows] = await prisma.$transaction([
+    prisma.muelle.count({ where }),
+    prisma.muelle.findMany({
+      where,
+      orderBy: [{ portName: "asc" }, { name: "asc" }],
+      skip,
+      take: query.limit,
+    }),
+  ]);
+
+  return {
+    items: rows.map(toMuelleResponse),
+    total,
+    page: query.page,
+    limit: query.limit,
+  };
+}
+
+/** Detalle por id (tenant-aware). */
+export async function getMuelleById(
+  actor: Actor,
+  id: string,
+): Promise<MuelleResponse> {
+  const row = await prisma.muelle.findFirst({
+    where: { id, deletedAt: null },
+  });
+  if (!row) {
+    throw new AppError(404, "muelle_not_found", "Muelle no encontrado");
+  }
+  assertMuelleTenantAccess(actor, row.businessId);
+  return toMuelleResponse(row);
+}
+
+/**
+ * Crea muelle (admin o superadmin).
+ * Único por empresa + puerto + nombre entre no borrados.
+ */
+export async function createMuelle(
+  actor: Actor,
+  body: CreateMuelleBody,
+): Promise<MuelleResponse> {
+  const businessId = resolveCreateBusinessId(actor, body);
+
+  const business = await prisma.business.findFirst({
+    where: { id: businessId, deletedAt: null },
+  });
+  if (!business) {
+    throw new AppError(400, "business_not_found", "Empresa no encontrada");
+  }
+
+  try {
+    const row = await prisma.muelle.create({
+      data: {
+        name: body.name,
+        portName: body.portName,
+        businessId,
+        state: body.state ?? true,
+      },
+    });
+    return toMuelleResponse(row);
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      throw new AppError(
+        409,
+        "duplicate_muelle",
+        "Ya existe un muelle con ese nombre en este puerto y empresa",
+      );
+    }
+    throw err;
+  }
+}
+
+/**
+ * Actualiza muelle. Admin no puede cambiar businessId a otra empresa.
+ */
+export async function updateMuelle(
+  actor: Actor,
+  id: string,
+  payload: UpdateMuelleBody,
+): Promise<MuelleResponse> {
+  const existing = await prisma.muelle.findFirst({
+    where: { id, deletedAt: null },
+  });
+  if (!existing) {
+    throw new AppError(404, "muelle_not_found", "Muelle no encontrado");
+  }
+  assertMuelleTenantAccess(actor, existing.businessId);
+
+  let nextBusinessId = existing.businessId;
+  if (payload.businessId !== undefined) {
+    if (actor.internalRol === "admin") {
+      if (payload.businessId !== actor.businessId) {
+        throw new AppError(
+          403,
+          "forbidden",
+          "No puedes asignar el muelle a otra empresa",
+        );
+      }
+    }
+    const business = await prisma.business.findFirst({
+      where: { id: payload.businessId, deletedAt: null },
+    });
+    if (!business) {
+      throw new AppError(400, "business_not_found", "Empresa no encontrada");
+    }
+    nextBusinessId = payload.businessId;
+  }
+
+  const data: Prisma.MuelleUpdateInput = {};
+  if (payload.name !== undefined) data.name = payload.name;
+  if (payload.portName !== undefined) data.portName = payload.portName;
+  if (payload.state !== undefined) data.state = payload.state;
+  if (nextBusinessId !== existing.businessId) {
+    data.business = { connect: { id: nextBusinessId } };
+  }
+
+  try {
+    const updated = await prisma.muelle.update({
+      where: { id },
+      data,
+    });
+    return toMuelleResponse(updated);
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      throw new AppError(
+        409,
+        "duplicate_muelle",
+        "Ya existe un muelle con ese nombre en este puerto y empresa",
+      );
+    }
+    throw err;
+  }
+}
+
+/**
+ * Soft delete.
+ * Cuando exista CrewMemberMuelle (S7), rechazar si hay asignaciones activas.
+ */
+export async function deleteMuelleById(
+  actor: Actor,
+  id: string,
+): Promise<MuelleResponse> {
+  const muelle = await prisma.muelle.findFirst({
+    where: { id, deletedAt: null },
+  });
+  if (!muelle) {
+    throw new AppError(404, "muelle_not_found", "Muelle no encontrado");
+  }
+  assertMuelleTenantAccess(actor, muelle.businessId);
+
+  const updated = await prisma.muelle.update({
+    where: { id },
+    data: {
+      deletedAt: new Date(),
+      state: false,
+    },
+  });
+  return toMuelleResponse(updated);
+}

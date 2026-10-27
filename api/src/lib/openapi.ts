@@ -45,6 +45,61 @@ import {
   updateAreaResponseSchema,
 } from "../modules/areas/areas.schemas.js";
 import {
+  createRankBodySchema,
+  createRankResponseSchema,
+  deleteRankResponseSchema,
+  getRankResponseSchema,
+  listRanksResponseSchema,
+  updateRankBodySchema,
+  updateRankResponseSchema,
+} from "../modules/ranks/ranks.schemas.js";
+import {
+  createAcademicDegreeBodySchema,
+  createAcademicDegreeResponseSchema,
+  deleteAcademicDegreeResponseSchema,
+  getAcademicDegreeResponseSchema,
+  listAcademicDegreesResponseSchema,
+  updateAcademicDegreeBodySchema,
+  updateAcademicDegreeResponseSchema,
+} from "../modules/academicDegrees/academicDegrees.schemas.js";
+import {
+  createCompetencyCertificateBodySchema,
+  createCompetencyCertificateResponseSchema,
+  deleteCompetencyCertificateResponseSchema,
+  getCompetencyCertificateResponseSchema,
+  listCompetencyCertificatesResponseSchema,
+  officerKindSchema,
+  updateCompetencyCertificateBodySchema,
+  updateCompetencyCertificateResponseSchema,
+} from "../modules/competencyCertificates/competencyCertificates.schemas.js";
+import {
+  createCourseBodySchema,
+  createCourseResponseSchema,
+  deleteCourseResponseSchema,
+  getCourseResponseSchema,
+  listCoursesResponseSchema,
+  updateCourseBodySchema,
+  updateCourseResponseSchema,
+} from "../modules/courses/courses.schemas.js";
+import {
+  createMuelleBodySchema,
+  createMuelleResponseSchema,
+  deleteMuelleResponseSchema,
+  getMuelleResponseSchema,
+  listMuellesResponseSchema,
+  updateMuelleBodySchema,
+  updateMuelleResponseSchema,
+} from "../modules/muelles/muelles.schemas.js";
+import {
+  createTravesiaBodySchema,
+  createTravesiaResponseSchema,
+  deleteTravesiaResponseSchema,
+  getTravesiaResponseSchema,
+  listTravesiasResponseSchema,
+  updateTravesiaBodySchema,
+  updateTravesiaResponseSchema,
+} from "../modules/travesias/travesias.schemas.js";
+import {
   createLocationBodySchema,
   createLocationResponseSchema,
   deleteLocationResponseSchema,
@@ -407,8 +462,7 @@ registry.registerPath({
   path: "/api/v1/businesses",
   tags: ["Businesses"],
   summary: "Listar empresas",
-  description:
-    "Superadmin: todas. Admin/user: solo la suya. Requiere Bearer.",
+  description: "Superadmin: todas. Admin/user: solo la suya. Requiere Bearer.",
   security: [{ bearerAuth: [] }],
   request: {
     query: z.object({
@@ -489,8 +543,7 @@ registry.registerPath({
   path: "/api/v1/businesses/{id}",
   tags: ["Businesses"],
   summary: "Actualizar empresa",
-  description:
-    "Superadmin: todos los campos. Admin: solo contacto (opción A).",
+  description: "Superadmin: todos los campos. Admin: solo contacto (opción A).",
   security: [{ bearerAuth: [] }],
   request: {
     params: z.object({ id: z.uuid() }),
@@ -803,6 +856,798 @@ registry.registerPath({
     403: { description: "No admin/superadmin" },
     404: { description: "No encontrada" },
     409: { description: "Tiene dependencias" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/ranks",
+  tags: ["Ranks"],
+  summary: "Listar rangos / cargos",
+  description:
+    "Superadmin: todos (filtro businessId opcional). Admin/user: solo su empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(100).default(20).optional(),
+      businessId: z.uuid().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listRanksResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/ranks",
+  tags: ["Ranks"],
+  summary: "Crear rango",
+  description:
+    "Admin o superadmin. businessId obligatorio para superadmin; admin usa el suyo.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createRankBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Rango creado",
+      content: {
+        "application/json": { schema: createRankResponseSchema },
+      },
+    },
+    400: { description: "Validación o empresa inexistente" },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    409: { description: "Nombre duplicado en la empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/ranks/{id}",
+  tags: ["Ranks"],
+  summary: "Obtener rango",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Rango",
+      content: {
+        "application/json": { schema: getRankResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrado o sin acceso" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/ranks/{id}",
+  tags: ["Ranks"],
+  summary: "Actualizar rango",
+  description: "Admin no puede mover el rango a otra empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateRankBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Rango actualizado",
+      content: {
+        "application/json": { schema: updateRankResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "No permitido" },
+    404: { description: "No encontrado" },
+    409: { description: "Nombre duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/ranks/{id}",
+  tags: ["Ranks"],
+  summary: "Eliminar rango (soft)",
+  description:
+    "Soft delete. En S7 se rechazará si hay tripulantes activos con ese rankId.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Rango soft-deleted",
+      content: {
+        "application/json": { schema: deleteRankResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/academic-degrees",
+  tags: ["AcademicDegrees"],
+  summary: "Listar títulos",
+  description:
+    "Superadmin: todos (filtro businessId opcional). Admin/user: solo su empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(100).default(20).optional(),
+      businessId: z.uuid().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listAcademicDegreesResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/academic-degrees",
+  tags: ["AcademicDegrees"],
+  summary: "Crear título",
+  description:
+    "Admin o superadmin. businessId obligatorio para superadmin; admin usa el suyo.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createAcademicDegreeBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Título creado",
+      content: {
+        "application/json": { schema: createAcademicDegreeResponseSchema },
+      },
+    },
+    400: { description: "Validación o empresa inexistente" },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    409: { description: "Nombre duplicado en la empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/academic-degrees/{id}",
+  tags: ["AcademicDegrees"],
+  summary: "Obtener título",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Título",
+      content: {
+        "application/json": { schema: getAcademicDegreeResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrado o sin acceso" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/academic-degrees/{id}",
+  tags: ["AcademicDegrees"],
+  summary: "Actualizar título",
+  description: "Admin no puede mover el título a otra empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateAcademicDegreeBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Título actualizado",
+      content: {
+        "application/json": { schema: updateAcademicDegreeResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "No permitido" },
+    404: { description: "No encontrado" },
+    409: { description: "Nombre duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/academic-degrees/{id}",
+  tags: ["AcademicDegrees"],
+  summary: "Eliminar título (soft)",
+  description:
+    "Soft delete. En S7 se rechazará si hay tripulantes activos con ese academicDegreeId.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Título soft-deleted",
+      content: {
+        "application/json": { schema: deleteAcademicDegreeResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/competency-certificates",
+  tags: ["CompetencyCertificates"],
+  summary: "Listar certificados de competencia",
+  description:
+    "Superadmin: todos (filtros businessId / officerKind). Admin/user: solo su empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(100).default(20).optional(),
+      businessId: z.uuid().optional(),
+      officerKind: officerKindSchema.optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": {
+          schema: listCompetencyCertificatesResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/competency-certificates",
+  tags: ["CompetencyCertificates"],
+  summary: "Crear certificado",
+  description:
+    "Admin o superadmin. businessId obligatorio para superadmin. officerKind opcional (captain | first_pilot).",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createCompetencyCertificateBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Certificado creado",
+      content: {
+        "application/json": {
+          schema: createCompetencyCertificateResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación o empresa inexistente" },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    409: { description: "Nombre duplicado en la empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/competency-certificates/{id}",
+  tags: ["CompetencyCertificates"],
+  summary: "Obtener certificado",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Certificado",
+      content: {
+        "application/json": {
+          schema: getCompetencyCertificateResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrado o sin acceso" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/competency-certificates/{id}",
+  tags: ["CompetencyCertificates"],
+  summary: "Actualizar certificado",
+  description: "Admin no puede mover el certificado a otra empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateCompetencyCertificateBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Certificado actualizado",
+      content: {
+        "application/json": {
+          schema: updateCompetencyCertificateResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "No permitido" },
+    404: { description: "No encontrado" },
+    409: { description: "Nombre duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/competency-certificates/{id}",
+  tags: ["CompetencyCertificates"],
+  summary: "Eliminar certificado (soft)",
+  description:
+    "Soft delete. En S7 se rechazará si hay tripulantes activos con ese id.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Certificado soft-deleted",
+      content: {
+        "application/json": {
+          schema: deleteCompetencyCertificateResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/courses",
+  tags: ["Courses"],
+  summary: "Listar cursos",
+  description:
+    "Superadmin: todos (filtro businessId opcional). Admin/user: solo su empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(100).default(20).optional(),
+      businessId: z.uuid().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listCoursesResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/courses",
+  tags: ["Courses"],
+  summary: "Crear curso",
+  description:
+    "Admin o superadmin. Requiere name y whereTaught. businessId obligatorio para superadmin.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createCourseBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Curso creado",
+      content: {
+        "application/json": { schema: createCourseResponseSchema },
+      },
+    },
+    400: { description: "Validación o empresa inexistente" },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    409: { description: "Nombre + lugar duplicados en la empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/courses/{id}",
+  tags: ["Courses"],
+  summary: "Obtener curso",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Curso",
+      content: {
+        "application/json": { schema: getCourseResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrado o sin acceso" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/courses/{id}",
+  tags: ["Courses"],
+  summary: "Actualizar curso",
+  description: "Admin no puede mover el curso a otra empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateCourseBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Curso actualizado",
+      content: {
+        "application/json": { schema: updateCourseResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "No permitido" },
+    404: { description: "No encontrado" },
+    409: { description: "Nombre + lugar duplicados" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/courses/{id}",
+  tags: ["Courses"],
+  summary: "Eliminar curso (soft)",
+  description:
+    "Soft delete. En S8 se rechazará si hay asignaciones activas a tripulantes.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Curso soft-deleted",
+      content: {
+        "application/json": { schema: deleteCourseResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/muelles",
+  tags: ["Muelles"],
+  summary: "Listar muelles",
+  description:
+    "Superadmin: todos (filtros businessId / portName). Admin/user: solo su empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(100).default(20).optional(),
+      businessId: z.uuid().optional(),
+      portName: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listMuellesResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/muelles",
+  tags: ["Muelles"],
+  summary: "Crear muelle",
+  description:
+    "Admin o superadmin. Requiere name y portName. businessId obligatorio para superadmin.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createMuelleBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Muelle creado",
+      content: {
+        "application/json": { schema: createMuelleResponseSchema },
+      },
+    },
+    400: { description: "Validación o empresa inexistente" },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    409: { description: "Nombre duplicado en puerto y empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/muelles/{id}",
+  tags: ["Muelles"],
+  summary: "Obtener muelle",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Muelle",
+      content: {
+        "application/json": { schema: getMuelleResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrado o sin acceso" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/muelles/{id}",
+  tags: ["Muelles"],
+  summary: "Actualizar muelle",
+  description: "Admin no puede mover el muelle a otra empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateMuelleBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Muelle actualizado",
+      content: {
+        "application/json": { schema: updateMuelleResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "No permitido" },
+    404: { description: "No encontrado" },
+    409: { description: "Nombre duplicado en puerto y empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/muelles/{id}",
+  tags: ["Muelles"],
+  summary: "Eliminar muelle (soft)",
+  description:
+    "Soft delete. En S7 se rechazará si hay asignaciones activas a tripulantes.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Muelle soft-deleted",
+      content: {
+        "application/json": { schema: deleteMuelleResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/travesias",
+  tags: ["Travesias"],
+  summary: "Listar travesías",
+  description:
+    "Superadmin: todas (filtro businessId). Admin/user: solo su empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(100).default(20).optional(),
+      businessId: z.uuid().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listTravesiasResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/travesias",
+  tags: ["Travesias"],
+  summary: "Crear travesía",
+  description:
+    "Admin o superadmin. Requiere name y requiredPassages (10 o 4). businessId obligatorio para superadmin.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createTravesiaBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Travesía creada",
+      content: {
+        "application/json": { schema: createTravesiaResponseSchema },
+      },
+    },
+    400: { description: "Validación o empresa inexistente" },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    409: { description: "Nombre duplicado en empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/travesias/{id}",
+  tags: ["Travesias"],
+  summary: "Obtener travesía",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Travesía",
+      content: {
+        "application/json": { schema: getTravesiaResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrado o sin acceso" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/travesias/{id}",
+  tags: ["Travesias"],
+  summary: "Actualizar travesía",
+  description: "Admin no puede mover la travesía a otra empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateTravesiaBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Travesía actualizada",
+      content: {
+        "application/json": { schema: updateTravesiaResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "No permitido" },
+    404: { description: "No encontrado" },
+    409: { description: "Nombre duplicado en empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/travesias/{id}",
+  tags: ["Travesias"],
+  summary: "Eliminar travesía (soft)",
+  description:
+    "Soft delete. En S7 se rechazará si hay asignaciones activas a tripulantes.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Travesía soft-deleted",
+      content: {
+        "application/json": { schema: deleteTravesiaResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin" },
+    404: { description: "No encontrado" },
   },
 });
 

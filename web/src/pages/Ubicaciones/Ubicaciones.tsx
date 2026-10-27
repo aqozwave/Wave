@@ -30,9 +30,11 @@ import {
 } from "../../lib/api/locations";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { AreasPanel, type AreasPanelHandle } from "./AreasPanel";
+import { MuellesPanel, type MuellesPanelHandle } from "./MuellesPanel";
+import { TravesiasPanel, type TravesiasPanelHandle } from "./TravesiasPanel";
 
 /** Tabs de Flota y operación (Figma D16). */
-type FlotaTab = "locations" | "areas";
+type FlotaTab = "locations" | "areas" | "muelles" | "travesias";
 
 /** Opciones de tipo: valor API → etiqueta UI. */
 const KIND_OPTIONS: ReadonlyArray<{ value: LocationKind; label: string }> = [
@@ -87,8 +89,9 @@ function kindLabel(kind: LocationKind | null): string {
 }
 
 /**
- * Pantalla Flota y operación (lugares + áreas).
- * Tabs Figma D16; lugares con kind; áreas con FK a location.
+ * Pantalla Flota y operación (lugares + áreas + muelles + travesías).
+ * Tabs Figma D16; lugares con kind; áreas con FK a location; muelles por puerto;
+ * travesías con cuota de pasadas.
  */
 export function Ubicaciones() {
   const { accessToken, user } = useAuth();
@@ -98,10 +101,14 @@ export function Ubicaciones() {
   const canManage =
     user?.internalRol === "admin" || user?.internalRol === "superadmin";
 
-  /** Tab activo: lugares de trabajo o áreas. */
+  /** Tab activo: lugares, áreas, muelles o travesías. */
   const [tab, setTab] = useState<FlotaTab>("locations");
   /** Abre el modal de alta de áreas desde el PageHeader. */
   const areasPanelRef = useRef<AreasPanelHandle>(null);
+  /** Abre el modal de alta de muelles desde el PageHeader. */
+  const muellesPanelRef = useRef<MuellesPanelHandle>(null);
+  /** Abre el modal de alta de travesías desde el PageHeader. */
+  const travesiasPanelRef = useRef<TravesiasPanelHandle>(null);
   const [items, setItems] = useState<Location[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [loading, setLoading] = useState(true);
@@ -291,30 +298,32 @@ export function Ubicaciones() {
           description="Naves y oficinas, áreas, muelles y travesías. Las áreas dependen del lugar de trabajo."
           actions={
             canManage ? (
-              tab === "locations" ? (
-                <Button
-                  type="button"
-                  className="!w-auto shrink-0"
-                  onClick={openCreate}
-                >
-                  <Plus className="size-4" strokeWidth={1.5} aria-hidden />
-                  Nuevo lugar
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  className="!w-auto shrink-0"
-                  onClick={() => areasPanelRef.current?.openCreate()}
-                >
-                  <Plus className="size-4" strokeWidth={1.5} aria-hidden />
-                  Nueva área
-                </Button>
-              )
+              <Button
+                type="button"
+                className="!w-auto shrink-0"
+                onClick={() => {
+                  if (tab === "locations") openCreate();
+                  else if (tab === "areas")
+                    areasPanelRef.current?.openCreate();
+                  else if (tab === "muelles")
+                    muellesPanelRef.current?.openCreate();
+                  else travesiasPanelRef.current?.openCreate();
+                }}
+              >
+                <Plus className="size-4" strokeWidth={1.5} aria-hidden />
+                {tab === "locations"
+                  ? "Nuevo lugar"
+                  : tab === "areas"
+                    ? "Nueva área"
+                    : tab === "muelles"
+                      ? "Nuevo muelle"
+                      : "Nueva travesía"}
+              </Button>
             ) : undefined
           }
         />
 
-        {/* Tabs Figma D16: Lugares · Áreas (Muelles/Travesías después). */}
+        {/* Tabs Figma D16: Lugares · Áreas · Muelles · Travesías. */}
         <div
           className="flex shrink-0 gap-1.5"
           role="tablist"
@@ -324,6 +333,8 @@ export function Ubicaciones() {
             [
               { id: "locations" as const, label: "Lugares de trabajo" },
               { id: "areas" as const, label: "Áreas" },
+              { id: "muelles" as const, label: "Muelles" },
+              { id: "travesias" as const, label: "Travesías" },
             ] as const
           ).map((t) => {
             const active = tab === t.id;
@@ -345,23 +356,23 @@ export function Ubicaciones() {
               </button>
             );
           })}
-          <span
-            className="inline-flex h-9 cursor-default items-center rounded-[var(--radius-md)] px-3.5 text-[13px] text-[var(--color-nachipa-muted)]"
-            title="Próximamente"
-          >
-            Muelles
-          </span>
-          <span
-            className="inline-flex h-9 cursor-default items-center rounded-[var(--radius-md)] px-3.5 text-[13px] text-[var(--color-nachipa-muted)]"
-            title="Próximamente"
-          >
-            Travesías
-          </span>
         </div>
 
         {tab === "areas" ? (
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden">
             <AreasPanel ref={areasPanelRef} />
+          </div>
+        ) : null}
+
+        {tab === "muelles" ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden">
+            <MuellesPanel ref={muellesPanelRef} />
+          </div>
+        ) : null}
+
+        {tab === "travesias" ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden">
+            <TravesiasPanel ref={travesiasPanelRef} />
           </div>
         ) : null}
 

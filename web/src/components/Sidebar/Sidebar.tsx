@@ -38,7 +38,7 @@ const CONFIG_LINKS: ReadonlyArray<{
   { label: "Empresas", to: "/empresas", icon: Building2 },
   /** Lugares de trabajo (naves, oficinas, etc.). */
   { label: "Flota y operación", to: "/ubicaciones", icon: MapPin },
-  { label: "Catálogos maestros", to: null, icon: ClipboardList },
+  { label: "Catálogos maestros", to: "/catalogos", icon: ClipboardList },
   { label: "Usuarios", to: null, icon: Users },
   { label: "Notificaciones", to: null, icon: Bell },
 ];
@@ -71,7 +71,8 @@ export function Sidebar() {
   /** Rutas bajo Configuración: mantienen el grupo abierto. */
   const onConfigSection =
     location.pathname.startsWith("/empresas") ||
-    location.pathname.startsWith("/ubicaciones");
+    location.pathname.startsWith("/ubicaciones") ||
+    location.pathname.startsWith("/catalogos");
   const onPanel = location.pathname === "/";
   const [configOpen, setConfigOpen] = useState(onConfigSection);
 

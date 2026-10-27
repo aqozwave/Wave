@@ -1,0 +1,44 @@
+meta {
+  name: Patch muelle
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/muelles/{{muelleId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Muelle sur",
+    "portName": "Calbuco"
+  }
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("muelleId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y muelleId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.name: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -1,0 +1,33 @@
+meta {
+  name: Get travesia
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/travesias/{{travesiaId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("travesiaId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y travesiaId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

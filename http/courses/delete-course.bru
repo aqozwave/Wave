@@ -1,0 +1,38 @@
+meta {
+  name: Delete course
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/courses/{{courseId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Soft delete. En S8 se rechazará si hay asignaciones activas.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("courseId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y courseId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.deletedAt: isDefined
+  res.body.state: eq false
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

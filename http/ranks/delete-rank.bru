@@ -1,0 +1,38 @@
+meta {
+  name: Delete rank
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/ranks/{{rankId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Soft delete. En S7 se rechazará si hay tripulantes activos con ese rankId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("rankId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y rankId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.deletedAt: isDefined
+  res.body.state: eq false
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

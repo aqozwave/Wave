@@ -1,0 +1,58 @@
+meta {
+  name: Post academic degree
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/academic-degrees
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Patrón de nave mayor",
+    "businessId": "{{businessId}}"
+  }
+}
+
+docs {
+  Admin o superadmin.
+  Superadmin: businessId obligatorio.
+  Admin: businessId se ignora y usa el de su usuario.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const businessId = bru.getEnvVar("businessId");
+  if (!token || !businessId) {
+    throw new Error("Definí accessToken y businessId en el entorno local");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body && body.id) {
+    bru.setEnvVar("academicDegreeId", body.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.businessId: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

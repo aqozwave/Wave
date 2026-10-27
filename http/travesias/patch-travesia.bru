@@ -1,0 +1,44 @@
+meta {
+  name: Patch travesia
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/travesias/{{travesiaId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Travesía sur",
+    "requiredPassages": 4
+  }
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("travesiaId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y travesiaId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.name: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
