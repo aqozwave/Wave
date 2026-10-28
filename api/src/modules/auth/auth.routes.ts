@@ -3,6 +3,7 @@ import { authenticate } from "../../middlewares/authenticate.js";
 import { requireSuperadmin } from "../../middlewares/requireSuperadmin.js";
 import { validate } from "../../middlewares/validate.js";
 import {
+  changeMyPasswordHandler,
   confirmEmailHandler,
   deleteMyPhotoHandler,
   forgotPasswordHandler,
@@ -19,6 +20,7 @@ import {
   verifyMfaHandler,
 } from "./auth.controller.js";
 import {
+  changeMyPasswordRequestSchema,
   confirmEmailRequestSchema,
   forgotPasswordRequestSchema,
   loginRequestSchema,
@@ -110,6 +112,13 @@ authRouter.post(
 );
 
 authRouter.delete("/me/photo", authenticate, deleteMyPhotoHandler);
+
+authRouter.post(
+  "/me/password",
+  authenticate,
+  validate(changeMyPasswordRequestSchema),
+  changeMyPasswordHandler,
+);
 
 // Invalida sesión y limpia cookie.
 authRouter.post("/logout", authenticate, logoutHandler);

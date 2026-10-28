@@ -700,6 +700,49 @@ export async function requestPasswordReset(
 }
 
 /**
+ * Cambia la contraseña del usuario autenticado (Seguridad).
+ * Verifica la actual, sube tokenVersion (cierra otras sesiones) y emite tokens nuevos.
+ */
+export async function changeMyPassword(
+  userId: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<LoginResponse> {
+  const user = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: null },
+  });
+
+  if (!user) {
+    throw new AppError(401, "unauthorized", "Usuario no encontrado");
+  }
+
+  if (!user.state) {
+    throw new AppError(403, "user_disabled", "Usuario desactivado");
+  }
+
+  const valid = await verifyPassword(user.passwordHash, currentPassword);
+  if (!valid) {
+    throw new AppError(
+      401,
+      "invalid_current_password",
+      "La contraseña actual no es correcta",
+    );
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash,
+      // Invalida access/refresh previos; el handler reemite con la versión nueva.
+      tokenVersion: { increment: 1 },
+    },
+  });
+
+  return issueTokens(updated);
+}
+
+/**
  * Cambia la contraseña con el token del correo.
  * Invalida el token y sube tokenVersion (cierra sesiones previas).
  */

@@ -13,8 +13,10 @@ import {
   resendConfirmationResponseSchema,
   resendMfaResponseSchema,
   resetPasswordResponseSchema,
+  changeMyPasswordResponseSchema,
   updateMeResponseSchema,
   uploadMyPhotoResponseSchema,
+  type ChangeMyPasswordBody,
   type ConfirmEmailBody,
   type ForgotPasswordBody,
   type LoginBody,
@@ -28,6 +30,7 @@ import {
   type VerifyMfaBody,
 } from "./auth.schemas.js";
 import {
+  changeMyPassword,
   confirmEmailAccount,
   deleteMyPhoto,
   getMe,
@@ -223,6 +226,39 @@ export async function deleteMyPhotoHandler(
   }
   const result = await deleteMyPhoto(req.user.id);
   res.status(200).json(deleteMyPhotoResponseSchema.parse(result));
+}
+
+/**
+ * POST /me/password — cambia la clave; cierra otras sesiones y reemite tokens.
+ * Web: refresh en cookie. iOS: refresh en body.
+ */
+export async function changeMyPasswordHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+  const client = readClient(req);
+  const body = req.body as ChangeMyPasswordBody;
+  const session = await changeMyPassword(
+    req.user.id,
+    body.currentPassword,
+    body.newPassword,
+  );
+
+  if (client === "web") {
+    setRefreshCookie(res, session.refreshToken!);
+    const bodyOut = changeMyPasswordResponseSchema.parse({
+      user: session.user,
+      accessToken: session.accessToken,
+    });
+    res.status(200).json(bodyOut);
+    return;
+  }
+
+  const bodyOut = changeMyPasswordResponseSchema.parse(session);
+  res.status(200).json(bodyOut);
 }
 
 /**

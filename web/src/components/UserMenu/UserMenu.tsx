@@ -15,11 +15,13 @@ import { TextField } from "../TextField/TextField";
 import { useToast } from "../Toast/ToastProvider";
 import {
   ApiError,
+  changeMyPasswordRequest,
   deleteMyPhotoRequest,
   updateMeRequest,
   uploadMyPhotoRequest,
 } from "../../lib/api/auth";
 import { useAuth } from "../../lib/auth/AuthContext";
+import { setAccessToken } from "../../lib/auth/session";
 
 /** MIME de foto (misma lista que la API). */
 const PHOTO_MIME_OK = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -50,6 +52,7 @@ export function UserMenu() {
   const { showToast } = useToast();
   const [open, setOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [securityOpen, setSecurityOpen] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -60,6 +63,9 @@ export function UserMenu() {
     contentBase64: string;
   } | null>(null);
   const [photoRemove, setPhotoRemove] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const initials = user
@@ -84,6 +90,59 @@ export function UserMenu() {
     setPhotoPreview(null);
     setPhotoPending(null);
     setPhotoRemove(false);
+  }
+
+  /** Abre el modal de cambio de contraseña. */
+  function openSecurity() {
+    setOpen(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setSecurityOpen(true);
+  }
+
+  function closeSecurity() {
+    setSecurityOpen(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+  }
+
+  /** Valida y envía el cambio de clave; renueva el access en memoria. */
+  async function onChangePassword(event: FormEvent) {
+    event.preventDefault();
+    if (!accessToken) return;
+    if (newPassword.length < 8) {
+      showToast("La nueva contraseña debe tener al menos 8 caracteres.", "danger");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      showToast("La confirmación no coincide.", "danger");
+      return;
+    }
+    if (currentPassword === newPassword) {
+      showToast("La nueva contraseña debe ser distinta a la actual.", "danger");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await changeMyPasswordRequest(
+        accessToken,
+        currentPassword,
+        newPassword,
+      );
+      // Otras sesiones mueren; esta queda con el access nuevo (cookie refresh ya rotada).
+      setAccessToken(result.accessToken);
+      showToast("Contraseña actualizada.", "success");
+      closeSecurity();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo cambiar la contraseña.",
+        "danger",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   /** Lee el archivo elegido para la foto. */
@@ -247,8 +306,7 @@ export function UserMenu() {
               icon={Lock}
               label="Seguridad"
               hint="Contraseña"
-              disabled
-              title="Próximamente"
+              onClick={openSecurity}
             />
             <MenuRow
               icon={Star}
@@ -377,6 +435,68 @@ export function UserMenu() {
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            required
+          />
+        </form>
+      </Modal>
+
+      <Modal
+        open={securityOpen}
+        icon={Lock}
+        title="Seguridad"
+        subtitle="Cambiá tu contraseña. Las otras sesiones se cerrarán."
+        onClose={closeSecurity}
+        maxWidthClass="w-full max-w-[440px] sm:w-[440px]"
+        footer={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              className="h-9 rounded-[var(--radius-md)] bg-[var(--color-nachipa-tab)] px-3.5 text-[13px] font-medium text-[var(--color-nachipa-body)] hover:brightness-95 disabled:opacity-60"
+              onClick={closeSecurity}
+              disabled={submitting}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="submit"
+              form="seguridad-form"
+              className="!w-auto !font-medium"
+              disabled={submitting}
+            >
+              {submitting ? "Guardando…" : "Cambiar contraseña"}
+            </Button>
+          </div>
+        }
+      >
+        <form
+          id="seguridad-form"
+          className="flex flex-col gap-4"
+          onSubmit={onChangePassword}
+        >
+          <TextField
+            label="Contraseña actual"
+            type="password"
+            autoComplete="current-password"
+            value={currentPassword}
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            required
+          />
+          <TextField
+            label="Nueva contraseña"
+            type="password"
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            required
+            minLength={8}
+            placeholder="Mínimo 8 caracteres"
+          />
+          <TextField
+            label="Confirmar nueva contraseña"
+            type="password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
             required
           />
         </form>

@@ -261,6 +261,43 @@ export async function deleteMyPhotoRequest(
 }
 
 /**
+ * POST /auth/me/password — cambia la clave; renueva access (refresh en cookie).
+ * Otras sesiones dejan de valer.
+ */
+export async function changeMyPasswordRequest(
+  accessToken: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<LoginSuccess> {
+  const res = await fetch("/api/v1/auth/me/password", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "X-Client": "web",
+    },
+    credentials: "include",
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("accessToken" in body) ||
+    typeof (body as LoginSuccess).accessToken !== "string" ||
+    !("user" in body)
+  ) {
+    throw new ApiError(
+      500,
+      "invalid_response",
+      "Respuesta inválida al cambiar contraseña",
+    );
+  }
+  return body as LoginSuccess;
+}
+
+/**
  * POST /api/v1/auth/refresh (web): usa cookie HttpOnly; no manda refresh en body.
  * Devuelve nuevo accessToken (+ Set-Cookie con refresh rotado).
  */

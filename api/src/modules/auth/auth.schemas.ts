@@ -124,8 +124,30 @@ export const uploadMyPhotoRequestSchema = z.object({
 export const uploadMyPhotoResponseSchema = meResponseSchema;
 export const deleteMyPhotoResponseSchema = meResponseSchema;
 
+/**
+ * Body POST /me/password — cambio de clave estando autenticado.
+ * currentPassword prueba posesión; newPassword misma barra que register/reset.
+ */
+export const changeMyPasswordBodySchema = z
+  .object({
+    currentPassword: z.string().min(1),
+    newPassword: z.string().min(8),
+  })
+  .refine((body) => body.currentPassword !== body.newPassword, {
+    message: "La nueva contraseña debe ser distinta a la actual",
+    path: ["newPassword"],
+  });
+
+export const changeMyPasswordRequestSchema = z.object({
+  body: changeMyPasswordBodySchema,
+});
+
+/** Misma forma que login: access + refresh (web en cookie). */
+export const changeMyPasswordResponseSchema = loginResponseSchema;
+
 export type UpdateMeBody = z.infer<typeof updateMeBodySchema>;
 export type UploadMyPhotoBody = z.infer<typeof uploadMyPhotoBodySchema>;
+export type ChangeMyPasswordBody = z.infer<typeof changeMyPasswordBodySchema>;
 
 /**
  * Body de refresh: iOS manda refreshToken; web lo omite (viene en cookie).

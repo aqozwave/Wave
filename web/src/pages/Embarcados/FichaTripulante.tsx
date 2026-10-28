@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   CalendarClock,
   ClipboardList,
@@ -9,24 +15,66 @@ import {
 import { Link, useParams } from "react-router";
 
 import { Button } from "../../components/Button/Button";
+import { Modal } from "../../components/Modal/Modal";
+import { TextField } from "../../components/TextField/TextField";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { listAreasRequest, type Area } from "../../lib/api/areas";
+import {
+  listBusinessesRequest,
+  type Business,
+} from "../../lib/api/businesses";
 import {
   listCompetencyCertificatesRequest,
   type CompetencyCertificate,
 } from "../../lib/api/competencyCertificates";
 import {
   getCrewMemberRequest,
+  updateCrewMemberRequest,
   type CrewMember,
 } from "../../lib/api/crewMembers";
 import { listLocationsRequest, type Location } from "../../lib/api/locations";
+import { listRanksRequest, type Rank } from "../../lib/api/ranks";
 import {
   formatBoardingBookDate,
   getBoardingBookUiState,
 } from "../../lib/boardingBook";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { isRutValid, normalizeRut } from "../../lib/rut";
+
+/** Form de edición (Figma D34 · Actualizar embarcado). */
+type EditForm = {
+  firstName: string;
+  lastName: string;
+  run: string;
+  email: string;
+  phone: string;
+  nationality: string;
+  direction: string;
+  observation: string;
+  boardingBookValidUntil: string;
+  businessId: string;
+  locationId: string;
+  areaId: string;
+  rankId: string;
+  competencyCertificateId: string;
+  state: boolean;
+};
+
+/** ISO timestamptz → valor de `<input type="date">`. */
+function isoToDateInput(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+/** Fecha local YYYY-MM-DD → ISO para el contrato Zod. */
+function dateInputToIso(date: string): string {
+  return `${date}T00:00:00.000Z`;
+}
+
+/** Clase de selects del modal. */
+const selectClass =
+  "h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-nachipa-primary)]";
 
 /** Tabs de la ficha (Figma D3). */
 type FichaTab =
@@ -64,8 +112,9 @@ function initialsOf(row: CrewMember): string {
  */
 export function FichaTripulante() {
   const { id } = useParams<{ id: string }>();
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const { showToast } = useToast();
+  const isSuperadmin = user?.internalRol === "superadmin";
 
   const [crew, setCrew] = useState<CrewMember | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,21 +122,34 @@ export function FichaTripulante() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [certs, setCerts] = useState<CompetencyCertificate[]>([]);
+  const [ranks, setRanks] = useState<Rank[]>([]);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [form, setForm] = useState<EditForm | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken || !id) return;
     setLoading(true);
     try {
-      const [row, locs, areaList, certList] = await Promise.all([
-        getCrewMemberRequest(accessToken, id),
-        listLocationsRequest(accessToken),
-        listAreasRequest(accessToken),
-        listCompetencyCertificatesRequest(accessToken),
-      ]);
+      const [row, locs, areaList, certList, rankList, bizList] =
+        await Promise.all([
+          getCrewMemberRequest(accessToken, id),
+          listLocationsRequest(accessToken),
+          listAreasRequest(accessToken),
+          listCompetencyCertificatesRequest(accessToken),
+          listRanksRequest(accessToken),
+          isSuperadmin
+            ? listBusinessesRequest(accessToken, 1, 100)
+            : Promise.resolve({ items: [] as Business[] }),
+        ]);
       setCrew(row);
       setLocations(locs.items);
       setAreas(areaList.items);
       setCerts(certList.items);
+      setRanks(rankList.items);
+      setBusinesses(bizList.items);
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo cargar la ficha.",
@@ -97,7 +159,7 @@ export function FichaTripulante() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, id, showToast]);
+  }, [accessToken, id, isSuperadmin, showToast]);
 
   useEffect(() => {
     void load();
@@ -127,6 +189,145 @@ export function FichaTripulante() {
   const bookDate = crew
     ? formatBoardingBookDate(crew.boardingBookValidUntil)
     : "—";
+
+  /** Empresa del form (o la del tripulante / actor). */
+  const formBusinessId = form
+    ? isSuperadmin
+      ? form.businessId
+      : form.businessId || user?.businessId || ""
+    : "";
+
+  const formLocations = useMemo(() => {
+    if (!formBusinessId) return locations;
+    return locations.filter((l) => l.businessId === formBusinessId);
+  }, [locations, formBusinessId]);
+
+  const formAreas = useMemo(() => {
+    if (!form) return [];
+    return areas.filter((a) => {
+      if (form.locationId && a.locationId !== form.locationId) return false;
+      if (formBusinessId && a.businessId !== formBusinessId) return false;
+      return true;
+    });
+  }, [areas, form, formBusinessId]);
+
+  const formRanks = useMemo(() => {
+    if (!formBusinessId) return ranks;
+    return ranks.filter((r) => r.businessId === formBusinessId);
+  }, [ranks, formBusinessId]);
+
+  const formCerts = useMemo(() => {
+    if (!formBusinessId) return certs;
+    return certs.filter((c) => c.businessId === formBusinessId);
+  }, [certs, formBusinessId]);
+
+  /** Rellena el form desde el tripulante cargado. */
+  function openEdit() {
+    if (!crew) return;
+    setForm({
+      firstName: displayName(crew.firstName),
+      lastName: displayName(crew.lastName),
+      run: crew.run,
+      email: crew.email,
+      phone: crew.phone ?? "",
+      nationality: crew.nationality ?? "",
+      direction: crew.direction ?? "",
+      observation: crew.observation ?? "",
+      boardingBookValidUntil: isoToDateInput(crew.boardingBookValidUntil),
+      businessId: crew.businessId,
+      locationId: crew.locationId,
+      areaId: crew.areaId ?? "",
+      rankId: crew.rankId ?? "",
+      competencyCertificateId: crew.competencyCertificateId ?? "",
+      state: crew.state,
+    });
+    setEditOpen(true);
+  }
+
+  function closeEdit() {
+    setEditOpen(false);
+    setForm(null);
+  }
+
+  /** Actualiza un campo; limpia FKs al cambiar empresa/nave. */
+  function setField<K extends keyof EditForm>(key: K, value: EditForm[K]) {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, [key]: value };
+      if (key === "businessId") {
+        next.locationId = "";
+        next.areaId = "";
+        next.rankId = "";
+        next.competencyCertificateId = "";
+      }
+      if (key === "locationId") {
+        next.areaId = "";
+      }
+      return next;
+    });
+  }
+
+  /** PATCH del tripulante y refresca la ficha. */
+  async function onSaveEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!accessToken || !crew || !form) return;
+
+    if (!form.firstName.trim() || !form.lastName.trim()) {
+      showToast("Nombre y apellido son requeridos.", "danger");
+      return;
+    }
+    if (!form.email.trim()) {
+      showToast("El correo es requerido.", "danger");
+      return;
+    }
+    if (!form.run.trim() || !isRutValid(form.run)) {
+      showToast("El RUN no es válido.", "danger");
+      return;
+    }
+    if (!form.boardingBookValidUntil) {
+      showToast("La vigencia del libro es requerida.", "danger");
+      return;
+    }
+    if (!form.locationId) {
+      showToast("La nave / ubicación es requerida.", "danger");
+      return;
+    }
+    if (isSuperadmin && !form.businessId) {
+      showToast("La empresa es requerida.", "danger");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const updated = await updateCrewMemberRequest(accessToken, crew.id, {
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        email: form.email.trim().toLowerCase(),
+        run: normalizeRut(form.run),
+        phone: form.phone.trim() || null,
+        nationality: form.nationality.trim() || null,
+        direction: form.direction.trim() || null,
+        observation: form.observation.trim() || null,
+        boardingBookValidUntil: dateInputToIso(form.boardingBookValidUntil),
+        locationId: form.locationId,
+        areaId: form.areaId || null,
+        rankId: form.rankId || null,
+        competencyCertificateId: form.competencyCertificateId || null,
+        state: form.state,
+        ...(isSuperadmin ? { businessId: form.businessId } : {}),
+      });
+      setCrew(updated);
+      showToast("Datos actualizados.", "success");
+      closeEdit();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo guardar.",
+        "danger",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   const tabs: { id: FichaTab; label: string }[] = [
     { id: "cursos", label: "Cursos (0)" },
@@ -204,7 +405,7 @@ export function FichaTripulante() {
                   <button
                     type="button"
                     className="inline-flex h-9 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                    onClick={() => setTab("datos")}
+                    onClick={openEdit}
                   >
                     <Pencil className="size-4" strokeWidth={1.5} aria-hidden />
                     Editar datos
@@ -328,10 +529,17 @@ export function FichaTripulante() {
                     className="sm:col-span-2"
                   />
                 </dl>
-                <p className="mt-4 text-[12px] text-[var(--color-nachipa-secondary)]">
-                  La edición inline / modal “Actualizar embarcado” (Figma D34)
-                  la conectamos en el siguiente paso.
-                </p>
+                <div className="mt-5">
+                  <Button
+                    type="button"
+                    size="small"
+                    className="!w-auto"
+                    onClick={openEdit}
+                  >
+                    <Pencil className="size-3.5" strokeWidth={1.5} aria-hidden />
+                    Actualizar embarcado
+                  </Button>
+                </div>
               </div>
             ) : null}
 
@@ -354,6 +562,207 @@ export function FichaTripulante() {
           </>
         )}
       </div>
+
+      <Modal
+        open={editOpen && form !== null}
+        icon={Pencil}
+        title="Actualizar embarcado"
+        subtitle="Datos personales, nave y vigencia del libro."
+        onClose={closeEdit}
+        maxWidthClass="w-full max-w-[640px] sm:w-[640px]"
+        footer={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              className="h-9 rounded-[var(--radius-md)] bg-[var(--color-nachipa-tab)] px-3.5 text-[13px] font-medium text-[var(--color-nachipa-body)] hover:brightness-95 disabled:opacity-60"
+              onClick={closeEdit}
+              disabled={submitting}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="submit"
+              form="embarcado-edit-form"
+              className="!w-auto !font-medium"
+              disabled={submitting}
+            >
+              {submitting ? "Guardando…" : "Guardar cambios"}
+            </Button>
+          </div>
+        }
+      >
+        {form ? (
+          <form
+            id="embarcado-edit-form"
+            className="flex flex-col gap-4"
+            onSubmit={onSaveEdit}
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <TextField
+                label="Nombre"
+                value={form.firstName}
+                onChange={(e) => setField("firstName", e.target.value)}
+                required
+              />
+              <TextField
+                label="Apellido"
+                value={form.lastName}
+                onChange={(e) => setField("lastName", e.target.value)}
+                required
+              />
+              <TextField
+                label="RUN"
+                value={form.run}
+                onChange={(e) => setField("run", e.target.value)}
+                required
+              />
+              <TextField
+                label="Correo"
+                type="email"
+                value={form.email}
+                onChange={(e) => setField("email", e.target.value)}
+                required
+              />
+              <TextField
+                label="Teléfono"
+                value={form.phone}
+                onChange={(e) => setField("phone", e.target.value)}
+              />
+              <TextField
+                label="Nacionalidad"
+                value={form.nationality}
+                onChange={(e) => setField("nationality", e.target.value)}
+              />
+            </div>
+            <TextField
+              label="Dirección"
+              value={form.direction}
+              onChange={(e) => setField("direction", e.target.value)}
+            />
+            <TextField
+              label="Observación"
+              value={form.observation}
+              onChange={(e) => setField("observation", e.target.value)}
+            />
+            <TextField
+              label="Vigencia libro de embarque"
+              type="date"
+              value={form.boardingBookValidUntil}
+              onChange={(e) =>
+                setField("boardingBookValidUntil", e.target.value)
+              }
+              required
+            />
+
+            {isSuperadmin ? (
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Empresa
+                </span>
+                <select
+                  className={selectClass}
+                  value={form.businessId}
+                  onChange={(e) => setField("businessId", e.target.value)}
+                  required
+                >
+                  <option value="">Seleccionar…</option>
+                  {businesses.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {displayName(b.name)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                Nave / ubicación
+              </span>
+              <select
+                className={selectClass}
+                value={form.locationId}
+                onChange={(e) => setField("locationId", e.target.value)}
+                required
+              >
+                <option value="">Seleccionar…</option>
+                {formLocations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {displayName(l.name)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Área
+                </span>
+                <select
+                  className={selectClass}
+                  value={form.areaId}
+                  onChange={(e) => setField("areaId", e.target.value)}
+                >
+                  <option value="">Sin área</option>
+                  {formAreas.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {displayName(a.name)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Cargo
+                </span>
+                <select
+                  className={selectClass}
+                  value={form.rankId}
+                  onChange={(e) => setField("rankId", e.target.value)}
+                >
+                  <option value="">Sin cargo</option>
+                  {formRanks.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {displayName(r.name)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                Título marítimo
+              </span>
+              <select
+                className={selectClass}
+                value={form.competencyCertificateId}
+                onChange={(e) =>
+                  setField("competencyCertificateId", e.target.value)
+                }
+              >
+                <option value="">Sin título</option>
+                {formCerts.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {displayName(c.name)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex items-center gap-2 text-[13px] text-[var(--color-nachipa-title)]">
+              <input
+                type="checkbox"
+                className="size-4 rounded border-[var(--color-tremor-border)]"
+                checked={form.state}
+                onChange={(e) => setField("state", e.target.checked)}
+              />
+              Embarcado activo
+            </label>
+          </form>
+        ) : null}
+      </Modal>
     </div>
   );
 }

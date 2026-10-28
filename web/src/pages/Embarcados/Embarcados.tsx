@@ -1,22 +1,36 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 import { Download, MoreVertical, Plus, Search, Ship } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 
 import { Button } from "../../components/Button/Button";
+import { Modal } from "../../components/Modal/Modal";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
+import { TextField } from "../../components/TextField/TextField";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { listAreasRequest, type Area } from "../../lib/api/areas";
 import {
+  listBusinessesRequest,
+  type Business,
+} from "../../lib/api/businesses";
+import {
   listCompetencyCertificatesRequest,
   type CompetencyCertificate,
 } from "../../lib/api/competencyCertificates";
 import {
+  createCrewMemberRequest,
   listCrewMembersRequest,
   type CrewMember,
 } from "../../lib/api/crewMembers";
 import { listLocationsRequest, type Location } from "../../lib/api/locations";
+import { listRanksRequest, type Rank } from "../../lib/api/ranks";
 import {
   boardingBookStateLabel,
   daysUntilBoardingBookExpiry,
@@ -26,9 +40,48 @@ import {
   type BoardingBookUiState,
 } from "../../lib/boardingBook";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { isRutValid, normalizeRut } from "../../lib/rut";
 
 /** Filas por página (Figma: 10). */
 const PAGE_SIZE = 10;
+
+/** Form de alta: campos mínimos + opcionales de ficha. */
+type CreateForm = {
+  firstName: string;
+  lastName: string;
+  run: string;
+  email: string;
+  /** Fecha local YYYY-MM-DD → ISO al enviar. */
+  boardingBookValidUntil: string;
+  businessId: string;
+  locationId: string;
+  areaId: string;
+  rankId: string;
+  competencyCertificateId: string;
+};
+
+/** Form vacío al abrir el modal. */
+const EMPTY_CREATE: CreateForm = {
+  firstName: "",
+  lastName: "",
+  run: "",
+  email: "",
+  boardingBookValidUntil: "",
+  businessId: "",
+  locationId: "",
+  areaId: "",
+  rankId: "",
+  competencyCertificateId: "",
+};
+
+/** Convierte input date a ISO 8601 (inicio del día UTC) para el contrato Zod. */
+function dateInputToIso(date: string): string {
+  return `${date}T00:00:00.000Z`;
+}
+
+/** Clase compartida de selects del modal. */
+const selectClass =
+  "h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-nachipa-primary)]";
 
 /** Capitaliza palabras para tabla. */
 function displayName(value: string): string {
@@ -67,9 +120,10 @@ function vigenciaChipClass(state: BoardingBookUiState): string {
  * Cumplimiento de cursos: placeholder hasta Sección 8.
  */
 export function Embarcados() {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const isSuperadmin = user?.internalRol === "superadmin";
 
   const [items, setItems] = useState<CrewMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,26 +138,39 @@ export function Embarcados() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [certs, setCerts] = useState<CompetencyCertificate[]>([]);
+  const [ranks, setRanks] = useState<Rank[]>([]);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState<CreateForm>(EMPTY_CREATE);
+  const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [crew, locs, areaList, certList] = await Promise.all([
-        // API max limit = 100 (Zod); 94 migrados caben en una página.
-        listCrewMembersRequest(accessToken, {
-          page: 1,
-          limit: 100,
-          includeInactive: true,
-        }),
-        listLocationsRequest(accessToken),
-        listAreasRequest(accessToken),
-        listCompetencyCertificatesRequest(accessToken),
-      ]);
+      const [crew, locs, areaList, certList, rankList, bizList] =
+        await Promise.all([
+          // API max limit = 100 (Zod); 94 migrados caben en una página.
+          listCrewMembersRequest(accessToken, {
+            page: 1,
+            limit: 100,
+            includeInactive: true,
+          }),
+          listLocationsRequest(accessToken),
+          listAreasRequest(accessToken),
+          listCompetencyCertificatesRequest(accessToken),
+          listRanksRequest(accessToken),
+          isSuperadmin
+            ? listBusinessesRequest(accessToken, 1, 100)
+            : Promise.resolve({ items: [] as Business[] }),
+        ]);
       setItems(crew.items);
       setLocations(locs.items);
       setAreas(areaList.items);
       setCerts(certList.items);
+      setRanks(rankList.items);
+      setBusinesses(bizList.items);
     } catch (err) {
       showToast(
         err instanceof ApiError
@@ -114,7 +181,7 @@ export function Embarcados() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, showToast]);
+  }, [accessToken, isSuperadmin, showToast]);
 
   useEffect(() => {
     void load();
@@ -179,6 +246,121 @@ export function Embarcados() {
   useEffect(() => {
     setPage(1);
   }, [search, tab, stateFilter]);
+
+  /** Empresa efectiva para filtrar catálogos del modal. */
+  const formBusinessId = isSuperadmin
+    ? form.businessId
+    : (user?.businessId ?? "");
+
+  const formLocations = useMemo(() => {
+    if (!formBusinessId) return locations;
+    return locations.filter((l) => l.businessId === formBusinessId);
+  }, [locations, formBusinessId]);
+
+  const formAreas = useMemo(() => {
+    return areas.filter((a) => {
+      if (form.locationId && a.locationId !== form.locationId) return false;
+      if (formBusinessId && a.businessId !== formBusinessId) return false;
+      return true;
+    });
+  }, [areas, form.locationId, formBusinessId]);
+
+  const formRanks = useMemo(() => {
+    if (!formBusinessId) return ranks;
+    return ranks.filter((r) => r.businessId === formBusinessId);
+  }, [ranks, formBusinessId]);
+
+  const formCerts = useMemo(() => {
+    if (!formBusinessId) return certs;
+    return certs.filter((c) => c.businessId === formBusinessId);
+  }, [certs, formBusinessId]);
+
+  /** Actualiza un campo del form de alta. */
+  function setField<K extends keyof CreateForm>(key: K, value: CreateForm[K]) {
+    setForm((prev) => {
+      const next = { ...prev, [key]: value };
+      // Al cambiar empresa o nave, limpia FKs que dejan de aplicar.
+      if (key === "businessId") {
+        next.locationId = "";
+        next.areaId = "";
+        next.rankId = "";
+        next.competencyCertificateId = "";
+      }
+      if (key === "locationId") {
+        next.areaId = "";
+      }
+      return next;
+    });
+  }
+
+  function openCreate() {
+    setForm(EMPTY_CREATE);
+    setCreateOpen(true);
+  }
+
+  function closeCreate() {
+    setCreateOpen(false);
+    setForm(EMPTY_CREATE);
+  }
+
+  /** Alta: valida RUN y campos requeridos, crea y abre la ficha. */
+  async function onCreate(event: FormEvent) {
+    event.preventDefault();
+    if (!accessToken) return;
+
+    if (!form.firstName.trim() || !form.lastName.trim()) {
+      showToast("Nombre y apellido son requeridos.", "danger");
+      return;
+    }
+    if (!form.email.trim()) {
+      showToast("El correo es requerido.", "danger");
+      return;
+    }
+    if (!form.run.trim() || !isRutValid(form.run)) {
+      showToast("El RUN no es válido.", "danger");
+      return;
+    }
+    if (!form.boardingBookValidUntil) {
+      showToast("La vigencia del libro de embarque es requerida.", "danger");
+      return;
+    }
+    if (isSuperadmin && !form.businessId) {
+      showToast("La empresa es requerida.", "danger");
+      return;
+    }
+    if (!form.locationId) {
+      showToast("La nave / ubicación es requerida.", "danger");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const created = await createCrewMemberRequest(accessToken, {
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        email: form.email.trim().toLowerCase(),
+        run: normalizeRut(form.run),
+        boardingBookValidUntil: dateInputToIso(form.boardingBookValidUntil),
+        locationId: form.locationId,
+        ...(isSuperadmin ? { businessId: form.businessId } : {}),
+        areaId: form.areaId || null,
+        rankId: form.rankId || null,
+        competencyCertificateId: form.competencyCertificateId || null,
+        state: true,
+      });
+      showToast("Embarcado creado.", "success");
+      closeCreate();
+      await load();
+      void navigate(`/embarcados/${created.id}`);
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo crear el embarcado.",
+        "danger",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   const tabs: { id: BoardingBookTab; label: string; count: number }[] = [
     { id: "all", label: "Todos", count: tabCounts.all },
@@ -275,12 +457,7 @@ export function Embarcados() {
               type="button"
               size="small"
               className="!w-auto"
-              onClick={() =>
-                showToast(
-                  "Alta desde ficha: usá Bruno o el modal lo traemos en el siguiente paso.",
-                  "info",
-                )
-              }
+              onClick={openCreate}
             >
               <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
               Agregar embarcado
@@ -497,6 +674,187 @@ export function Embarcados() {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={createOpen}
+        icon={Plus}
+        title="Agregar embarcado"
+        subtitle="Datos básicos y vigencia del libro. El resto se completa en la ficha."
+        onClose={closeCreate}
+        maxWidthClass="w-full max-w-[560px] sm:w-[560px]"
+        footer={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              className="h-9 rounded-[var(--radius-md)] bg-[var(--color-nachipa-tab)] px-3.5 text-[13px] font-medium text-[var(--color-nachipa-body)] hover:brightness-95 disabled:opacity-60"
+              onClick={closeCreate}
+              disabled={submitting}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="submit"
+              form="embarcado-create-form"
+              className="!w-auto !font-medium"
+              disabled={submitting}
+            >
+              {submitting ? "Creando…" : "Crear embarcado"}
+            </Button>
+          </div>
+        }
+      >
+        <form
+          id="embarcado-create-form"
+          className="flex flex-col gap-4"
+          onSubmit={onCreate}
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <TextField
+              label="Nombre"
+              value={form.firstName}
+              onChange={(e) => setField("firstName", e.target.value)}
+              required
+            />
+            <TextField
+              label="Apellido"
+              value={form.lastName}
+              onChange={(e) => setField("lastName", e.target.value)}
+              required
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <TextField
+              label="RUN"
+              value={form.run}
+              onChange={(e) => setField("run", e.target.value)}
+              placeholder="12.345.678-9"
+              required
+            />
+            <TextField
+              label="Correo"
+              type="email"
+              value={form.email}
+              onChange={(e) => setField("email", e.target.value)}
+              required
+            />
+          </div>
+          <TextField
+            label="Vigencia libro de embarque"
+            type="date"
+            value={form.boardingBookValidUntil}
+            onChange={(e) => setField("boardingBookValidUntil", e.target.value)}
+            required
+          />
+
+          {isSuperadmin ? (
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                Empresa
+              </span>
+              <select
+                className={selectClass}
+                value={form.businessId}
+                onChange={(e) => setField("businessId", e.target.value)}
+                required
+              >
+                <option value="">Seleccionar…</option>
+                {businesses.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {displayName(b.name)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+              Nave / ubicación
+            </span>
+            <select
+              className={selectClass}
+              value={form.locationId}
+              onChange={(e) => setField("locationId", e.target.value)}
+              required
+              disabled={isSuperadmin && !form.businessId}
+            >
+              <option value="">Seleccionar…</option>
+              {formLocations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {displayName(l.name)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                Área{" "}
+                <span className="font-normal text-[var(--color-nachipa-secondary)]">
+                  opcional
+                </span>
+              </span>
+              <select
+                className={selectClass}
+                value={form.areaId}
+                onChange={(e) => setField("areaId", e.target.value)}
+                disabled={!form.locationId}
+              >
+                <option value="">Sin área</option>
+                {formAreas.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {displayName(a.name)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                Cargo{" "}
+                <span className="font-normal text-[var(--color-nachipa-secondary)]">
+                  opcional
+                </span>
+              </span>
+              <select
+                className={selectClass}
+                value={form.rankId}
+                onChange={(e) => setField("rankId", e.target.value)}
+              >
+                <option value="">Sin cargo</option>
+                {formRanks.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {displayName(r.name)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+              Título marítimo{" "}
+              <span className="font-normal text-[var(--color-nachipa-secondary)]">
+                opcional
+              </span>
+            </span>
+            <select
+              className={selectClass}
+              value={form.competencyCertificateId}
+              onChange={(e) =>
+                setField("competencyCertificateId", e.target.value)
+              }
+            >
+              <option value="">Sin título</option>
+              {formCerts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {displayName(c.name)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </form>
+      </Modal>
     </div>
   );
 }

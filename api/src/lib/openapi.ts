@@ -4,6 +4,8 @@ import {
 } from "@asteasolutions/zod-to-openapi";
 import { z } from "./zod.js";
 import {
+  changeMyPasswordBodySchema,
+  changeMyPasswordResponseSchema,
   confirmEmailBodySchema,
   confirmEmailResponseSchema,
   forgotPasswordBodySchema,
@@ -564,6 +566,33 @@ registry.registerPath({
       },
     },
     401: { description: "Sin token" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/me/password",
+  tags: ["Auth"],
+  summary: "Cambiar mi contraseña",
+  description:
+    "Requiere contraseña actual. Sube tokenVersion (cierra otras sesiones) y reemite tokens. Header X-Client: web | ios.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: changeMyPasswordBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Contraseña actualizada; sesión renovada",
+      content: {
+        "application/json": { schema: changeMyPasswordResponseSchema },
+      },
+    },
+    400: { description: "Validación o misma contraseña" },
+    401: { description: "Sin token o contraseña actual incorrecta" },
   },
 });
 
