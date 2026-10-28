@@ -8,6 +8,13 @@ import {
   issueEmailToken,
 } from "../../lib/emailToken.js";
 import {
+  ALLOWED_USER_PHOTO_MIMES,
+  MAX_USER_PHOTO_BYTES,
+  isUserPhotoRelativePath,
+  unlinkUserPhotoFile,
+  writeUserPhotoFile,
+} from "../../lib/localUploads.js";
+import {
   createLoginChallenge,
   verifyLoginChallenge,
 } from "../../lib/loginChallenge.js";
@@ -31,6 +38,8 @@ import type {
   ResendConfirmationResponse,
   ResendMfaResponse,
   ResetPasswordResponse,
+  UpdateMeBody,
+  UploadMyPhotoBody,
 } from "./auth.schemas.js";
 
 /** MFA activo salvo LOGIN_MFA_ENABLED=false|0 (mismo default que el portal viejo). */
@@ -68,6 +77,7 @@ function toAuthUser(user: User): AuthUser {
     username: user.username,
     firstName: user.firstName,
     lastName: user.lastName,
+    photoProfile: user.photoProfile,
     internalRol: user.internalRol,
     roleId: user.roleId,
     businessId: user.businessId,
@@ -307,6 +317,140 @@ export async function getMe(userId: string): Promise<{ user: AuthUser }> {
   }
 
   return { user: toAuthUser(user) };
+}
+
+/** Decodifica base64 puro o data-URL. */
+function decodeBase64Content(contentBase64: string): Buffer {
+  const trimmed = contentBase64.trim();
+  const comma = trimmed.indexOf(",");
+  const raw =
+    trimmed.startsWith("data:") && comma >= 0
+      ? trimmed.slice(comma + 1)
+      : trimmed;
+  return Buffer.from(raw, "base64");
+}
+
+/**
+ * PATCH /me — actualiza nombre/apellido/correo del usuario autenticado.
+ */
+export async function updateMe(
+  userId: string,
+  body: UpdateMeBody,
+): Promise<{ user: AuthUser }> {
+  const existing = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: null },
+  });
+  if (!existing || !existing.state) {
+    throw new AppError(401, "unauthorized", "Sesión inválida");
+  }
+
+  if (body.email && body.email !== existing.email) {
+    const taken = await prisma.user.findFirst({
+      where: {
+        email: body.email,
+        deletedAt: null,
+        NOT: { id: existing.id },
+      },
+    });
+    if (taken) {
+      throw new AppError(
+        409,
+        "duplicate_email",
+        "El correo electrónico ya está registrado",
+      );
+    }
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: existing.id },
+    data: {
+      ...(body.firstName !== undefined ? { firstName: body.firstName } : {}),
+      ...(body.lastName !== undefined ? { lastName: body.lastName } : {}),
+      ...(body.email !== undefined
+        ? { email: body.email, pendingEmail: null }
+        : {}),
+    },
+  });
+
+  return { user: toAuthUser(updated) };
+}
+
+/**
+ * POST /me/photo — sube o reemplaza la foto del usuario autenticado.
+ */
+export async function uploadMyPhoto(
+  userId: string,
+  body: UploadMyPhotoBody,
+): Promise<{ user: AuthUser }> {
+  const existing = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: null },
+  });
+  if (!existing || !existing.state) {
+    throw new AppError(401, "unauthorized", "Sesión inválida");
+  }
+
+  if (!ALLOWED_USER_PHOTO_MIMES.has(body.mimeType)) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "Tipo de archivo no permitido (JPEG, PNG o WebP)",
+    );
+  }
+
+  const buffer = decodeBase64Content(body.contentBase64);
+  if (!buffer.length) {
+    throw new AppError(400, "validation_error", "Archivo vacío o base64 inválido");
+  }
+  if (buffer.length > MAX_USER_PHOTO_BYTES) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "La foto supera el máximo de 2 MB",
+    );
+  }
+
+  const previous = existing.photoProfile;
+  const written = await writeUserPhotoFile({
+    businessId: existing.businessId,
+    userId: existing.id,
+    mimeType: body.mimeType,
+    buffer,
+  });
+
+  const updated = await prisma.user.update({
+    where: { id: existing.id },
+    data: { photoProfile: written.relativePath },
+  });
+
+  if (previous && previous !== written.relativePath) {
+    await unlinkUserPhotoFile(previous);
+  }
+
+  return { user: toAuthUser(updated) };
+}
+
+/** DELETE /me/photo — quita la foto del usuario autenticado. */
+export async function deleteMyPhoto(
+  userId: string,
+): Promise<{ user: AuthUser }> {
+  const existing = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: null },
+  });
+  if (!existing || !existing.state) {
+    throw new AppError(401, "unauthorized", "Sesión inválida");
+  }
+
+  const previous = existing.photoProfile;
+  const updated = await prisma.user.update({
+    where: { id: existing.id },
+    data: { photoProfile: null },
+  });
+
+  if (previous && isUserPhotoRelativePath(previous)) {
+    await unlinkUserPhotoFile(previous);
+  }
+
+  return { user: toAuthUser(updated) };
 }
 
 /**
@@ -600,6 +744,8 @@ export async function resetPasswordWithToken(
         passwordHash,
         // Cierra access/refresh emitidos antes del cambio.
         tokenVersion: { increment: 1 },
+        // El enlace prueba el correo: una invitación queda confirmada al elegir clave.
+        ...(record.user.confirmed ? {} : { confirmed: true }),
       },
     }),
   ]);

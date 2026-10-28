@@ -9,3 +9,6 @@ Thumbs.db
 .vscode/
 CLAUDE.local.md
 .claude/settings.local.json
+# Archivos subidos en local (S7 documentos tripulante).
+uploads/
+api/uploads/

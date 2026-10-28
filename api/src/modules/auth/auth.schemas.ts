@@ -1,3 +1,4 @@
+import { chileanRunSchema } from "../../lib/rut.js";
 import { z } from "../../lib/zod.js";
 
 export const loginBodySchema = z.object({
@@ -16,6 +17,8 @@ export const authUserSchema = z
     username: z.string(),
     firstName: z.string(),
     lastName: z.string(),
+    /** Ruta relativa /uploads/… o null. */
+    photoProfile: z.string().nullable(),
     internalRol: z.string(),
     roleId: z.uuid().nullable(),
     businessId: z.uuid().nullable(),
@@ -87,6 +90,43 @@ export const meResponseSchema = z
   })
   .openapi("MeResponse");
 
+/** Body PATCH /me — el usuario edita sus propios datos (Mi perfil). */
+export const updateMeBodySchema = z
+  .object({
+    firstName: z.string().trim().min(1).optional(),
+    lastName: z.string().trim().min(1).optional(),
+    email: z.email().trim().toLowerCase().optional(),
+  })
+  .refine((body) => Object.keys(body).length > 0, {
+    message: "Debe enviar al menos un campo para actualizar",
+  });
+
+export const updateMeRequestSchema = z.object({
+  body: updateMeBodySchema,
+});
+
+export const updateMeResponseSchema = meResponseSchema;
+
+/**
+ * Body JSON con foto en base64 (POST /me/photo).
+ * contentBase64: raw o data-URL.
+ */
+export const uploadMyPhotoBodySchema = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  mimeType: z.string().trim().min(1),
+  contentBase64: z.string().min(1),
+});
+
+export const uploadMyPhotoRequestSchema = z.object({
+  body: uploadMyPhotoBodySchema,
+});
+
+export const uploadMyPhotoResponseSchema = meResponseSchema;
+export const deleteMyPhotoResponseSchema = meResponseSchema;
+
+export type UpdateMeBody = z.infer<typeof updateMeBodySchema>;
+export type UploadMyPhotoBody = z.infer<typeof uploadMyPhotoBodySchema>;
+
 /**
  * Body de refresh: iOS manda refreshToken; web lo omite (viene en cookie).
  */
@@ -129,8 +169,7 @@ export const registerBodySchema = z.object({
     .transform((value) => value.toLowerCase()),
   firstName: z.string().trim().min(1),
   lastName: z.string().trim().min(1),
-  // RUN como texto; validación dígito verificador entra con reglas de negocio.
-  run: z.string().trim().min(3),
+  run: chileanRunSchema,
 });
 
 export const registerRequestSchema = z.object({

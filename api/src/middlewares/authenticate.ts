@@ -48,6 +48,7 @@ export async function authenticate(
       username: user.username,
       firstName: user.firstName,
       lastName: user.lastName,
+      photoProfile: user.photoProfile,
       internalRol: user.internalRol,
       roleId: user.roleId,
       businessId: user.businessId,

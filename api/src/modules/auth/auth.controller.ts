@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
   confirmEmailResponseSchema,
+  deleteMyPhotoResponseSchema,
   forgotPasswordResponseSchema,
   loginResponseSchema,
   logoutResponseSchema,
@@ -12,6 +13,8 @@ import {
   resendConfirmationResponseSchema,
   resendMfaResponseSchema,
   resetPasswordResponseSchema,
+  updateMeResponseSchema,
+  uploadMyPhotoResponseSchema,
   type ConfirmEmailBody,
   type ForgotPasswordBody,
   type LoginBody,
@@ -20,10 +23,13 @@ import {
   type ResendConfirmationBody,
   type ResendMfaBody,
   type ResetPasswordBody,
+  type UpdateMeBody,
+  type UploadMyPhotoBody,
   type VerifyMfaBody,
 } from "./auth.schemas.js";
 import {
   confirmEmailAccount,
+  deleteMyPhoto,
   getMe,
   loginUser,
   logoutUser,
@@ -33,6 +39,8 @@ import {
   resendAccountConfirmation,
   resendLoginMfa,
   resetPasswordWithToken,
+  updateMe,
+  uploadMyPhoto,
   verifyLoginMfa,
 } from "./auth.service.js";
 
@@ -177,6 +185,44 @@ export async function meHandler(req: Request, res: Response): Promise<void> {
   const result = await getMe(req.user.id);
   const bodyOut = meResponseSchema.parse(result);
   res.status(200).json(bodyOut);
+}
+
+/** PATCH /me — edita nombre, apellido o correo propios. */
+export async function updateMeHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+  const body = req.body as UpdateMeBody;
+  const result = await updateMe(req.user.id, body);
+  res.status(200).json(updateMeResponseSchema.parse(result));
+}
+
+/** POST /me/photo — sube o reemplaza la foto propia. */
+export async function uploadMyPhotoHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+  const body = req.body as UploadMyPhotoBody;
+  const result = await uploadMyPhoto(req.user.id, body);
+  res.status(200).json(uploadMyPhotoResponseSchema.parse(result));
+}
+
+/** DELETE /me/photo — quita la foto propia. */
+export async function deleteMyPhotoHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+  const result = await deleteMyPhoto(req.user.id);
+  res.status(200).json(deleteMyPhotoResponseSchema.parse(result));
 }
 
 /**

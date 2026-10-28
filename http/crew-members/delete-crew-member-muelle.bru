@@ -1,0 +1,25 @@
+meta {
+  name: Delete crew member muelle
+  type: http
+  seq: 12
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/muelles/{{assignmentId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.deletedAt: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

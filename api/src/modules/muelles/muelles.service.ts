@@ -305,7 +305,7 @@ export async function updateMuelle(
 
 /**
  * Soft delete.
- * Cuando exista CrewMemberMuelle (S7), rechazar si hay asignaciones activas.
+ * Rechaza si hay asignaciones activas a tripulantes.
  */
 export async function deleteMuelleById(
   actor: Actor,
@@ -319,6 +319,17 @@ export async function deleteMuelleById(
     throw new AppError(404, "muelle_not_found", "Muelle no encontrado");
   }
   assertMuelleTenantAccess(actor, muelle.businessId);
+
+  const activeAssignments = await prisma.crewMemberMuelle.count({
+    where: { muelleId: id, deletedAt: null },
+  });
+  if (activeAssignments > 0) {
+    throw new AppError(
+      409,
+      "muelle_in_use",
+      `No se puede eliminar el muelle: tiene ${activeAssignments} asignación(es) a tripulantes`,
+    );
+  }
 
   const updated = await prisma.muelle.update({
     where: { id },

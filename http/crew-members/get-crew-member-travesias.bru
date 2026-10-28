@@ -1,0 +1,25 @@
+meta {
+  name: Get crew member travesias
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/travesias
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

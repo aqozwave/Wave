@@ -13,6 +13,8 @@ import { Panel } from "./pages/Panel/Panel";
 import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmation";
 import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
 import { Roles } from "./pages/Roles/Roles";
+import { Embarcados } from "./pages/Embarcados/Embarcados";
+import { FichaTripulante } from "./pages/Embarcados/FichaTripulante";
 import { Ubicaciones } from "./pages/Ubicaciones/Ubicaciones";
 import { Usuarios } from "./pages/Usuarios/Usuarios";
 
@@ -99,6 +101,12 @@ export function App() {
       <Route element={<RequireAuth />}>
         <Route element={<ShellLayout />}>
           <Route index element={<Panel />} />
+          <Route path="embarcados" element={<Embarcados />} />
+          <Route path="embarcados/:id" element={<FichaTripulante />} />
+          <Route
+            path="tripulantes"
+            element={<Navigate to="/embarcados" replace />}
+          />
           <Route path="empresas" element={<Empresas />} />
           <Route path="ubicaciones" element={<Ubicaciones />} />
           <Route path="catalogos" element={<Catalogos />} />

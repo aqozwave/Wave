@@ -5,6 +5,8 @@ export type AuthUser = {
   username: string;
   firstName: string;
   lastName: string;
+  /** Ruta relativa /uploads/… o null. */
+  photoProfile: string | null;
   internalRol: string;
   roleId: string | null;
   businessId: string | null;
@@ -189,6 +191,72 @@ export async function meRequest(accessToken: string): Promise<MeSuccess> {
     throw new ApiError(500, "invalid_response", "Respuesta inválida de /me");
   }
 
+  return body as MeSuccess;
+}
+
+/** Body PATCH /auth/me. */
+export type UpdateMeBody = {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+};
+
+/** Body POST /auth/me/photo. */
+export type UploadMyPhotoBody = {
+  fileName: string;
+  mimeType: string;
+  contentBase64: string;
+};
+
+/** PATCH /api/v1/auth/me */
+export async function updateMeRequest(
+  accessToken: string,
+  data: UpdateMeBody,
+): Promise<MeSuccess> {
+  const res = await fetch("/api/v1/auth/me", {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify(data),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as MeSuccess;
+}
+
+/** POST /api/v1/auth/me/photo */
+export async function uploadMyPhotoRequest(
+  accessToken: string,
+  data: UploadMyPhotoBody,
+): Promise<MeSuccess> {
+  const res = await fetch("/api/v1/auth/me/photo", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify(data),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as MeSuccess;
+}
+
+/** DELETE /api/v1/auth/me/photo */
+export async function deleteMyPhotoRequest(
+  accessToken: string,
+): Promise<MeSuccess> {
+  const res = await fetch("/api/v1/auth/me/photo", {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    credentials: "include",
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
   return body as MeSuccess;
 }
 

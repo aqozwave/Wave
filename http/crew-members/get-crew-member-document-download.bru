@@ -1,0 +1,33 @@
+meta {
+  name: Get crew member document download
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/documents/{{documentId}}/download
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Descarga el archivo. Variables crewMemberId y documentId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

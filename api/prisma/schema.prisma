@@ -78,6 +78,7 @@ model Muelle {
   deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  crewAssignments CrewMemberMuelle[]
 
   @@index([businessId])
   @@index([portId])
@@ -102,6 +103,7 @@ model Travesia {
   deletedAt        DateTime? @map("deleted_at") @db.Timestamptz
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  crewAssignments  CrewMemberTravesia[]
 
   @@index([businessId])
   @@index([name, businessId])
@@ -138,6 +140,8 @@ model User {
   lastName        String           @map("last_name")
   email           String
   pendingEmail    String?          @map("pending_email")
+  /// Ruta relativa de foto (/uploads/…), como photoProfile del portal viejo.
+  photoProfile    String?          @map("photo_profile")
   internalRol     String           @default("user") @map("internal_rol")
   roleId          String?          @map("role_id") @db.Uuid
   role            Role?            @relation(fields: [roleId], references: [id])
@@ -160,6 +164,10 @@ model User {
   updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz
   emailTokens     EmailToken[]
   loginChallenges LoginChallenge[]
+  /// Tripulante vinculado (FK en crew_members.user_id; 1:1).
+  crewMember      CrewMember?
+  /// Documentos de tripulante subidos por este usuario.
+  uploadedCrewDocuments CrewMemberDocument[]
 
   @@index([email])
   @@index([username])
@@ -196,6 +204,7 @@ model Business {
   ports                  Port[]
   muelles                Muelle[]
   travesias              Travesia[]
+  crewMembers            CrewMember[]
 
   @@index([name])
   @@map("businesses")
@@ -215,6 +224,7 @@ model Rank {
   deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  crewMembers   CrewMember[]
 
   @@index([businessId])
   @@index([name, businessId])
@@ -235,6 +245,7 @@ model AcademicDegree {
   deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  crewMembers   CrewMember[]
 
   @@index([businessId])
   @@index([name, businessId])
@@ -258,6 +269,7 @@ model CompetencyCertificate {
   deletedAt     DateTime?    @map("deleted_at") @db.Timestamptz
   createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  crewMembers   CrewMember[]
 
   @@index([businessId])
   @@index([name, businessId])
@@ -311,6 +323,7 @@ model Location {
   updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz
   users         User[]
   areas         Area[]
+  crewMembers   CrewMember[]
 
   @@index([businessId])
   @@index([name, businessId])
@@ -338,11 +351,132 @@ model Area {
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   users         User[]
+  crewMembers   CrewMember[]
 
   @@index([locationId])
   @@index([businessId])
   @@index([name, locationId])
   @@map("areas")
+}
+
+/**
+ * Tripulante (ficha). Soft delete.
+ * RUN y email únicos por empresa entre no borrados (índices parciales en migración).
+ * Link 1:1 con User vía userId (User.crewMember es la relación inversa).
+ */
+model CrewMember {
+  id                         String                  @id @default(uuid()) @db.Uuid
+  legacyMongoId              String?                 @unique @map("legacy_mongo_id")
+  run                        String
+  firstName                  String                  @map("first_name")
+  lastName                   String                  @map("last_name")
+  email                      String
+  birthDate                  DateTime?               @map("birth_date") @db.Timestamptz
+  nationality                String?
+  phone                      String?
+  direction                  String?
+  observation                String?
+  /// Vigencia del libro de embarque (requerida en portal viejo).
+  boardingBookValidUntil     DateTime                @map("boarding_book_valid_until") @db.Timestamptz
+  businessId                 String                  @map("business_id") @db.Uuid
+  business                   Business                @relation(fields: [businessId], references: [id])
+  locationId                 String                  @map("location_id") @db.Uuid
+  location                   Location                @relation(fields: [locationId], references: [id])
+  areaId                     String?                 @map("area_id") @db.Uuid
+  area                       Area?                   @relation(fields: [areaId], references: [id])
+  rankId                     String?                 @map("rank_id") @db.Uuid
+  rank                       Rank?                   @relation(fields: [rankId], references: [id])
+  academicDegreeId           String?                 @map("academic_degree_id") @db.Uuid
+  academicDegree             AcademicDegree?         @relation(fields: [academicDegreeId], references: [id])
+  competencyCertificateId    String?                 @map("competency_certificate_id") @db.Uuid
+  competencyCertificate      CompetencyCertificate?  @relation(fields: [competencyCertificateId], references: [id])
+  /// Cuenta portal vinculada (opcional, única).
+  userId                     String?                 @unique @map("user_id") @db.Uuid
+  user                       User?                   @relation(fields: [userId], references: [id])
+  state                      Boolean                 @default(true)
+  deletedAt                  DateTime?               @map("deleted_at") @db.Timestamptz
+  createdAt                  DateTime                @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                  DateTime                @updatedAt @map("updated_at") @db.Timestamptz
+  documents                  CrewMemberDocument[]
+  muelleAssignments          CrewMemberMuelle[]
+  travesiaAssignments        CrewMemberTravesia[]
+
+  @@index([businessId])
+  @@index([locationId])
+  @@index([areaId])
+  @@index([rankId])
+  @@index([academicDegreeId])
+  @@index([competencyCertificateId])
+  @@index([run, businessId])
+  @@index([email, businessId])
+  @@map("crew_members")
+}
+
+/**
+ * Asignación N:M tripulante ↔ muelle.
+ * Única por par entre no borradas (índice parcial en migración).
+ */
+model CrewMemberMuelle {
+  id            String     @id @default(uuid()) @db.Uuid
+  legacyMongoId String?    @unique @map("legacy_mongo_id")
+  crewMemberId  String     @map("crew_member_id") @db.Uuid
+  crewMember    CrewMember @relation(fields: [crewMemberId], references: [id])
+  muelleId      String     @map("muelle_id") @db.Uuid
+  muelle        Muelle     @relation(fields: [muelleId], references: [id])
+  deletedAt     DateTime?  @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([crewMemberId])
+  @@index([muelleId])
+  @@map("crew_member_muelles")
+}
+
+/**
+ * Asignación N:M tripulante ↔ travesía.
+ * Única por par entre no borradas (índice parcial en migración).
+ */
+model CrewMemberTravesia {
+  id            String     @id @default(uuid()) @db.Uuid
+  legacyMongoId String?    @unique @map("legacy_mongo_id")
+  crewMemberId  String     @map("crew_member_id") @db.Uuid
+  crewMember    CrewMember @relation(fields: [crewMemberId], references: [id])
+  travesiaId    String     @map("travesia_id") @db.Uuid
+  travesia      Travesia   @relation(fields: [travesiaId], references: [id])
+  deletedAt     DateTime?  @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([crewMemberId])
+  @@index([travesiaId])
+  @@map("crew_member_travesias")
+}
+
+/**
+ * Documento de tripulante (archivo en disco local).
+ * Ruta relativa bajo UPLOAD_ROOT; type inicial: warning_letter.
+ */
+model CrewMemberDocument {
+  id             String     @id @default(uuid()) @db.Uuid
+  legacyMongoId  String?    @unique @map("legacy_mongo_id")
+  crewMemberId   String     @map("crew_member_id") @db.Uuid
+  crewMember     CrewMember @relation(fields: [crewMemberId], references: [id])
+  /// warning_letter (cartas de amonestación); extensible después.
+  type           String
+  originalName   String     @map("original_name")
+  mimeType       String     @map("mime_type")
+  size           Int
+  /// Relativa: /uploads/{businessId}/crew-members/{crewId}/…
+  filePath       String     @map("file_path")
+  uploadedById   String?    @map("uploaded_by_id") @db.Uuid
+  uploadedBy     User?      @relation(fields: [uploadedById], references: [id])
+  deletedAt      DateTime?  @map("deleted_at") @db.Timestamptz
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([crewMemberId])
+  @@index([type])
+  @@map("crew_member_documents")
 }
 
 /// Challenge MFA de login: código de 6 dígitos por correo (hash en BD).

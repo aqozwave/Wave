@@ -271,7 +271,7 @@ export async function updateTravesia(
 
 /**
  * Soft delete.
- * Cuando exista CrewMemberTravesia (S7), rechazar si hay asignaciones activas.
+ * Rechaza si hay asignaciones activas a tripulantes.
  */
 export async function deleteTravesiaById(
   actor: Actor,
@@ -284,6 +284,17 @@ export async function deleteTravesiaById(
     throw new AppError(404, "travesia_not_found", "Travesía no encontrada");
   }
   assertTravesiaTenantAccess(actor, travesia.businessId);
+
+  const activeAssignments = await prisma.crewMemberTravesia.count({
+    where: { travesiaId: id, deletedAt: null },
+  });
+  if (activeAssignments > 0) {
+    throw new AppError(
+      409,
+      "travesia_in_use",
+      `No se puede eliminar la travesía: tiene ${activeAssignments} asignación(es) a tripulantes`,
+    );
+  }
 
   const updated = await prisma.travesia.update({
     where: { id },

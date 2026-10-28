@@ -8,6 +8,7 @@ import {
   confirmEmailResponseSchema,
   forgotPasswordBodySchema,
   forgotPasswordResponseSchema,
+  deleteMyPhotoResponseSchema,
   loginBodySchema,
   loginResponseSchema,
   logoutResponseSchema,
@@ -23,6 +24,10 @@ import {
   resendMfaResponseSchema,
   resetPasswordBodySchema,
   resetPasswordResponseSchema,
+  updateMeBodySchema,
+  updateMeResponseSchema,
+  uploadMyPhotoBodySchema,
+  uploadMyPhotoResponseSchema,
   verifyMfaBodySchema,
 } from "../modules/auth/auth.schemas.js";
 import {
@@ -130,13 +135,41 @@ import {
 import {
   createUserBodySchema,
   createUserResponseSchema,
+  deleteUserPhotoResponseSchema,
   deleteUserResponseSchema,
   getUserResponseSchema,
   listUsersResponseSchema,
   unlockUserResponseSchema,
   updateUserBodySchema,
   updateUserResponseSchema,
+  uploadUserPhotoBodySchema,
+  uploadUserPhotoResponseSchema,
 } from "../modules/users/users.schemas.js";
+import {
+  createCrewMemberBodySchema,
+  createCrewMemberResponseSchema,
+  deleteCrewMemberResponseSchema,
+  getCrewMemberResponseSchema,
+  listCrewMembersResponseSchema,
+  updateCrewMemberBodySchema,
+  updateCrewMemberResponseSchema,
+} from "../modules/crewMembers/crewMembers.schemas.js";
+import {
+  createCrewMemberDocumentBodySchema,
+  createCrewMemberDocumentResponseSchema,
+  deleteCrewMemberDocumentResponseSchema,
+  listCrewMemberDocumentsResponseSchema,
+} from "../modules/crewMemberDocuments/crewMemberDocuments.schemas.js";
+import {
+  createCrewMemberMuelleBodySchema,
+  createCrewMemberMuelleResponseSchema,
+  createCrewMemberTravesiaBodySchema,
+  createCrewMemberTravesiaResponseSchema,
+  deleteCrewMemberMuelleResponseSchema,
+  deleteCrewMemberTravesiaResponseSchema,
+  listCrewMemberMuellesResponseSchema,
+  listCrewMemberTravesiasResponseSchema,
+} from "../modules/crewMemberAssignments/crewMemberAssignments.schemas.js";
 
 const registry = new OpenAPIRegistry();
 
@@ -462,6 +495,75 @@ registry.registerPath({
       },
     },
     401: { description: "Sin token o token inválido" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/auth/me",
+  tags: ["Auth"],
+  summary: "Actualizar mi perfil",
+  description: "Nombre, apellido o correo del usuario autenticado.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: updateMeBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Perfil actualizado",
+      content: {
+        "application/json": { schema: updateMeResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    409: { description: "Email duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/me/photo",
+  tags: ["Auth"],
+  summary: "Subir mi foto de perfil",
+  description: "JSON + base64. JPEG/PNG/WebP, máx 2 MB.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: uploadMyPhotoBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Foto actualizada",
+      content: {
+        "application/json": { schema: uploadMyPhotoResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/auth/me/photo",
+  tags: ["Auth"],
+  summary: "Quitar mi foto de perfil",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Foto eliminada",
+      content: {
+        "application/json": { schema: deleteMyPhotoResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
   },
 });
 
@@ -1978,7 +2080,7 @@ registry.registerPath({
   tags: ["Users"],
   summary: "Crear usuario",
   description:
-    "Requiere maestros.users:create. Envía correo de confirmación (confirmed=false).",
+    "Requiere maestros.users:create. Envía un enlace para elegir contraseña. Al usarlo la cuenta queda confirmada.",
   security: [{ bearerAuth: [] }],
   request: {
     body: {
@@ -2084,6 +2186,379 @@ registry.registerPath({
       },
     },
     404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/users/{id}/photo",
+  tags: ["Users"],
+  summary: "Subir foto de perfil",
+  description:
+    "JSON + base64. JPEG/PNG/WebP, máx 2 MB. Guarda en /uploads/…/users/…",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: uploadUserPhotoBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Foto actualizada",
+      content: {
+        "application/json": { schema: uploadUserPhotoResponseSchema },
+      },
+    },
+    400: { description: "Validación / mime / tamaño" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/users/{id}/photo",
+  tags: ["Users"],
+  summary: "Quitar foto de perfil",
+  description: "Deja photoProfile en null y borra el archivo del disco.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Foto eliminada",
+      content: {
+        "application/json": { schema: deleteUserPhotoResponseSchema },
+      },
+    },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/crew-members",
+  tags: ["CrewMembers"],
+  summary: "Listar tripulantes",
+  description:
+    "Requiere embarcados:read. Admin solo su empresa; superadmin todas.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().optional(),
+      limit: z.coerce.number().int().positive().max(100).optional(),
+      search: z.string().optional(),
+      businessId: z.uuid().optional(),
+      locationId: z.uuid().optional(),
+      includeInactive: z.enum(["true", "false"]).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listCrewMembersResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/crew-members",
+  tags: ["CrewMembers"],
+  summary: "Crear tripulante",
+  description:
+    "Requiere embarcados:create. businessId obligatorio para superadmin.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createCrewMemberBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": { schema: createCrewMemberResponseSchema },
+      },
+    },
+    400: { description: "Validación / FK" },
+    403: { description: "Sin permiso" },
+    409: { description: "RUN o email duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/crew-members/{id}",
+  tags: ["CrewMembers"],
+  summary: "Obtener tripulante",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Ficha",
+      content: {
+        "application/json": { schema: getCrewMemberResponseSchema },
+      },
+    },
+    404: { description: "No encontrado o sin acceso" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/crew-members/{id}",
+  tags: ["CrewMembers"],
+  summary: "Actualizar tripulante",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateCrewMemberBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizado",
+      content: {
+        "application/json": { schema: updateCrewMemberResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrado" },
+    409: { description: "Duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/crew-members/{id}",
+  tags: ["CrewMembers"],
+  summary: "Eliminar tripulante (soft)",
+  description: "Requiere embarcados:deactivate. Desvincula userId.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteCrewMemberResponseSchema },
+      },
+    },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/crew-members/{id}/documents",
+  tags: ["CrewMemberDocuments"],
+  summary: "Listar documentos del tripulante",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Listado",
+      content: {
+        "application/json": { schema: listCrewMemberDocumentsResponseSchema },
+      },
+    },
+    404: { description: "Tripulante no encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/crew-members/{id}/documents",
+  tags: ["CrewMemberDocuments"],
+  summary: "Subir documento (base64 JSON)",
+  description:
+    "Guarda en disco local bajo uploads/{businessId}/crew-members/…. PDF/JPEG/PNG/WebP, máx 10 MB.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createCrewMemberDocumentBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": { schema: createCrewMemberDocumentResponseSchema },
+      },
+    },
+    400: { description: "Validación / mime / tamaño" },
+    404: { description: "Tripulante no encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/crew-members/{id}/documents/{documentId}/download",
+  tags: ["CrewMemberDocuments"],
+  summary: "Descargar documento",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), documentId: z.uuid() }),
+  },
+  responses: {
+    200: { description: "Stream del archivo" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/crew-members/{id}/documents/{documentId}",
+  tags: ["CrewMemberDocuments"],
+  summary: "Eliminar documento (soft + disco)",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), documentId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteCrewMemberDocumentResponseSchema },
+      },
+    },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/crew-members/{id}/muelles",
+  tags: ["CrewMemberAssignments"],
+  summary: "Listar muelles del tripulante",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Listado",
+      content: {
+        "application/json": { schema: listCrewMemberMuellesResponseSchema },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/crew-members/{id}/muelles",
+  tags: ["CrewMemberAssignments"],
+  summary: "Asignar muelle",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createCrewMemberMuelleBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Asignado",
+      content: {
+        "application/json": { schema: createCrewMemberMuelleResponseSchema },
+      },
+    },
+    409: { description: "Ya asignado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/crew-members/{id}/muelles/{assignmentId}",
+  tags: ["CrewMemberAssignments"],
+  summary: "Quitar asignación de muelle",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), assignmentId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteCrewMemberMuelleResponseSchema },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/crew-members/{id}/travesias",
+  tags: ["CrewMemberAssignments"],
+  summary: "Listar travesías del tripulante",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Listado",
+      content: {
+        "application/json": { schema: listCrewMemberTravesiasResponseSchema },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/crew-members/{id}/travesias",
+  tags: ["CrewMemberAssignments"],
+  summary: "Asignar travesía",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createCrewMemberTravesiaBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Asignado",
+      content: {
+        "application/json": { schema: createCrewMemberTravesiaResponseSchema },
+      },
+    },
+    409: { description: "Ya asignado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/crew-members/{id}/travesias/{assignmentId}",
+  tags: ["CrewMemberAssignments"],
+  summary: "Quitar asignación de travesía",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), assignmentId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteCrewMemberTravesiaResponseSchema },
+      },
+    },
   },
 });
 

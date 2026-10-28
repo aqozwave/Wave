@@ -1,3 +1,4 @@
+import { optionalChileanRutSchema } from "../../lib/rut.js";
 import { z } from "../../lib/zod.js";
 
 /** Texto opcional: "" → undefined. */
@@ -24,7 +25,7 @@ const optionalEmail = z
  * name se guarda en minúsculas (mismo criterio que el portal viejo).
  */
 export const businessFieldsSchema = z.object({
-  rut: optionalText,
+  rut: optionalChileanRutSchema,
   name: z
     .string({ error: "Nombre es requerido" })
     .trim()

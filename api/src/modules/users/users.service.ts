@@ -1,14 +1,22 @@
 import { Prisma, type User } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
+import {
+  ALLOWED_USER_PHOTO_MIMES,
+  MAX_USER_PHOTO_BYTES,
+  isUserPhotoRelativePath,
+  unlinkUserPhotoFile,
+  writeUserPhotoFile,
+} from "../../lib/localUploads.js";
 import { hashPassword } from "../../lib/password.js";
 import { SYSTEM_ROLE_KEYS } from "../../lib/permissions.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
-import { issueAndSendConfirmation } from "../auth/auth.service.js";
+import { requestPasswordReset } from "../auth/auth.service.js";
 import type {
   CreateUserBody,
   ListUsersQuery,
   UpdateUserBody,
+  UploadUserPhotoBody,
   UserAdminResponse,
 } from "./users.schemas.js";
 
@@ -37,6 +45,7 @@ function toUserAdminResponse(row: UserAdminRow): UserAdminResponse {
     lastName: row.lastName,
     email: row.email,
     pendingEmail: row.pendingEmail,
+    photoProfile: row.photoProfile,
     internalRol: row.internalRol,
     roleId: row.roleId,
     role: row.role
@@ -321,7 +330,8 @@ export async function getUserById(
 }
 
 /**
- * Alta admin: confirmed=false, correo de confirmación, role → internalRol.
+ * Alta admin: confirmed=false hasta que abra el enlace.
+ * Un solo correo de clave: al usarlo queda confirmado y con contraseña propia.
  */
 export async function createUser(
   actor: Actor,
@@ -378,7 +388,7 @@ export async function createUser(
     include: userAdminInclude,
   });
 
-  await issueAndSendConfirmation(created);
+  await requestPasswordReset(created.email);
 
   return toUserAdminResponse(created);
 }
@@ -574,4 +584,102 @@ export async function unlockUserById(
   });
 
   return toUserAdminResponse(unlocked);
+}
+
+/** Decodifica base64 puro o data-URL (data:image/…;base64,…). */
+function decodeBase64Content(contentBase64: string): Buffer {
+  const trimmed = contentBase64.trim();
+  const comma = trimmed.indexOf(",");
+  const raw =
+    trimmed.startsWith("data:") && comma >= 0
+      ? trimmed.slice(comma + 1)
+      : trimmed;
+  return Buffer.from(raw, "base64");
+}
+
+/**
+ * Sube o reemplaza la foto de perfil.
+ * JPEG/PNG/WebP, máx 2 MB. Borra el archivo anterior si existía.
+ */
+export async function uploadUserPhoto(
+  actor: Actor,
+  id: string,
+  body: UploadUserPhotoBody,
+): Promise<UserAdminResponse> {
+  const existing = await prisma.user.findFirst({
+    where: { id, deletedAt: null },
+  });
+  if (!existing) {
+    throw new AppError(404, "user_not_found", "Usuario no encontrado");
+  }
+  assertUserTenantAccess(actor, existing);
+  assertCanManageTarget(actor, existing);
+
+  if (!ALLOWED_USER_PHOTO_MIMES.has(body.mimeType)) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "Tipo de archivo no permitido (JPEG, PNG o WebP)",
+    );
+  }
+
+  const buffer = decodeBase64Content(body.contentBase64);
+  if (!buffer.length) {
+    throw new AppError(400, "validation_error", "Archivo vacío o base64 inválido");
+  }
+  if (buffer.length > MAX_USER_PHOTO_BYTES) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "La foto supera el máximo de 2 MB",
+    );
+  }
+
+  const previous = existing.photoProfile;
+  const written = await writeUserPhotoFile({
+    businessId: existing.businessId,
+    userId: existing.id,
+    mimeType: body.mimeType,
+    buffer,
+  });
+
+  const updated = await prisma.user.update({
+    where: { id: existing.id },
+    data: { photoProfile: written.relativePath },
+    include: userAdminInclude,
+  });
+
+  if (previous && previous !== written.relativePath) {
+    await unlinkUserPhotoFile(previous);
+  }
+
+  return toUserAdminResponse(updated);
+}
+
+/** Quita la foto de perfil y borra el archivo del disco. */
+export async function deleteUserPhoto(
+  actor: Actor,
+  id: string,
+): Promise<UserAdminResponse> {
+  const existing = await prisma.user.findFirst({
+    where: { id, deletedAt: null },
+  });
+  if (!existing) {
+    throw new AppError(404, "user_not_found", "Usuario no encontrado");
+  }
+  assertUserTenantAccess(actor, existing);
+  assertCanManageTarget(actor, existing);
+
+  const previous = existing.photoProfile;
+  const updated = await prisma.user.update({
+    where: { id: existing.id },
+    data: { photoProfile: null },
+    include: userAdminInclude,
+  });
+
+  if (previous && isUserPhotoRelativePath(previous)) {
+    await unlinkUserPhotoFile(previous);
+  }
+
+  return toUserAdminResponse(updated);
 }

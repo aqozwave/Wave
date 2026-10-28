@@ -1,3 +1,4 @@
+import { chileanRunSchema } from "../../lib/rut.js";
 import { z } from "../../lib/zod.js";
 
 /** Rol embebido en respuestas de usuario (selector / tabla). */
@@ -24,6 +25,8 @@ export const userAdminResponseSchema = z
     lastName: z.string(),
     email: z.email(),
     pendingEmail: z.string().nullable(),
+    /** Ruta pública relativa (/uploads/…) o null. */
+    photoProfile: z.string().nullable(),
     internalRol: z.string(),
     roleId: z.uuid().nullable(),
     role: userRoleSummarySchema.nullable(),
@@ -68,7 +71,7 @@ export const listUsersResponseSchema = z
   })
   .openapi("ListUsersResponse");
 
-/** Body POST /users — alta admin (envía correo de confirmación). */
+/** Body POST /users — alta admin (envía enlace para elegir contraseña y confirmar). */
 export const createUserBodySchema = z.object({
   email: z.email().trim().toLowerCase(),
   password: z.string().min(8),
@@ -79,7 +82,7 @@ export const createUserBodySchema = z.object({
     .transform((value) => value.toLowerCase()),
   firstName: z.string().trim().min(1),
   lastName: z.string().trim().min(1),
-  run: z.string().trim().min(3),
+  run: chileanRunSchema,
   /** Obligatorio para superadmin si el rol no es superadmin. */
   businessId: z.uuid().nullable().optional(),
   roleId: z.uuid().nullable().optional(),
@@ -125,7 +128,7 @@ export const updateUserBodySchema = z
       .optional(),
     firstName: z.string().trim().min(1).optional(),
     lastName: z.string().trim().min(1).optional(),
-    run: z.string().trim().min(3).optional(),
+    run: chileanRunSchema.optional(),
     businessId: z.uuid().nullable().optional(),
     roleId: z.uuid().nullable().optional(),
     locationId: z.uuid().nullable().optional(),
@@ -142,13 +145,35 @@ export const updateUserRequestSchema = z.object({
   body: updateUserBodySchema,
 });
 
+/**
+ * Body JSON con foto en base64 (sin multer).
+ * contentBase64: raw o data-URL (data:…;base64,…).
+ */
+export const uploadUserPhotoBodySchema = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  mimeType: z.string().trim().min(1),
+  contentBase64: z.string().min(1),
+});
+
+export const uploadUserPhotoRequestSchema = z.object({
+  params: userIdParamsSchema,
+  body: uploadUserPhotoBodySchema,
+});
+
+export const deleteUserPhotoRequestSchema = z.object({
+  params: userIdParamsSchema,
+});
+
 export const createUserResponseSchema = userAdminResponseSchema;
 export const getUserResponseSchema = userAdminResponseSchema;
 export const updateUserResponseSchema = userAdminResponseSchema;
 export const deleteUserResponseSchema = userAdminResponseSchema;
 export const unlockUserResponseSchema = userAdminResponseSchema;
+export const uploadUserPhotoResponseSchema = userAdminResponseSchema;
+export const deleteUserPhotoResponseSchema = userAdminResponseSchema;
 
 export type CreateUserBody = z.infer<typeof createUserBodySchema>;
 export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>;
 export type UserAdminResponse = z.infer<typeof userAdminResponseSchema>;
 export type UpdateUserBody = z.infer<typeof updateUserBodySchema>;
+export type UploadUserPhotoBody = z.infer<typeof uploadUserPhotoBodySchema>;

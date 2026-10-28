@@ -14,6 +14,7 @@ import {
   MoreVertical,
   Plus,
   Search,
+  Upload,
   Users,
 } from "lucide-react";
 
@@ -30,12 +31,20 @@ import { listLocationsRequest, type Location } from "../../lib/api/locations";
 import { listRolesRequest, type Role } from "../../lib/api/roles";
 import {
   createUserRequest,
+  deleteUserPhotoRequest,
   listUsersRequest,
   unlockUserRequest,
   updateUserRequest,
+  uploadUserPhotoRequest,
   type AdminUser,
 } from "../../lib/api/users";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { isRutValid, normalizeRut } from "../../lib/rut";
+
+/** MIME de foto de perfil (misma lista que la API). */
+const PHOTO_MIME_OK = new Set(["image/jpeg", "image/png", "image/webp"]);
+/** 2 MB: tope de la API. */
+const PHOTO_MAX_BYTES = 2 * 1024 * 1024;
 
 /** Form de invitar, editar datos o cambiar rol. */
 type FormState = {
@@ -44,7 +53,6 @@ type FormState = {
   email: string;
   username: string;
   run: string;
-  password: string;
   businessId: string;
   roleId: string;
   locationId: string;
@@ -68,7 +76,6 @@ const EMPTY_FORM: FormState = {
   email: "",
   username: "",
   run: "",
-  password: "",
   businessId: "",
   roleId: "",
   locationId: "",
@@ -148,10 +155,57 @@ function roleLabel(row: AdminUser): string {
   return "Usuario";
 }
 
-/** Alcance: todo el sistema si es Superadmin sin empresa; si no, la empresa. */
-function scopeLabel(row: AdminUser): string {
-  if (isSystemSuperadmin(row) && !row.business) return "Todo el sistema";
+/**
+ * Alcance de S7/D36: la nave si tiene lugar;
+ * si no, «Todo el sistema» (Superadmin) o «Empresa» (admin).
+ */
+function scopeLabel(
+  row: AdminUser,
+  locationNameById: ReadonlyMap<string, string>,
+): string {
+  if (row.locationId) {
+    const place = locationNameById.get(row.locationId);
+    if (place) return displayName(place);
+  }
+  if (isSystemSuperadmin(row)) return "Todo el sistema";
+  if (row.internalRol === "admin") return "Empresa";
   return row.business?.name ? displayName(row.business.name) : "—";
+}
+
+/** «1 activo» / «3 activos» para el subtítulo del administrador. */
+function countPhrase(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/** Largo de la clave temporal: el invitado la reemplaza con el enlace. */
+const INVITE_PASSWORD_LENGTH = 16;
+/** Sin 0/O ni 1/l, para que el valor generado no se confunda si aparece en un log. */
+const INVITE_PASSWORD_ALPHABET =
+  "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+
+/** Clave de un solo uso. No se muestra: el enlace del alta la reemplaza. */
+function randomInvitePassword(): string {
+  const bytes = new Uint8Array(INVITE_PASSWORD_LENGTH);
+  crypto.getRandomValues(bytes);
+  return Array.from(
+    bytes,
+    (byte) => INVITE_PASSWORD_ALPHABET[byte % INVITE_PASSWORD_ALPHABET.length],
+  ).join("");
+}
+
+/** Usuario interno a partir del correo, porque la invitación no pide ese campo. */
+function usernameFromEmail(email: string, firstName: string): string {
+  const local = (email.split("@")[0] ?? "").toLowerCase().replace(/[^a-z0-9._-]/g, "");
+  const name = firstName.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const base = (local.length >= 3 ? local : `${local}${name}`).slice(0, 28);
+  return base.length >= 3 ? base : "usuario";
+}
+
+/** Dos dígitos para reintentar si el usuario derivado ya existe. */
+function usernameSuffix(): string {
+  const bytes = new Uint8Array(1);
+  crypto.getRandomValues(bytes);
+  return String(bytes[0] % 90 + 10);
 }
 
 /** Estado de la fila: desactivado gana sobre invitado. */
@@ -224,7 +278,7 @@ function lastAccessLabel(row: AdminUser): string {
  * Lista del sistema, invitación y menú que protege al último Superadmin.
  */
 export function Usuarios() {
-  const { accessToken, user } = useAuth();
+  const { accessToken, user, refreshProfile } = useAuth();
   const { showToast } = useToast();
   const isSuperadmin = user?.internalRol === "superadmin";
 
@@ -238,6 +292,16 @@ export function Usuarios() {
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
+  /** Preview local al elegir archivo; null = sin cambio pendiente. */
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  /** Base64 pendiente de subir al guardar Editar. */
+  const [photoPending, setPhotoPending] = useState<{
+    fileName: string;
+    mimeType: string;
+    contentBase64: string;
+  } | null>(null);
+  /** Si true, al guardar se borra la foto del servidor. */
+  const [photoRemove, setPhotoRemove] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
   /** Posición fija del menú para que no lo recorte la tabla. */
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(
@@ -325,13 +389,37 @@ export function Usuarios() {
     return [...labels].sort((a, b) => a.localeCompare(b, "es"));
   }, [items]);
 
+  /** Nombre del lugar (nave) para la columna Alcance. */
+  const locationNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const location of locations) map.set(location.id, location.name);
+    return map;
+  }, [locations]);
+
+  /** Activos e invitados del lote, para el subtítulo de D36. */
+  const statusCounts = useMemo(() => {
+    let active = 0;
+    let invited = 0;
+    for (const row of items) {
+      const status = userStatus(row);
+      if (status === "active") active += 1;
+      if (status === "invited") invited += 1;
+    }
+    return { active, invited };
+  }, [items]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let rows = items.filter((row) => {
       if (roleFilter !== "all" && roleLabel(row) !== roleFilter) return false;
       if (statusFilter !== "all" && userStatus(row) !== statusFilter) return false;
       if (!q) return true;
-      return [fullName(row), row.email, roleLabel(row), scopeLabel(row)]
+      return [
+        fullName(row),
+        row.email,
+        roleLabel(row),
+        scopeLabel(row, locationNameById),
+      ]
         .join(" ")
         .toLowerCase()
         .includes(q);
@@ -343,7 +431,7 @@ export function Usuarios() {
       });
     }
     return rows;
-  }, [items, search, roleFilter, statusFilter, nameSort]);
+  }, [items, search, roleFilter, statusFilter, nameSort, locationNameById]);
 
   /** Locations filtradas por empresa del form. */
   const locationsForForm = useMemo(() => {
@@ -364,7 +452,6 @@ export function Usuarios() {
       email: row.email,
       username: row.username,
       run: row.run,
-      password: "",
       businessId: row.businessId ?? "",
       roleId: row.roleId ?? "",
       locationId: row.locationId ?? "",
@@ -387,6 +474,9 @@ export function Usuarios() {
     setEditing(row);
     setMenuId(null);
     setForm(formFromRow(row));
+    setPhotoPreview(null);
+    setPhotoPending(null);
+    setPhotoRemove(false);
     setDialog("edit");
   }
 
@@ -402,6 +492,43 @@ export function Usuarios() {
     setDialog(null);
     setEditing(null);
     setForm(EMPTY_FORM);
+    setPhotoPreview(null);
+    setPhotoPending(null);
+    setPhotoRemove(false);
+  }
+
+  /** Lee el archivo elegido y lo deja listo para subir al guardar. */
+  function onPhotoFileChange(file: File | null) {
+    if (!file) return;
+    if (!PHOTO_MIME_OK.has(file.type)) {
+      showToast("La foto debe ser JPEG, PNG o WebP.", "danger");
+      return;
+    }
+    if (file.size > PHOTO_MAX_BYTES) {
+      showToast("La foto no puede superar 2 MB.", "danger");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const comma = result.indexOf(",");
+      const contentBase64 = comma >= 0 ? result.slice(comma + 1) : result;
+      setPhotoPreview(result);
+      setPhotoPending({
+        fileName: file.name,
+        mimeType: file.type,
+        contentBase64,
+      });
+      setPhotoRemove(false);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /** Quita la foto del preview (y del servidor al guardar). */
+  function clearPhotoSelection() {
+    setPhotoPreview(null);
+    setPhotoPending(null);
+    setPhotoRemove(true);
   }
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -456,13 +583,13 @@ export function Usuarios() {
       }
     }
 
-    if (dialog === "invite") {
-      if (!form.username.trim() || !form.run.trim()) {
-        showToast("Usuario y RUN son requeridos.", "danger");
+    if (dialog === "invite" || dialog === "edit") {
+      if (!form.run.trim()) {
+        showToast("El RUN es requerido.", "danger");
         return;
       }
-      if (form.password.length < 8) {
-        showToast("La contraseña debe tener al menos 8 caracteres.", "danger");
+      if (!isRutValid(form.run)) {
+        showToast("El RUN no es válido.", "danger");
         return;
       }
     }
@@ -482,26 +609,59 @@ export function Usuarios() {
     setSubmitting(true);
     try {
       if (dialog === "invite") {
-        await createUserRequest(accessToken, {
+        const email = form.email.trim().toLowerCase();
+        const inviteBody = {
           firstName: form.firstName.trim(),
           lastName: form.lastName.trim(),
-          email: form.email.trim().toLowerCase(),
-          username: form.username.trim().toLowerCase(),
-          run: form.run.trim(),
-          password: form.password,
+          email,
+          run: normalizeRut(form.run),
+          password: randomInvitePassword(),
           businessId: form.businessId || null,
           roleId: form.roleId || null,
           locationId: form.locationId || null,
           areaId: form.areaId || null,
           state: true,
-        });
-        showToast("Invitación enviada. Falta que confirme el correo.", "success");
+        };
+        const username = usernameFromEmail(email, inviteBody.firstName);
+        try {
+          await createUserRequest(accessToken, { ...inviteBody, username });
+        } catch (err) {
+          // El local-part del correo a veces ya está tomado como usuario.
+          if (err instanceof ApiError && err.code === "duplicate_username") {
+            await createUserRequest(accessToken, {
+              ...inviteBody,
+              username: `${username}${usernameSuffix()}`,
+            });
+          } else {
+            throw err;
+          }
+        }
+        showToast(
+          "Invitación enviada. El enlace confirma la cuenta y define la contraseña.",
+          "success",
+        );
       } else if (dialog === "edit" && editing) {
+        if (!form.username.trim()) {
+          showToast("Usuario y RUN son requeridos.", "danger");
+          setSubmitting(false);
+          return;
+        }
         await updateUserRequest(accessToken, editing.id, {
           firstName: form.firstName.trim(),
           lastName: form.lastName.trim(),
           email: form.email.trim().toLowerCase(),
+          username: form.username.trim().toLowerCase(),
+          run: normalizeRut(form.run),
         });
+        if (photoPending) {
+          await uploadUserPhotoRequest(accessToken, editing.id, photoPending);
+        } else if (photoRemove && editing.photoProfile) {
+          await deleteUserPhotoRequest(accessToken, editing.id);
+        }
+        // Si edité mi propia ficha, el sidebar y el menú deben ver la foto nueva.
+        if (editing.id === user?.id) {
+          await refreshProfile();
+        }
         showToast("Datos actualizados.", "success");
       } else if (dialog === "role" && editing) {
         if (isLastSuperadmin(editing)) {
@@ -591,7 +751,7 @@ export function Usuarios() {
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#f9fafc]">
       <Topbar
-        breadcrumb="Sistema / Usuarios"
+        breadcrumb={isSuperadmin ? "Sistema / Usuarios" : "Configuración / Usuarios"}
         breadcrumbIcon={Users}
         actions={<UserMenu />}
       />
@@ -600,12 +760,12 @@ export function Usuarios() {
         <div className="flex shrink-0 items-center gap-2">
           <div className="min-w-0 flex-1">
             <h1 className="text-[20px] font-semibold leading-[26px] text-[var(--color-nachipa-title)]">
-              Usuarios del sistema
+              {isSuperadmin ? "Usuarios del sistema" : "Usuarios"}
             </h1>
             <p className="mt-1 text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
               {isSuperadmin
                 ? "Todas las empresas. Siempre debe existir al menos un Superadmin activo."
-                : "Usuarios de tu empresa. Desactiva en vez de eliminar."}
+                : `${countPhrase(statusCounts.active, "activo", "activos")} y ${countPhrase(statusCounts.invited, "invitado", "invitados")}. Los tripulantes sin acceso al portal igual reciben avisos por correo.`}
             </p>
           </div>
           <Button type="button" className="!w-auto shrink-0 !font-medium" onClick={openInvite}>
@@ -734,12 +894,20 @@ export function Usuarios() {
                     >
                       <td className="h-14 px-3">
                         <div className="flex items-center gap-3">
-                          <span
-                            className="flex size-9 shrink-0 items-center justify-center rounded-[18px] text-[12px] font-semibold"
-                            style={{ background: tone.bg, color: tone.fg }}
-                          >
-                            {initialsOf(row)}
-                          </span>
+                          {row.photoProfile ? (
+                            <img
+                              src={row.photoProfile}
+                              alt=""
+                              className="size-9 shrink-0 rounded-[18px] object-cover"
+                            />
+                          ) : (
+                            <span
+                              className="flex size-9 shrink-0 items-center justify-center rounded-[18px] text-[12px] font-semibold"
+                              style={{ background: tone.bg, color: tone.fg }}
+                            >
+                              {initialsOf(row)}
+                            </span>
+                          )}
                           <span className="min-w-0">
                             <span className="block truncate text-[12px] font-medium leading-[18px] text-[var(--color-nachipa-title)]">
                               {fullName(row)}
@@ -754,7 +922,7 @@ export function Usuarios() {
                         {roleLabel(row)}
                       </td>
                       <td className="h-14 truncate px-3 text-[13px] text-[var(--color-nachipa-body)]">
-                        {scopeLabel(row)}
+                        {scopeLabel(row, locationNameById)}
                       </td>
                       <td className="h-14 px-3">
                         <span
@@ -884,41 +1052,124 @@ export function Usuarios() {
           dialog === "role"
             ? "El alcance sigue a la empresa. Un Superadmin sin empresa ve todo el sistema."
             : dialog === "edit"
-              ? "Nombre y correo. El rol se cambia aparte."
-              : "Se enviará un correo para confirmar la cuenta."
+              ? "Nombre, correo, usuario, RUN y foto. El rol se cambia aparte."
+              : "Un correo para confirmar la cuenta y elegir la contraseña."
         }
         onClose={closeDialog}
-        maxWidthClass={
-          dialog === "invite"
-            ? "w-full max-w-[640px] sm:w-[640px]"
-            : "w-full max-w-[520px] sm:w-[520px]"
-        }
+        maxWidthClass="w-full max-w-[520px] sm:w-[520px]"
         footer={
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              className="h-9 rounded-[var(--radius-md)] bg-[var(--color-nachipa-tab)] px-3.5 text-[13px] font-medium text-[var(--color-nachipa-body)] hover:brightness-95 disabled:opacity-60"
-              onClick={closeDialog}
-              disabled={submitting}
-            >
-              Cancelar
-            </button>
-            <Button
-              type="submit"
-              form="usuario-form"
-              className="!w-auto !font-medium"
-              disabled={submitting}
-            >
-              {submitting
-                ? "Guardando…"
-                : dialog === "invite"
-                  ? "Invitar"
-                  : "Guardar"}
-            </Button>
+          <div className="flex flex-col gap-3">
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                className="h-9 rounded-[var(--radius-md)] bg-[var(--color-nachipa-tab)] px-3.5 text-[13px] font-medium text-[var(--color-nachipa-body)] hover:brightness-95 disabled:opacity-60"
+                onClick={closeDialog}
+                disabled={submitting}
+              >
+                Cancelar
+              </button>
+              <Button
+                type="submit"
+                form="usuario-form"
+                className="!w-auto !font-medium"
+                disabled={submitting}
+              >
+                {submitting
+                  ? "Guardando…"
+                  : dialog === "invite"
+                    ? "Invitar"
+                    : "Guardar"}
+              </Button>
+            </div>
+            {dialog === "invite" ? (
+              <p className="text-center text-[12px] text-[var(--color-nachipa-secondary)]">
+                El enlace confirma la cuenta y le pide la contraseña. No se elige acá.
+              </p>
+            ) : null}
           </div>
         }
       >
         <form id="usuario-form" className="flex flex-col gap-4" onSubmit={onSubmit}>
+          {dialog === "invite" ? (
+            <div className="flex items-center gap-3 rounded-xl bg-[var(--color-table-head-bg)] px-3.5 py-3">
+              <span
+                className="flex size-10 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold"
+                style={{
+                  background: "var(--color-kpi-indigo-soft)",
+                  color: "var(--color-kpi-indigo)",
+                }}
+              >
+                {`${form.firstName.trim().charAt(0)}${form.lastName.trim().charAt(0)}`.toUpperCase() ||
+                  "·"}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[14px] font-semibold text-[var(--color-nachipa-title)]">
+                  {displayName(`${form.firstName} ${form.lastName}`.trim()) ||
+                    "Nombre y apellido"}
+                </span>
+                <span className="block truncate text-[12px] text-[var(--color-nachipa-secondary)]">
+                  {form.email.trim() || "Así se verá en la lista de usuarios"}
+                </span>
+              </span>
+            </div>
+          ) : null}
+          {dialog === "edit" && editing ? (
+            <div className="flex items-center gap-3 rounded-xl bg-[var(--color-table-head-bg)] px-3.5 py-3">
+              {photoPreview || (!photoRemove && editing.photoProfile) ? (
+                <img
+                  src={photoPreview ?? editing.photoProfile ?? ""}
+                  alt=""
+                  className="size-12 shrink-0 rounded-full object-cover"
+                />
+              ) : (
+                <span
+                  className="flex size-12 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold"
+                  style={{
+                    background: avatarTone(editing.id).bg,
+                    color: avatarTone(editing.id).fg,
+                  }}
+                >
+                  {initialsOf({
+                    ...editing,
+                    firstName: form.firstName || editing.firstName,
+                    lastName: form.lastName || editing.lastName,
+                  })}
+                </span>
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Foto de perfil
+                </span>
+                <span className="block text-[12px] text-[var(--color-nachipa-secondary)]">
+                  JPEG, PNG o WebP · hasta 2 MB
+                </span>
+                <span className="mt-2 flex flex-wrap gap-2">
+                  <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[12px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]">
+                    <Upload className="size-3.5" strokeWidth={1.5} aria-hidden />
+                    {photoPreview || editing.photoProfile ? "Cambiar" : "Subir foto"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="sr-only"
+                      onChange={(event) =>
+                        onPhotoFileChange(event.target.files?.[0] ?? null)
+                      }
+                    />
+                  </label>
+                  {photoPreview || (!photoRemove && editing.photoProfile) ? (
+                    <button
+                      type="button"
+                      className="h-8 rounded-[var(--radius-md)] px-3 text-[12px] font-medium text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
+                      onClick={clearPhotoSelection}
+                    >
+                      Quitar
+                    </button>
+                  ) : null}
+                </span>
+              </span>
+            </div>
+          ) : null}
+
           {dialog !== "role" ? (
             <>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -945,29 +1196,32 @@ export function Usuarios() {
             </>
           ) : null}
 
+          {dialog === "edit" ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <TextField
+                label="Usuario"
+                value={form.username}
+                onChange={(event) => setField("username", event.target.value)}
+                required
+              />
+              <TextField
+                label="RUN"
+                value={form.run}
+                onChange={(event) => setField("run", event.target.value)}
+                required
+                placeholder="12.345.678-9"
+              />
+            </div>
+          ) : null}
+
           {dialog === "invite" ? (
             <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <TextField
-                  label="Usuario"
-                  value={form.username}
-                  onChange={(event) => setField("username", event.target.value)}
-                  required
-                />
-                <TextField
-                  label="RUN"
-                  value={form.run}
-                  onChange={(event) => setField("run", event.target.value)}
-                  required
-                />
-              </div>
               <TextField
-                label="Contraseña"
-                type="password"
-                value={form.password}
-                onChange={(event) => setField("password", event.target.value)}
+                label="RUN"
+                value={form.run}
+                onChange={(event) => setField("run", event.target.value)}
                 required
-                autoComplete="new-password"
+                placeholder="12.345.678-9"
               />
               <RoleFields
                 form={form}

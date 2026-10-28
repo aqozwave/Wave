@@ -1,5 +1,6 @@
 import express from "express";
 import swaggerUi from "swagger-ui-express";
+import { getUploadRoot } from "./lib/localUploads.js";
 import { buildOpenApiDocument } from "./lib/openapi.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { notFoundHandler } from "./middlewares/notFound.js";
@@ -9,6 +10,7 @@ import { authRouter } from "./modules/auth/auth.routes.js";
 import { businessesRouter } from "./modules/businesses/businesses.routes.js";
 import { competencyCertificatesRouter } from "./modules/competencyCertificates/competencyCertificates.routes.js";
 import { coursesRouter } from "./modules/courses/courses.routes.js";
+import { crewMembersRouter } from "./modules/crewMembers/crewMembers.routes.js";
 import { healthRouter } from "./modules/health/health.routes.js";
 import { locationsRouter } from "./modules/locations/locations.routes.js";
 import { muellesRouter } from "./modules/muelles/muelles.routes.js";
@@ -22,7 +24,11 @@ export function createApp() {
   const app = express();
   const openApiDocument = buildOpenApiDocument();
 
-  app.use(express.json());
+  // 12 MB: fotos y documentos en JSON+base64 (crew docs hasta 10 MB).
+  app.use(express.json({ limit: "12mb" }));
+
+  // Fotos de perfil: /uploads/… → disco local (proxy Vite en web).
+  app.use("/uploads", express.static(getUploadRoot()));
 
   app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
   app.get("/api/openapi.json", (_req, res) => {
@@ -43,6 +49,7 @@ export function createApp() {
   app.use("/api/v1/travesias", travesiasRouter);
   app.use("/api/v1/roles", rolesRouter);
   app.use("/api/v1/users", usersRouter);
+  app.use("/api/v1/crew-members", crewMembersRouter);
   app.use(notFoundHandler);
   app.use(errorHandler);
 

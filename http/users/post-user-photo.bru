@@ -1,0 +1,38 @@
+meta {
+  name: Post user photo
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/api/v1/users/{{userId}}/photo
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "fileName": "avatar.png",
+    "mimeType": "image/png",
+    "contentBase64": "{{photoBase64}}"
+  }
+}
+
+docs {
+  Sube o reemplaza la foto de perfil (JPEG/PNG/WebP, máx 2 MB).
+  Completar userId y photoBase64 (raw o data-URL).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+}
+
+assert {
+  res.status: eq 200
+  res.body.photoProfile: isString
+}

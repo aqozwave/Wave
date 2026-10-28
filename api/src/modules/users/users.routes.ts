@@ -6,18 +6,22 @@ import { validate } from "../../middlewares/validate.js";
 import {
   createUserHandler,
   deleteUserHandler,
+  deleteUserPhotoHandler,
   getUserHandler,
   listUsersHandler,
   unlockUserHandler,
   updateUserHandler,
+  uploadUserPhotoHandler,
 } from "./users.controller.js";
 import {
   createUserRequestSchema,
+  deleteUserPhotoRequestSchema,
   deleteUserRequestSchema,
   getUserRequestSchema,
   listUsersRequestSchema,
   unlockUserRequestSchema,
   updateUserRequestSchema,
+  uploadUserPhotoRequestSchema,
 } from "./users.schemas.js";
 
 /**
@@ -90,4 +94,26 @@ usersRouter.post(
   ),
   validate(unlockUserRequestSchema),
   unlockUserHandler,
+);
+
+usersRouter.post(
+  "/:id/photo",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_USERS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(uploadUserPhotoRequestSchema),
+  uploadUserPhotoHandler,
+);
+
+usersRouter.delete(
+  "/:id/photo",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_USERS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(deleteUserPhotoRequestSchema),
+  deleteUserPhotoHandler,
 );

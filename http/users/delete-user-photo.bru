@@ -1,0 +1,30 @@
+meta {
+  name: Delete user photo
+  type: http
+  seq: 9
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/users/{{userId}}/photo
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Quita photoProfile y borra el archivo del disco.
+  Completar userId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+}
+
+assert {
+  res.status: eq 200
+  res.body.photoProfile: isNull
+}

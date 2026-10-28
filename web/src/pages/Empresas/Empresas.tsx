@@ -23,6 +23,7 @@ import {
   type BusinessWriteBody,
 } from "../../lib/api/businesses";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { isRutValid, normalizeRut } from "../../lib/rut";
 
 /** Form create (Figma 1 paso) + edit extendido. */
 type FormState = {
@@ -170,7 +171,7 @@ export function Empresas() {
       };
     }
     return {
-      rut: form.rut || undefined,
+      rut: form.rut.trim() ? normalizeRut(form.rut) : undefined,
       name: form.name.trim(),
       giro: form.giro || undefined,
       country: form.country || undefined,
@@ -188,6 +189,15 @@ export function Empresas() {
     if (!accessToken) return;
     if (!form.name.trim()) {
       showToast("El nombre es requerido.", "danger");
+      return;
+    }
+    // Superadmin puede enviar RUT; si lo escribe, debe pasar el dígito verificador.
+    if (
+      (isSuperadmin || !editing) &&
+      form.rut.trim() &&
+      !isRutValid(form.rut)
+    ) {
+      showToast("El RUT no es válido.", "danger");
       return;
     }
     if (form.adminEmail.trim()) {

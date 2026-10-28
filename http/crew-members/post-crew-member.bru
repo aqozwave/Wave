@@ -1,0 +1,46 @@
+meta {
+  name: Post crew member
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/crew-members
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "run": "12.345.678-9",
+    "firstName": "Juan",
+    "lastName": "Perez",
+    "email": "juan.perez.crew@example.com",
+    "boardingBookValidUntil": "2027-12-31T00:00:00.000Z",
+    "businessId": "{{businessId}}",
+    "locationId": "{{locationId}}"
+  }
+}
+
+docs {
+  Requiere embarcados:create. Completar businessId y locationId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

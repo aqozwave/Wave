@@ -1,0 +1,41 @@
+meta {
+  name: Patch crew member
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "firstName": "juan",
+    "observation": "actualizado desde bruno"
+  }
+}
+
+docs {
+  Requiere embarcados:update.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

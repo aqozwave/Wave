@@ -4,6 +4,7 @@ import { requireSuperadmin } from "../../middlewares/requireSuperadmin.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   confirmEmailHandler,
+  deleteMyPhotoHandler,
   forgotPasswordHandler,
   loginHandler,
   logoutHandler,
@@ -13,6 +14,8 @@ import {
   resendConfirmationHandler,
   resendMfaHandler,
   resetPasswordHandler,
+  updateMeHandler,
+  uploadMyPhotoHandler,
   verifyMfaHandler,
 } from "./auth.controller.js";
 import {
@@ -24,6 +27,8 @@ import {
   resendConfirmationRequestSchema,
   resendMfaRequestSchema,
   resetPasswordRequestSchema,
+  updateMeRequestSchema,
+  uploadMyPhotoRequestSchema,
   verifyMfaRequestSchema,
 } from "./auth.schemas.js";
 
@@ -89,6 +94,22 @@ authRouter.post("/refresh", validate(refreshRequestSchema), refreshHandler);
 
 // Bearer obligatorio; 401 si falta o es inválido.
 authRouter.get("/me", authenticate, meHandler);
+
+authRouter.patch(
+  "/me",
+  authenticate,
+  validate(updateMeRequestSchema),
+  updateMeHandler,
+);
+
+authRouter.post(
+  "/me/photo",
+  authenticate,
+  validate(uploadMyPhotoRequestSchema),
+  uploadMyPhotoHandler,
+);
+
+authRouter.delete("/me/photo", authenticate, deleteMyPhotoHandler);
 
 // Invalida sesión y limpia cookie.
 authRouter.post("/logout", authenticate, logoutHandler);

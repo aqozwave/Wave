@@ -48,6 +48,8 @@ type AuthState = {
   logout: () => Promise<void>;
   /** Revalida sesión con GET /me; si falla, intenta refresh. */
   hydrateSession: () => Promise<void>;
+  /** Actualiza el perfil en memoria con GET /me (sin skeleton). */
+  refreshProfile: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -176,6 +178,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [clearLocal]);
 
+  /** Refresco liviano del perfil (foto, nombre) sin skeleton del shell. */
+  const refreshProfile = useCallback(async (): Promise<void> => {
+    const token = getAccessToken();
+    if (!token) return;
+    try {
+      const result = await meRequest(token);
+      setUser(result.user);
+    } catch {
+      // Si falla, el próximo hydrate/refresh lo corrige.
+    }
+  }, []);
+
   /**
    * Login: MFA → challenge; sin MFA → tokens en memoria.
    */
@@ -210,6 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         verifyMfa,
         logout,
         hydrateSession,
+        refreshProfile,
       }}
     >
       {children}

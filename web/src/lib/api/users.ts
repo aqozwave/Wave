@@ -23,6 +23,8 @@ export type AdminUser = {
   lastName: string;
   email: string;
   pendingEmail: string | null;
+  /** Ruta relativa /uploads/… o null. */
+  photoProfile: string | null;
   internalRol: string;
   roleId: string | null;
   role: UserRoleSummary | null;
@@ -191,6 +193,43 @@ export async function unlockUserRequest(
 ): Promise<AdminUser> {
   const res = await fetch(`/api/v1/users/${id}/unlock`, {
     method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as AdminUser;
+}
+
+/** Body de subida de foto (mismo shape que la API). */
+export type UploadUserPhotoBody = {
+  fileName: string;
+  mimeType: string;
+  contentBase64: string;
+};
+
+/** POST /api/v1/users/:id/photo */
+export async function uploadUserPhotoRequest(
+  accessToken: string,
+  id: string,
+  data: UploadUserPhotoBody,
+): Promise<AdminUser> {
+  const res = await fetch(`/api/v1/users/${id}/photo`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as AdminUser;
+}
+
+/** DELETE /api/v1/users/:id/photo */
+export async function deleteUserPhotoRequest(
+  accessToken: string,
+  id: string,
+): Promise<AdminUser> {
+  const res = await fetch(`/api/v1/users/${id}/photo`, {
+    method: "DELETE",
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const body: unknown = await res.json().catch(() => null);

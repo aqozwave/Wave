@@ -21,7 +21,10 @@
     "etl:course": "tsx --env-file=.env etl/course.ts",
     "etl:muelle": "tsx --env-file=.env etl/muelle.ts",
     "etl:travesia": "tsx --env-file=.env etl/travesia.ts",
-    "etl:role": "tsx --env-file=.env etl/role.ts"
+    "etl:role": "tsx --env-file=.env etl/role.ts",
+    "etl:crew-member": "tsx --env-file=.env etl/crewMember.ts",
+    "etl:crew-member-muelle": "tsx --env-file=.env etl/crewMemberMuelle.ts",
+    "etl:crew-member-travesia": "tsx --env-file=.env etl/crewMemberTravesia.ts"
   },
   "prisma": {
     "seed": "tsx --env-file=.env prisma/seed.ts"
