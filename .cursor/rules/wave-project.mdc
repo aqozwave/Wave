@@ -270,17 +270,23 @@ con cierre "En una frase" y Glosario del paso.
 | # | Sección | Estado |
 |---|---|---|
 | 0 | Fundaciones | Hecha (health, Prisma baseline, Bruno, web HealthStatus) |
-| 1 | Auth y usuarios | Hecha — login+MFA, JWT, `/me`, refresh, logout, register/confirm/reset, Toast, idle 1h, Bruno + OpenAPI auth |
-| 2 | Empresas | Hecha — CRUD + web Configuración/Empresas + ETL nachipa-prod + restore sesión |
-| 3 | Ubicaciones | Hecha — CRUD + Flota/lugares + ETL + aislamiento tenant |
-| 4 | Áreas | Pendiente |
-| 5 | Catálogos | Pendiente |
-| 6 | Roles y permisos | Pendiente |
-| 7 | Tripulantes | Pendiente |
-| 8 | Cursos de tripulantes | Pendiente |
+| 1 | Auth y usuarios | Hecha + endurecida — MFA (opt-out solo local), refresh rotativo con hash en BD, rate limit, anti-enumeración, clear-session, claves fuertes, `accessExpiresAt`; Usuarios + Mi perfil + Seguridad |
+| 2 | Empresas | Hecha — CRUD + web + ETL + DataTable/XLS |
+| 3 | Ubicaciones | Hecha — CRUD Flota/lugares + ETL + DataTable/XLS |
+| 4 | Áreas | Construida (API + Flota/Áreas + ETL) — **falta verificación formal de sección** |
+| 5 | Catálogos | Construida (ranks, degrees, certs, courses, document types D41 + ETL) — **falta verificación formal** |
+| 6 | Roles y permisos | Construida (API + UI Roles) — **falta verificación formal** (cambiar permiso → acceso real) |
+| 7 | Tripulantes | Construida (CRUD, ficha, docs, asignaciones oficiales, ETL parcial) — **falta verificación formal** |
+| 8 | Cursos de tripulantes | Pendiente (`CrewMemberCourse` aún no) |
 | 9 | Notificaciones | Pendiente |
 | 10 | Auditoría y sistema | Pendiente |
-| 11 | Dashboard / KPIs | Pendiente |
+| 11 | Dashboard / KPIs | Pendiente (Panel shell existe; KPIs reales no) |
 | 12 | Corte a producción | Pendiente |
 
 Un paso a la vez, con mi confirmación antes de avanzar. **Ninguna sección se marca hecha sin su verificación cumplida.**
+
+### Deuda cercana (prioridad sugerida)
+
+1. **Verificación formal** de secciones 4–7 + regresión auth (login, refresh, ruta protegida, tenant).
+2. **Enforcement** de `uploadBy` / `viewBy` / `crewCanView` en carga de documentos.
+3. **Sección 8** — cursos por tripulante y vencimientos.
