@@ -1,9 +1,11 @@
 import { Router } from "express";
+import { authRateLimit } from "../../lib/rateLimit.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { requireSuperadmin } from "../../middlewares/requireSuperadmin.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   changeMyPasswordHandler,
+  clearSessionHandler,
   confirmEmailHandler,
   deleteMyPhotoHandler,
   forgotPasswordHandler,
@@ -59,6 +61,7 @@ authRouter.post(
 // Público: reenvío con mensaje fijo (no revela si el email existe).
 authRouter.post(
   "/resend-confirmation",
+  authRateLimit("resend-confirmation"),
   validate(resendConfirmationRequestSchema),
   resendConfirmationHandler,
 );
@@ -66,6 +69,7 @@ authRouter.post(
 // Público: pide enlace de reset (mensaje fijo).
 authRouter.post(
   "/forgot-password",
+  authRateLimit("forgot-password"),
   validate(forgotPasswordRequestSchema),
   forgotPasswordHandler,
 );
@@ -77,17 +81,24 @@ authRouter.post(
   resetPasswordHandler,
 );
 
-authRouter.post("/login", validate(loginRequestSchema), loginHandler);
+authRouter.post(
+  "/login",
+  authRateLimit("login"),
+  validate(loginRequestSchema),
+  loginHandler,
+);
 
 // MFA: verificar código (mismo X-Client que login para cookie/body).
 authRouter.post(
   "/verify-mfa",
+  authRateLimit("verify-mfa"),
   validate(verifyMfaRequestSchema),
   verifyMfaHandler,
 );
 
 authRouter.post(
   "/resend-mfa",
+  authRateLimit("resend-mfa"),
   validate(resendMfaRequestSchema),
   resendMfaHandler,
 );
@@ -122,3 +133,6 @@ authRouter.post(
 
 // Invalida sesión y limpia cookie.
 authRouter.post("/logout", authenticate, logoutHandler);
+
+// Público: borra cookie + revoca ese refresh (confirm / reset / otra cuenta).
+authRouter.post("/clear-session", clearSessionHandler);

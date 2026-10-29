@@ -22,8 +22,13 @@ body:json {
   {
     "code": "XX",
     "name": "Tipo de prueba",
-    "subtype": "general",
-    "visibility": "employee",
+    "subtype": "prevencion",
+    "appliesTo": "crew_and_external",
+    "requiresExpiry": true,
+    "uploadBy": "prevention_or_admin",
+    "viewBy": "prevention_or_admin",
+    "crewCanView": true,
+    "state": true,
     "businessId": "{{businessId}}"
   }
 }
@@ -31,6 +36,7 @@ body:json {
 docs {
   Admin o superadmin + permiso maestros.document_types.
   Superadmin: businessId obligatorio.
+  Campos Figma D41: appliesTo, requiresExpiry, uploadBy, viewBy, crewCanView.
 }
 
 script:pre-request {

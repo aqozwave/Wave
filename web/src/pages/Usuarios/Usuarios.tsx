@@ -7,19 +7,26 @@ import {
   type MouseEvent,
 } from "react";
 import {
-  ChevronDown,
-  ChevronUp,
-  ChevronsUpDown,
   CircleHelp,
   MoreVertical,
   Plus,
-  Search,
   Upload,
   Users,
 } from "lucide-react";
 
 import { Button } from "../../components/Button/Button";
+import {
+  DataTableCard,
+  DataTableSearch,
+  DataTableSelect,
+} from "../../components/DataTableCard/DataTableCard";
 import { Modal } from "../../components/Modal/Modal";
+import { StatusChip } from "../../components/StatusChip/StatusChip";
+import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
+import {
+  TablePagination,
+  useClientTablePagination,
+} from "../../components/TablePagination/TablePagination";
 import { TextField } from "../../components/TextField/TextField";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { useToast } from "../../components/Toast/ToastProvider";
@@ -58,6 +65,8 @@ type FormState = {
   locationId: string;
   areaId: string;
   state: boolean;
+  /** Fecha local YYYY-MM-DD; vacío = sin vencimiento. */
+  accessExpiresAt: string;
 };
 
 /** Qué diálogo está abierto. null = ninguno. */
@@ -81,6 +90,7 @@ const EMPTY_FORM: FormState = {
   locationId: "",
   areaId: "",
   state: true,
+  accessExpiresAt: "",
 };
 
 /** Ventana en la que el último acceso se muestra como "Ahora". */
@@ -179,18 +189,59 @@ function countPhrase(count: number, singular: string, plural: string): string {
 
 /** Largo de la clave temporal: el invitado la reemplaza con el enlace. */
 const INVITE_PASSWORD_LENGTH = 16;
-/** Sin 0/O ni 1/l, para que el valor generado no se confunda si aparece en un log. */
-const INVITE_PASSWORD_ALPHABET =
-  "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+/** Mayúsculas sin O. */
+const INVITE_UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+/** Minúsculas sin l. */
+const INVITE_LOWER = "abcdefghijkmnopqrstuvwxyz";
+/** Dígitos sin 0/1. */
+const INVITE_DIGITS = "23456789";
+const INVITE_PASSWORD_ALPHABET = `${INVITE_UPPER}${INVITE_LOWER}${INVITE_DIGITS}`;
 
-/** Clave de un solo uso. No se muestra: el enlace del alta la reemplaza. */
-function randomInvitePassword(): string {
-  const bytes = new Uint8Array(INVITE_PASSWORD_LENGTH);
+/** Un carácter al azar del alfabeto dado. */
+function randomChar(alphabet: string): string {
+  const bytes = new Uint8Array(1);
   crypto.getRandomValues(bytes);
-  return Array.from(
-    bytes,
-    (byte) => INVITE_PASSWORD_ALPHABET[byte % INVITE_PASSWORD_ALPHABET.length],
-  ).join("");
+  return alphabet[bytes[0]! % alphabet.length]!;
+}
+
+/**
+ * Clave temporal fuerte (mayúscula + minúscula + número).
+ * No se muestra: el enlace del alta la reemplaza.
+ */
+function randomInvitePassword(): string {
+  const required = [
+    randomChar(INVITE_UPPER),
+    randomChar(INVITE_LOWER),
+    randomChar(INVITE_DIGITS),
+  ];
+  const restLen = INVITE_PASSWORD_LENGTH - required.length;
+  const rest = Array.from({ length: restLen }, () =>
+    randomChar(INVITE_PASSWORD_ALPHABET),
+  );
+  const chars = [...required, ...rest];
+  // Mezcla para que los tres requeridos no queden siempre al inicio.
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const bytes = new Uint8Array(1);
+    crypto.getRandomValues(bytes);
+    const j = bytes[0]! % (i + 1);
+    const tmp = chars[i]!;
+    chars[i] = chars[j]!;
+    chars[j] = tmp;
+  }
+  return chars.join("");
+}
+
+/** ISO → input date (YYYY-MM-DD). */
+function toDateInputValue(iso: string | null): string {
+  if (!iso) return "";
+  return iso.slice(0, 10);
+}
+
+/** Input date → ISO fin de día UTC, o null si vacío. */
+function fromDateInputValue(date: string): string | null {
+  const trimmed = date.trim();
+  if (!trimmed) return null;
+  return new Date(`${trimmed}T23:59:59.999Z`).toISOString();
 }
 
 /** Usuario interno a partir del correo, porque la invitación no pide ese campo. */
@@ -215,27 +266,18 @@ function userStatus(row: AdminUser): UserStatus {
   return "active";
 }
 
-/** Chip de estado (colores Figma StatusChip). */
-function statusChip(status: UserStatus): { label: string; className: string } {
-  if (status === "disabled") {
-    return {
-      label: "Desactivado",
-      className:
-        "bg-[var(--color-status-neutral-bg)] text-[var(--color-status-neutral-fg)]",
-    };
-  }
-  if (status === "invited") {
-    return {
-      label: "Invitado",
-      className:
-        "bg-[var(--color-status-info-bg)] text-[var(--color-status-info-fg)]",
-    };
-  }
-  return {
-    label: "Activo",
-    className:
-      "bg-[var(--color-status-success-bg)] text-[var(--color-status-success-fg)]",
-  };
+/** Etiqueta del chip de estado (Figma StatusChip). */
+function userStatusLabel(status: UserStatus): string {
+  if (status === "disabled") return "Desactivado";
+  if (status === "invited") return "Invitado";
+  return "Activo";
+}
+
+/** Tono del chip de estado para StatusChip: neutral/info/success. */
+function userStatusTone(status: UserStatus): "neutral" | "info" | "success" {
+  if (status === "disabled") return "neutral";
+  if (status === "invited") return "info";
+  return "success";
 }
 
 /** Fecha corta DD-MM-AAAA, como la fila desactivada de S7. */
@@ -433,15 +475,22 @@ export function Usuarios() {
     return rows;
   }, [items, search, roleFilter, statusFilter, nameSort, locationNameById]);
 
+  /* Paginación cliente: resetea automáticamente cuando cambia filtered. */
+  const { page, setPage, pageSize, setPageSize, pageCount, pageItems, total } =
+    useClientTablePagination(filtered);
+
   /** Locations filtradas por empresa del form. */
   const locationsForForm = useMemo(() => {
-    if (!form.businessId) return locations;
+    if (!form.businessId) return [];
     return locations.filter((location) => location.businessId === form.businessId);
   }, [locations, form.businessId]);
 
-  /** Áreas filtradas por location del form. */
+  /**
+   * Áreas del lugar elegido.
+   * Sin lugar → lista vacía (antes devolvía todas y mezclaba empresas).
+   */
   const areasForForm = useMemo(() => {
-    if (!form.locationId) return areas;
+    if (!form.locationId) return [];
     return areas.filter((area) => area.locationId === form.locationId);
   }, [areas, form.locationId]);
 
@@ -457,6 +506,7 @@ export function Usuarios() {
       locationId: row.locationId ?? "",
       areaId: row.areaId ?? "",
       state: row.state,
+      accessExpiresAt: toDateInputValue(row.accessExpiresAt),
     };
   }
 
@@ -621,6 +671,7 @@ export function Usuarios() {
           locationId: form.locationId || null,
           areaId: form.areaId || null,
           state: true,
+          accessExpiresAt: fromDateInputValue(form.accessExpiresAt),
         };
         const username = usernameFromEmail(email, inviteBody.firstName);
         try {
@@ -652,6 +703,7 @@ export function Usuarios() {
           email: form.email.trim().toLowerCase(),
           username: form.username.trim().toLowerCase(),
           run: normalizeRut(form.run),
+          accessExpiresAt: fromDateInputValue(form.accessExpiresAt),
         });
         if (photoPending) {
           await uploadUserPhotoRequest(accessToken, editing.id, photoPending);
@@ -774,197 +826,182 @@ export function Usuarios() {
           </Button>
         </div>
 
-        <div className="flex shrink-0 flex-col gap-2.5 rounded-[14px] border border-[var(--color-tremor-border)] bg-white p-3">
-          <div className="flex gap-2">
-            <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white pl-3 pr-2.5">
-              <input
-                type="search"
+        {/* Tarjeta DataTable Figma: toolbar con search + filtros, pie con paginación. */}
+        <DataTableCard
+          toolbar={
+            <>
+              <DataTableSearch
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={setSearch}
                 placeholder="Buscar nombre o correo…"
-                className="min-w-0 flex-1 bg-transparent text-[12px] leading-[18px] text-[var(--color-nachipa-title)] outline-none placeholder:text-[var(--color-nachipa-placeholder)]"
               />
-              <Search
-                className="size-3.5 shrink-0 text-[var(--color-icon-default)]"
-                strokeWidth={1.5}
-                aria-hidden
-              />
-            </label>
-            <select
-              className="h-8 w-[240px] shrink-0 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[12px] text-[var(--color-nachipa-body)] outline-none"
-              value={roleFilter}
-              onChange={(event) => setRoleFilter(event.target.value)}
-              aria-label="Filtrar por rol"
-            >
-              <option value="all">Rol: todos</option>
-              {roleOptions.map((label) => (
-                <option key={label} value={label}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <select
-              className="h-8 w-[240px] shrink-0 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[12px] text-[var(--color-nachipa-body)] outline-none"
-              value={statusFilter}
-              onChange={(event) =>
-                setStatusFilter(event.target.value as "all" | UserStatus)
+              <DataTableSelect
+                value={roleFilter}
+                onChange={setRoleFilter}
+                aria-label="Filtrar por rol"
+                className="h-8 w-[200px] shrink-0 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-2 text-[12px] text-[var(--color-nachipa-body)] outline-none"
+              >
+                <option value="all">Rol: todos</option>
+                {roleOptions.map((label) => (
+                  <option key={label} value={label}>
+                    {label}
+                  </option>
+                ))}
+              </DataTableSelect>
+              <DataTableSelect
+                value={statusFilter}
+                onChange={(v) => setStatusFilter(v as "all" | UserStatus)}
+                aria-label="Filtrar por estado"
+                className="h-8 w-[180px] shrink-0 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-2 text-[12px] text-[var(--color-nachipa-body)] outline-none"
+              >
+                <option value="all">Estado: todos</option>
+                <option value="active">Activo</option>
+                <option value="invited">Invitado</option>
+                <option value="disabled">Desactivado</option>
+              </DataTableSelect>
+            </>
+          }
+          footer={
+            <TablePagination
+              totalLabel={
+                loading
+                  ? "Cargando…"
+                  : `${total} ${total === 1 ? "usuario" : "usuarios"}`
               }
-              aria-label="Filtrar por estado"
-            >
-              <option value="all">Estado: todos</option>
-              <option value="active">Activo</option>
-              <option value="invited">Invitado</option>
-              <option value="disabled">Desactivado</option>
-            </select>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1094px] border-collapse text-left">
-              <colgroup>
-                <col style={{ width: "330px" }} />
-                <col style={{ width: "170px" }} />
-                <col style={{ width: "180px" }} />
-                <col style={{ width: "180px" }} />
-                <col style={{ width: "190px" }} />
-                <col style={{ width: "44px" }} />
-              </colgroup>
-              <thead>
-                <tr className="text-[12px] font-semibold leading-[18px] text-[var(--color-table-head-text)]">
-                  <th className="h-9 rounded-l-lg border-b border-[var(--color-tremor-border)] bg-[var(--color-table-head-bg)] px-3 text-left">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1.5"
-                      onClick={toggleNameSort}
-                    >
-                      Usuario
-                      {nameSort === "asc" ? (
-                        <ChevronUp className="size-3" strokeWidth={1.5} aria-hidden />
-                      ) : nameSort === "desc" ? (
-                        <ChevronDown className="size-3" strokeWidth={1.5} aria-hidden />
-                      ) : (
-                        <ChevronsUpDown className="size-3" strokeWidth={1.5} aria-hidden />
-                      )}
-                    </button>
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] bg-[var(--color-table-head-bg)] px-3 font-semibold">
-                    Rol
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] bg-[var(--color-table-head-bg)] px-3 font-semibold">
-                    Alcance
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] bg-[var(--color-table-head-bg)] px-3 font-semibold">
-                    Estado
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] bg-[var(--color-table-head-bg)] px-3 font-semibold">
-                    Último acceso
-                  </th>
-                  <th className="h-9 rounded-r-lg border-b border-[var(--color-tremor-border)] bg-[var(--color-table-head-bg)] px-3" />
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          }
+        >
+          <table className="w-full min-w-[1094px] border-collapse text-left">
+            <colgroup>
+              <col style={{ width: "330px" }} />
+              <col style={{ width: "170px" }} />
+              <col style={{ width: "180px" }} />
+              <col style={{ width: "180px" }} />
+              <col style={{ width: "190px" }} />
+              <col style={{ width: "44px" }} />
+            </colgroup>
+            <thead>
+              <tr>
+                {/* Columna Usuario: sortable + redondeada a la izquierda (Figma). */}
+                <TableHeaderCell
+                  rounded="left"
+                  sortable
+                  sortDir={nameSort}
+                  onSort={toggleNameSort}
+                >
+                  Usuario
+                </TableHeaderCell>
+                <TableHeaderCell>Rol</TableHeaderCell>
+                <TableHeaderCell>Alcance</TableHeaderCell>
+                <TableHeaderCell>Estado</TableHeaderCell>
+                <TableHeaderCell>Último acceso</TableHeaderCell>
+                {/* Columna kebab: redondeada a la derecha (Figma). */}
+                <TableHeaderCell rounded="right">{null}</TableHeaderCell>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
+                  >
+                    Cargando…
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
-                    >
-                      Cargando…
-                    </td>
-                  </tr>
-                ) : null}
-                {!loading && filtered.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
-                    >
-                      No hay usuarios para mostrar.
-                    </td>
-                  </tr>
-                ) : null}
-                {!loading
-                  ? filtered.map((row) => {
-                  const status = userStatus(row);
-                  const chip = statusChip(status);
-                  const tone = avatarTone(row.id);
-                  return (
-                    <tr
-                      key={row.id}
-                      className="border-b border-[var(--color-tremor-border)] last:border-b-0"
-                    >
-                      <td className="h-14 px-3">
-                        <div className="flex items-center gap-3">
-                          {row.photoProfile ? (
-                            <img
-                              src={row.photoProfile}
-                              alt=""
-                              className="size-9 shrink-0 rounded-[18px] object-cover"
-                            />
-                          ) : (
-                            <span
-                              className="flex size-9 shrink-0 items-center justify-center rounded-[18px] text-[12px] font-semibold"
-                              style={{ background: tone.bg, color: tone.fg }}
-                            >
-                              {initialsOf(row)}
+              ) : null}
+              {!loading && total === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
+                  >
+                    No hay usuarios para mostrar.
+                  </td>
+                </tr>
+              ) : null}
+              {!loading
+                ? pageItems.map((row) => {
+                    const status = userStatus(row);
+                    const tone = avatarTone(row.id);
+                    return (
+                      <tr
+                        key={row.id}
+                        className="border-b border-[var(--color-tremor-border)] last:border-b-0"
+                      >
+                        <td className="h-14 px-3">
+                          <div className="flex items-center gap-3">
+                            {row.photoProfile ? (
+                              <img
+                                src={row.photoProfile}
+                                alt=""
+                                className="size-9 shrink-0 rounded-[18px] object-cover"
+                              />
+                            ) : (
+                              <span
+                                className="flex size-9 shrink-0 items-center justify-center rounded-[18px] text-[12px] font-semibold"
+                                style={{ background: tone.bg, color: tone.fg }}
+                              >
+                                {initialsOf(row)}
+                              </span>
+                            )}
+                            <span className="min-w-0">
+                              <span className="block truncate text-[12px] font-medium leading-[18px] text-[var(--color-nachipa-title)]">
+                                {fullName(row)}
+                              </span>
+                              <span className="block truncate text-[12px] leading-[17px] text-[var(--color-nachipa-secondary)]">
+                                {row.email}
+                              </span>
                             </span>
-                          )}
-                          <span className="min-w-0">
-                            <span className="block truncate text-[12px] font-medium leading-[18px] text-[var(--color-nachipa-title)]">
-                              {fullName(row)}
-                            </span>
-                            <span className="block truncate text-[12px] leading-[17px] text-[var(--color-nachipa-secondary)]">
-                              {row.email}
-                            </span>
-                          </span>
-                        </div>
-                      </td>
-                      <td className="h-14 truncate px-3 text-[13px] text-[var(--color-nachipa-body)]">
-                        {roleLabel(row)}
-                      </td>
-                      <td className="h-14 truncate px-3 text-[13px] text-[var(--color-nachipa-body)]">
-                        {scopeLabel(row, locationNameById)}
-                      </td>
-                      <td className="h-14 px-3">
-                        <span
+                          </div>
+                        </td>
+                        <td className="h-14 truncate px-3 text-[13px] text-[var(--color-nachipa-body)]">
+                          {roleLabel(row)}
+                        </td>
+                        <td className="h-14 truncate px-3 text-[13px] text-[var(--color-nachipa-body)]">
+                          {scopeLabel(row, locationNameById)}
+                        </td>
+                        <td className="h-14 px-3">
+                          {/* StatusChip Figma: success/info/neutral según estado del usuario. */}
+                          <StatusChip tone={userStatusTone(status)}>
+                            {userStatusLabel(status)}
+                          </StatusChip>
+                        </td>
+                        <td
                           className={[
-                            "inline-flex rounded-full px-2 py-0.5 text-[12px] font-medium leading-4",
-                            chip.className,
+                            "h-14 truncate px-3 text-[13px] text-[var(--color-nachipa-secondary)]",
+                            status === "disabled" ? "opacity-55" : "",
                           ].join(" ")}
                         >
-                          {chip.label}
-                        </span>
-                      </td>
-                      <td
-                        className={[
-                          "h-14 truncate px-3 text-[13px] text-[var(--color-nachipa-secondary)]",
-                          status === "disabled" ? "opacity-55" : "",
-                        ].join(" ")}
-                      >
-                        {lastAccessLabel(row)}
-                      </td>
-                      <td className="h-14 px-1 text-right">
-                        <button
-                          type="button"
-                          className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
-                          aria-label={`Acciones de ${fullName(row)}`}
-                          aria-expanded={menuId === row.id}
-                          onClick={(event) => toggleMenu(row.id, event)}
-                        >
-                          <MoreVertical
-                            className="size-[18px]"
-                            strokeWidth={1.5}
-                            aria-hidden
-                          />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-                  : null}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                          {lastAccessLabel(row)}
+                        </td>
+                        <td className="h-14 px-1 text-right">
+                          <button
+                            type="button"
+                            className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
+                            aria-label={`Acciones de ${fullName(row)}`}
+                            aria-expanded={menuId === row.id}
+                            onClick={(event) => toggleMenu(row.id, event)}
+                          >
+                            <MoreVertical
+                              className="size-[18px]"
+                              strokeWidth={1.5}
+                              aria-hidden
+                            />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                : null}
+            </tbody>
+          </table>
+        </DataTableCard>
 
         <div className="flex shrink-0 items-center gap-2 rounded-[10px] bg-[var(--color-table-head-bg)] px-3.5 py-3">
           <CircleHelp
@@ -1233,7 +1270,43 @@ export function Usuarios() {
                 selectClass={selectClass}
                 onChange={setField}
               />
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Acceso válido hasta
+                </span>
+                <input
+                  type="date"
+                  className={selectClass}
+                  value={form.accessExpiresAt}
+                  onChange={(event) =>
+                    setField("accessExpiresAt", event.target.value)
+                  }
+                />
+                <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                  Opcional. Útil para externos o invitados temporales. Vacío = sin
+                  vencimiento.
+                </span>
+              </label>
             </>
+          ) : null}
+
+          {dialog === "edit" ? (
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                Acceso válido hasta
+              </span>
+              <input
+                type="date"
+                className={selectClass}
+                value={form.accessExpiresAt}
+                onChange={(event) =>
+                  setField("accessExpiresAt", event.target.value)
+                }
+              />
+              <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                Opcional. Vacío = sin vencimiento.
+              </span>
+            </label>
           ) : null}
 
           {dialog === "role" ? (

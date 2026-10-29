@@ -15,6 +15,7 @@ import {
 import type { AuthUser, MfaChallenge } from "../api/auth";
 import {
   ApiError,
+  clearSessionRequest,
   isMfaChallenge,
   loginRequest,
   logoutRequest,
@@ -46,6 +47,11 @@ type AuthState = {
   verifyMfa: (challengeId: string, code: string) => Promise<void>;
   /** Cierra sesión en API (cookie + tokenVersion) y limpia el cliente. */
   logout: () => Promise<void>;
+  /**
+   * Logout suave: limpia cookie refresh sin exigir Bearer.
+   * Para confirm-email, reset y «Usar otra cuenta» en /login.
+   */
+  clearPublicSession: () => Promise<void>;
   /** Revalida sesión con GET /me; si falla, intenta refresh. */
   hydrateSession: () => Promise<void>;
   /** Actualiza el perfil en memoria con GET /me (sin skeleton). */
@@ -157,6 +163,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearLocal]);
 
   /**
+   * Limpia cookie refresh vía /clear-session y el estado local.
+   * No sube tokenVersion de otros dispositivos.
+   */
+  const clearPublicSession = useCallback(async (): Promise<void> => {
+    try {
+      await clearSessionRequest();
+    } catch {
+      // Si falla la red, igual sacamos el access de memoria.
+    }
+    clearLocal();
+  }, [clearLocal]);
+
+  /**
    * Revalida /me; si el access falló o no hay token, renueva con cookie.
    * Mantiene el skeleton al menos MIN_HYDRATE_MS.
    */
@@ -223,6 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         verifyMfa,
         logout,
+        clearPublicSession,
         hydrateSession,
         refreshProfile,
       }}

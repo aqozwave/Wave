@@ -24,6 +24,8 @@ export const ALLOWED_CREW_DOC_MIMES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
 
 /** Extensión a partir del mime (fallback .bin). */
@@ -37,6 +39,10 @@ function extensionForMime(mimeType: string): string {
       return ".png";
     case "image/webp":
       return ".webp";
+    case "application/msword":
+      return ".doc";
+    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+      return ".docx";
     default:
       return ".bin";
   }

@@ -6,9 +6,20 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { MapPin, MoreVertical, Plus, Search } from "lucide-react";
+import { Download, MapPin, MoreVertical, Plus } from "lucide-react";
 import { Button } from "../../components/Button/Button";
+import {
+  DataTableCard,
+  DataTableOutlineButton,
+  DataTableSearch,
+} from "../../components/DataTableCard/DataTableCard";
 import { Modal } from "../../components/Modal/Modal";
+import { StatusChip } from "../../components/StatusChip/StatusChip";
+import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
+import {
+  TablePagination,
+  useClientTablePagination,
+} from "../../components/TablePagination/TablePagination";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { TextField } from "../../components/TextField/TextField";
 import { Toggle } from "../../components/Toggle/Toggle";
@@ -29,6 +40,7 @@ import {
   type LocationWriteBody,
 } from "../../lib/api/locations";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { downloadCsv } from "../../lib/exportCsv";
 import { AreasPanel, type AreasPanelHandle } from "./AreasPanel";
 import { MuellesPanel, type MuellesPanelHandle } from "./MuellesPanel";
 import { PortsPanel, type PortsPanelHandle } from "./PortsPanel";
@@ -120,6 +132,8 @@ export function Ubicaciones() {
   const [submitting, setSubmitting] = useState(false);
   /** Menú kebab abierto por fila. */
   const [menuId, setMenuId] = useState<string | null>(null);
+  /** Dirección de orden por nombre en la tabla de lugares; null = sin ordenar. */
+  const [nameSort, setNameSort] = useState<"asc" | "desc" | null>(null);
 
   /** Mapa businessId → nombre para la columna Empresa (superadmin). */
   const businessNameById = useMemo(() => {
@@ -160,15 +174,35 @@ export function Ubicaciones() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((row) => {
-      const biz = businessNameById.get(row.businessId) ?? "";
-      return [row.name, kindLabel(row.kind), row.city, row.email, biz]
-        .join(" ")
-        .toLowerCase()
-        .includes(q);
-    });
-  }, [items, search, businessNameById]);
+    let rows = items;
+    if (q) {
+      rows = rows.filter((row) => {
+        const biz = businessNameById.get(row.businessId) ?? "";
+        return [row.name, kindLabel(row.kind), row.city, row.email, biz]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      });
+    }
+    // Orden por nombre si está activo en la tabla de lugares.
+    if (nameSort) {
+      rows = [...rows].sort((a, b) => {
+        const cmp = a.name.localeCompare(b.name, "es");
+        return nameSort === "asc" ? cmp : -cmp;
+      });
+    }
+    return rows;
+  }, [items, search, businessNameById, nameSort]);
+
+  const {
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    pageCount,
+    pageItems: locationPageItems,
+    total: locationTotal,
+  } = useClientTablePagination(filtered);
 
   function openCreate() {
     setEditing(null);
@@ -275,6 +309,35 @@ export function Ubicaciones() {
         "danger",
       );
     }
+  }
+
+  /** Descarga CSV de los lugares de trabajo filtrados (no solo la página actual). */
+  function onExportLocations() {
+    if (filtered.length === 0) {
+      showToast("No hay filas para exportar.", "info");
+      return;
+    }
+    downloadCsv(
+      filtered,
+      [
+        { header: "Nombre", value: (row) => displayName(row.name) },
+        { header: "Tipo", value: (row) => kindLabel(row.kind) },
+        // Columna empresa: solo disponible y relevante para superadmin.
+        ...(isSuperadmin
+          ? [
+              {
+                header: "Empresa",
+                value: (row: Location) =>
+                  businessNameById.get(row.businessId) ?? "",
+              },
+            ]
+          : []),
+        { header: "Ciudad", value: (row) => row.city ?? "" },
+        { header: "Estado", value: (row) => (row.state ? "Activo" : "Inactivo") },
+      ],
+      "lugares",
+    );
+    showToast("CSV descargado.", "success");
   }
 
   /** Select nativo: mismo focus sky que TextField (Figma border/focus). */
@@ -389,24 +452,37 @@ export function Ubicaciones() {
         ) : null}
 
         {tab === "locations" ? (
-          <>
-        <label className="flex h-11 w-full max-w-[448px] shrink-0 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white pl-4 pr-3.5">
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar lugar de trabajo…"
-            className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--color-nachipa-placeholder)]"
-          />
-          <Search
-            className="size-4 shrink-0 text-[var(--color-icon-default)]"
-            strokeWidth={1.5}
-            aria-hidden
-          />
-        </label>
-
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--color-tremor-border)] bg-white">
-          <div className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto">
+          <DataTableCard
+            toolbar={
+              <>
+                {/* Búsqueda en la toolbar (patrón DataTable Figma). */}
+                <DataTableSearch
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Buscar lugar de trabajo…"
+                />
+                <DataTableOutlineButton onClick={onExportLocations}>
+                  <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  Exportar
+                </DataTableOutlineButton>
+              </>
+            }
+            footer={
+              <TablePagination
+                totalLabel={
+                  loading
+                    ? "Cargando…"
+                    : `${locationTotal} ${locationTotal === 1 ? "lugar" : "lugares"}`
+                }
+                page={page}
+                pageCount={pageCount}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+                hidePageSize
+              />
+            }
+          >
             <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[12px]">
               <colgroup>
                 <col style={{ width: isSuperadmin ? "22%" : "28%" }} />
@@ -417,31 +493,34 @@ export function Ubicaciones() {
                 <col style={{ width: "14%" }} />
               </colgroup>
               <thead>
-                <tr className="bg-[var(--color-table-head-bg,#f8f9fb)] text-[12px] font-semibold text-[var(--color-table-head-text,#6b6b73)]">
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
+                <tr>
+                  {/* Encabezado Nombre: redondeado izquierdo, ordenable. */}
+                  <TableHeaderCell
+                    rounded="left"
+                    sortable
+                    sortDir={nameSort}
+                    onSort={() =>
+                      setNameSort((d) =>
+                        d === "asc" ? "desc" : d === "desc" ? null : "asc",
+                      )
+                    }
+                  >
                     Nombre
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Tipo
-                  </th>
+                  </TableHeaderCell>
+                  <TableHeaderCell>Tipo</TableHeaderCell>
                   {isSuperadmin ? (
-                    <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                      Empresa
-                    </th>
+                    <TableHeaderCell>Empresa</TableHeaderCell>
                   ) : null}
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Ciudad
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Estado
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3 text-right">
+                  <TableHeaderCell>Ciudad</TableHeaderCell>
+                  <TableHeaderCell>Estado</TableHeaderCell>
+                  {/* Acciones: redondeado derecho, alineado a la derecha. */}
+                  <TableHeaderCell rounded="right" align="right">
                     Acciones
-                  </th>
+                  </TableHeaderCell>
                 </tr>
               </thead>
               <tbody>
-                {!loading && filtered.length === 0 ? (
+                {!loading && locationTotal === 0 ? (
                   <tr>
                     <td
                       colSpan={isSuperadmin ? 6 : 5}
@@ -451,10 +530,10 @@ export function Ubicaciones() {
                     </td>
                   </tr>
                 ) : null}
-                {filtered.map((row) => (
+                {locationPageItems.map((row) => (
                   <tr
                     key={row.id}
-                    className="border-t border-[var(--color-nachipa-border-subtle)]"
+                    className="border-b border-[var(--color-tremor-border)] last:border-b-0"
                   >
                     <td className="h-[52px] truncate px-3 font-medium text-[var(--color-nachipa-title)]">
                       {displayName(row.name)}
@@ -471,16 +550,9 @@ export function Ubicaciones() {
                       {row.city || "—"}
                     </td>
                     <td className="h-[52px] px-3">
-                      <span
-                        className={[
-                          "inline-flex rounded-full px-2 py-0.5 text-[12px] font-medium leading-4",
-                          row.state
-                            ? "bg-[var(--color-status-success-bg)] text-[var(--color-status-success-fg)]"
-                            : "bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-fg)]",
-                        ].join(" ")}
-                      >
+                      <StatusChip tone={row.state ? "success" : "danger"}>
                         {row.state ? "Activo" : "Inactivo"}
-                      </span>
+                      </StatusChip>
                     </td>
                     <td className="relative h-[52px] px-3 text-right">
                       {canManage ? (
@@ -530,17 +602,7 @@ export function Ubicaciones() {
                 ))}
               </tbody>
             </table>
-          </div>
-
-          <div className="flex h-[68px] shrink-0 items-center gap-3 border-t border-[var(--color-nachipa-border-subtle)] bg-white px-4">
-            <p className="min-w-0 flex-1 text-[12px] font-medium text-[var(--color-nachipa-title)]">
-              {loading
-                ? "Cargando…"
-                : `Total lugares: ${filtered.length}`}
-            </p>
-          </div>
-        </div>
-          </>
+          </DataTableCard>
         ) : null}
       </div>
 

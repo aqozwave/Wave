@@ -1,14 +1,25 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Building2,
+  Download,
   MoreVertical,
   Plus,
-  Search,
   Upload,
 } from "lucide-react";
 import { Button } from "../../components/Button/Button";
+import {
+  DataTableCard,
+  DataTableOutlineButton,
+  DataTableSearch,
+} from "../../components/DataTableCard/DataTableCard";
 import { Modal } from "../../components/Modal/Modal";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
+import { StatusChip } from "../../components/StatusChip/StatusChip";
+import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
+import {
+  TablePagination,
+  useClientTablePagination,
+} from "../../components/TablePagination/TablePagination";
 import { TextField } from "../../components/TextField/TextField";
 import { Toggle } from "../../components/Toggle/Toggle";
 import { Topbar } from "../../components/Topbar/Topbar";
@@ -23,6 +34,7 @@ import {
   type BusinessWriteBody,
 } from "../../lib/api/businesses";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { downloadCsv } from "../../lib/exportCsv";
 import { isRutValid, normalizeRut } from "../../lib/rut";
 
 /** Form create (Figma 1 paso) + edit extendido. */
@@ -122,6 +134,10 @@ export function Empresas() {
         .includes(q),
     );
   }, [items, search]);
+
+  /* Paginación cliente: resetea automáticamente cuando cambia filtered. */
+  const { page, setPage, pageSize, setPageSize, pageCount, pageItems, total } =
+    useClientTablePagination(filtered);
 
   function openCreate() {
     setEditing(null);
@@ -249,6 +265,26 @@ export function Empresas() {
     }
   }
 
+  /** Descarga CSV de las empresas filtradas (no solo la página actual). */
+  function onExport() {
+    if (filtered.length === 0) {
+      showToast("No hay filas para exportar.", "info");
+      return;
+    }
+    downloadCsv(
+      filtered,
+      [
+        { header: "RUT", value: (row) => row.rut ?? "" },
+        { header: "Nombre", value: (row) => displayName(row.name) },
+        { header: "Giro", value: (row) => row.giro ?? "" },
+        { header: "Ciudad", value: (row) => row.city ?? "" },
+        { header: "Estado", value: (row) => (row.state ? "Activo" : "Inactivo") },
+      ],
+      "empresas",
+    );
+    showToast("CSV descargado.", "success");
+  }
+
   const lockKeyFields = Boolean(editing) && !isSuperadmin;
   const previewName = form.name.trim()
     ? displayName(form.name)
@@ -286,153 +322,133 @@ export function Empresas() {
           }
         />
 
-        <label className="flex h-11 w-full max-w-[448px] shrink-0 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white pl-4 pr-3.5">
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar empresa…"
-            className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--color-nachipa-placeholder)]"
-          />
-          <Search
-            className="size-4 shrink-0 text-[var(--color-icon-default)]"
-            strokeWidth={1.5}
-            aria-hidden
-          />
-        </label>
-
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--color-tremor-border)] bg-white">
-          <div className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto">
-            <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[12px]">
-              <colgroup>
-                <col style={{ width: "16%" }} />
-                <col style={{ width: "24%" }} />
-                <col style={{ width: "14%" }} />
-                <col style={{ width: "18%" }} />
-                <col style={{ width: "14%" }} />
-                <col style={{ width: "14%" }} />
-              </colgroup>
-              <thead>
-                <tr className="bg-[var(--color-table-head-bg,#f8f9fb)] text-[12px] font-semibold text-[var(--color-table-head-text,#6b6b73)]">
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    RUT
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Nombre
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Giro
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Ciudad
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Estado
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3 text-right">
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {!loading && filtered.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
-                    >
-                      No hay empresas para mostrar.
-                    </td>
-                  </tr>
-                ) : null}
-                {filtered.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-t border-[var(--color-nachipa-border-subtle)]"
+        {/* Tarjeta DataTable Figma: toolbar con search + exportar, pie con paginación. */}
+        <DataTableCard
+          toolbar={
+            <>
+              <DataTableSearch
+                value={search}
+                onChange={setSearch}
+                placeholder="Buscar empresa…"
+              />
+              <DataTableOutlineButton onClick={onExport}>
+                <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
+                Exportar
+              </DataTableOutlineButton>
+            </>
+          }
+          footer={
+            <TablePagination
+              totalLabel={
+                loading
+                  ? "Cargando…"
+                  : `${total} ${total === 1 ? "empresa" : "empresas"}`
+              }
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          }
+        >
+          <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[12px]">
+            <colgroup>
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "24%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "18%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "14%" }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <TableHeaderCell rounded="left">RUT</TableHeaderCell>
+                <TableHeaderCell>Nombre</TableHeaderCell>
+                <TableHeaderCell>Giro</TableHeaderCell>
+                <TableHeaderCell>Ciudad</TableHeaderCell>
+                <TableHeaderCell>Estado</TableHeaderCell>
+                {/* Acciones: redondeada a la derecha (Figma DataTable). */}
+                <TableHeaderCell rounded="right" align="right">
+                  Acciones
+                </TableHeaderCell>
+              </tr>
+            </thead>
+            <tbody>
+              {!loading && total === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
                   >
-                    <td className="h-[52px] truncate px-3 tabular-nums text-[var(--color-nachipa-body)]">
-                      {row.rut || "—"}
-                    </td>
-                    <td className="h-[52px] truncate px-3 font-medium text-[var(--color-nachipa-title)]">
-                      {displayName(row.name)}
-                    </td>
-                    <td className="h-[52px] truncate px-3 text-[var(--color-nachipa-body)]">
-                      {row.giro || "—"}
-                    </td>
-                    <td className="h-[52px] truncate px-3 text-[var(--color-nachipa-body)]">
-                      {row.city || "—"}
-                    </td>
-                    <td className="h-[52px] px-3">
-                      <span
-                        className={[
-                          "inline-flex rounded-full px-2 py-0.5 text-[12px] font-medium leading-4",
-                          row.state
-                            ? "bg-[var(--color-status-success-bg)] text-[var(--color-status-success-fg)]"
-                            : "bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-fg)]",
-                        ].join(" ")}
-                      >
-                        {row.state ? "Activo" : "Inactivo"}
-                      </span>
-                    </td>
-                    <td className="relative h-[52px] px-3 text-right">
-                      <button
-                        type="button"
-                        className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
-                        aria-label="Acciones"
-                        onClick={() =>
-                          setMenuId((id) => (id === row.id ? null : row.id))
-                        }
-                      >
-                        <MoreVertical
-                          className="size-[18px]"
-                          strokeWidth={1.5}
-                          aria-hidden
-                        />
-                      </button>
-                      {menuId === row.id ? (
-                        <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
+                    No hay empresas para mostrar.
+                  </td>
+                </tr>
+              ) : null}
+              {pageItems.map((row) => (
+                <tr
+                  key={row.id}
+                  className="border-b border-[var(--color-tremor-border)] last:border-b-0 hover:bg-[var(--color-nachipa-bg-page)]"
+                >
+                  <td className="h-[52px] truncate px-3 tabular-nums text-[var(--color-nachipa-body)]">
+                    {row.rut || "—"}
+                  </td>
+                  <td className="h-[52px] truncate px-3 font-medium text-[var(--color-nachipa-title)]">
+                    {displayName(row.name)}
+                  </td>
+                  <td className="h-[52px] truncate px-3 text-[var(--color-nachipa-body)]">
+                    {row.giro || "—"}
+                  </td>
+                  <td className="h-[52px] truncate px-3 text-[var(--color-nachipa-body)]">
+                    {row.city || "—"}
+                  </td>
+                  <td className="h-[52px] px-3">
+                    {/* StatusChip Figma: success = activo, danger = inactivo. */}
+                    <StatusChip tone={row.state ? "success" : "danger"}>
+                      {row.state ? "Activo" : "Inactivo"}
+                    </StatusChip>
+                  </td>
+                  <td className="relative h-[52px] px-3 text-right">
+                    <button
+                      type="button"
+                      className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
+                      aria-label="Acciones"
+                      onClick={() =>
+                        setMenuId((id) => (id === row.id ? null : row.id))
+                      }
+                    >
+                      <MoreVertical
+                        className="size-[18px]"
+                        strokeWidth={1.5}
+                        aria-hidden
+                      />
+                    </button>
+                    {menuId === row.id ? (
+                      <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
+                        <button
+                          type="button"
+                          className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                          onClick={() => openEdit(row)}
+                        >
+                          Editar
+                        </button>
+                        {isSuperadmin ? (
                           <button
                             type="button"
-                            className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                            onClick={() => openEdit(row)}
+                            className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
+                            onClick={() => void onDelete(row)}
                           >
-                            Editar
+                            Eliminar
                           </button>
-                          {isSuperadmin ? (
-                            <button
-                              type="button"
-                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                              onClick={() => void onDelete(row)}
-                            >
-                              Eliminar
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex h-[68px] shrink-0 items-center gap-3 border-t border-[var(--color-nachipa-border-subtle)] bg-white px-4">
-            <p className="min-w-0 flex-1 text-[12px] font-medium text-[var(--color-nachipa-title)]">
-              {loading
-                ? "Cargando…"
-                : `Total empresas: ${filtered.length}`}
-            </p>
-            <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
-              Ítems por página
-            </p>
-            <span className="flex h-8 w-[72px] items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] text-[12px] text-[var(--color-nachipa-body)]">
-              10
-            </span>
-            <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
-              1 / 1
-            </span>
-          </div>
-        </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </DataTableCard>
       </div>
 
       <Modal

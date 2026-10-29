@@ -1,3 +1,4 @@
+import { strongPasswordSchema } from "../../lib/passwordPolicy.js";
 import { chileanRunSchema } from "../../lib/rut.js";
 import { z } from "../../lib/zod.js";
 
@@ -131,7 +132,7 @@ export const deleteMyPhotoResponseSchema = meResponseSchema;
 export const changeMyPasswordBodySchema = z
   .object({
     currentPassword: z.string().min(1),
-    newPassword: z.string().min(8),
+    newPassword: strongPasswordSchema,
   })
   .refine((body) => body.currentPassword !== body.newPassword, {
     message: "La nueva contraseña debe ser distinta a la actual",
@@ -182,8 +183,7 @@ export const logoutResponseSchema = z
  */
 export const registerBodySchema = z.object({
   email: z.email().trim().toLowerCase(),
-  // Mínimo 8: misma barra que usaremos en reset; sin complejidad extra aún.
-  password: z.string().min(8),
+  password: strongPasswordSchema,
   username: z
     .string()
     .trim()
@@ -280,8 +280,7 @@ export type ForgotPasswordResponse = z.infer<
 /** Body de reset: token del mail + nueva contraseña. */
 export const resetPasswordBodySchema = z.object({
   token: z.string().min(1),
-  // Misma barra mínima que register.
-  password: z.string().min(8),
+  password: strongPasswordSchema,
 });
 
 export const resetPasswordRequestSchema = z.object({

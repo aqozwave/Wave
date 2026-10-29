@@ -7,9 +7,21 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { Layers, MoreVertical, Search } from "lucide-react";
+import { Download, Layers, MoreVertical } from "lucide-react";
 import { Button } from "../../components/Button/Button";
+import {
+  DataTableCard,
+  DataTableOutlineButton,
+  DataTableSearch,
+  DataTableSelect,
+} from "../../components/DataTableCard/DataTableCard";
 import { Modal } from "../../components/Modal/Modal";
+import { StatusChip } from "../../components/StatusChip/StatusChip";
+import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
+import {
+  TablePagination,
+  useClientTablePagination,
+} from "../../components/TablePagination/TablePagination";
 import { TextField } from "../../components/TextField/TextField";
 import { Toggle } from "../../components/Toggle/Toggle";
 import { useToast } from "../../components/Toast/ToastProvider";
@@ -22,6 +34,7 @@ import {
 } from "../../lib/api/areas";
 import { listLocationsRequest, type Location } from "../../lib/api/locations";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { downloadCsv } from "../../lib/exportCsv";
 
 /** API que el header usa para abrir el modal de alta. */
 export type AreasPanelHandle = {
@@ -68,6 +81,8 @@ export const AreasPanel = forwardRef<AreasPanelHandle>(function AreasPanel(
   const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [nameSort, setNameSort] = useState<"asc" | "desc" | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Area | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -110,12 +125,34 @@ export const AreasPanel = forwardRef<AreasPanelHandle>(function AreasPanel(
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((row) => {
-      const locName = locationNameById.get(row.locationId) ?? "";
-      return [row.name, locName].join(" ").toLowerCase().includes(q);
-    });
-  }, [items, search, locationNameById]);
+    let rows = items;
+    if (locationFilter !== "all") {
+      rows = rows.filter((row) => row.locationId === locationFilter);
+    }
+    if (q) {
+      rows = rows.filter((row) => {
+        const locName = locationNameById.get(row.locationId) ?? "";
+        return [row.name, locName].join(" ").toLowerCase().includes(q);
+      });
+    }
+    if (nameSort) {
+      rows = [...rows].sort((a, b) => {
+        const cmp = a.name.localeCompare(b.name, "es");
+        return nameSort === "asc" ? cmp : -cmp;
+      });
+    }
+    return rows;
+  }, [items, search, locationFilter, locationNameById, nameSort]);
+
+  const {
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    pageCount,
+    pageItems,
+    total,
+  } = useClientTablePagination(filtered);
 
   function openCreate() {
     setEditing(null);
@@ -203,138 +240,183 @@ export const AreasPanel = forwardRef<AreasPanelHandle>(function AreasPanel(
     }
   }
 
+  /** Descarga CSV de las filas filtradas (no solo la página). */
+  function onExport() {
+    if (filtered.length === 0) {
+      showToast("No hay filas para exportar.", "info");
+      return;
+    }
+    downloadCsv(
+      filtered,
+      [
+        { header: "Nombre", value: (row) => displayName(row.name) },
+        {
+          header: "Lugar de trabajo",
+          value: (row) => locationNameById.get(row.locationId) ?? "",
+        },
+        {
+          header: "Estado",
+          value: (row) => (row.state ? "Activo" : "Inactivo"),
+        },
+      ],
+      "areas",
+    );
+    showToast("CSV descargado.", "success");
+  }
+
   const selectClass =
     "h-[42px] w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-brand-sky)_25%,transparent)]";
 
   return (
     <>
-      <label className="flex h-11 w-full max-w-[448px] shrink-0 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white pl-4 pr-3.5">
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar área…"
-          className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--color-nachipa-placeholder)]"
-        />
-        <Search
-          className="size-4 shrink-0 text-[var(--color-icon-default)]"
-          strokeWidth={1.5}
-          aria-hidden
-        />
-      </label>
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--color-tremor-border)] bg-white">
-        <div className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto">
-          <table className="w-full min-w-[640px] table-fixed border-collapse text-left text-[12px]">
-            <colgroup>
-              <col style={{ width: "32%" }} />
-              <col style={{ width: "36%" }} />
-              <col style={{ width: "16%" }} />
-              <col style={{ width: "16%" }} />
-            </colgroup>
-            <thead>
-              <tr className="bg-[var(--color-table-head-bg,#f8f9fb)] text-[12px] font-semibold text-[var(--color-table-head-text,#6b6b73)]">
-                <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                  Nombre
-                </th>
-                <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                  Lugar de trabajo
-                </th>
-                <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                  Estado
-                </th>
-                <th className="h-9 border-b border-[var(--color-tremor-border)] px-3 text-right">
-                  Acciones
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {!loading && filtered.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
-                  >
-                    No hay áreas para mostrar.
-                  </td>
-                </tr>
-              ) : null}
-              {filtered.map((row) => (
-                <tr
-                  key={row.id}
-                  className="border-t border-[var(--color-nachipa-border-subtle)]"
-                >
-                  <td className="h-[52px] truncate px-3 font-medium text-[var(--color-nachipa-title)]">
-                    {displayName(row.name)}
-                  </td>
-                  <td className="h-[52px] truncate px-3 text-[var(--color-nachipa-body)]">
-                    {locationNameById.get(row.locationId) ?? "—"}
-                  </td>
-                  <td className="h-[52px] px-3">
-                    <span
-                      className={[
-                        "inline-flex rounded-full px-2 py-0.5 text-[12px] font-medium leading-4",
-                        row.state
-                          ? "bg-[var(--color-status-success-bg)] text-[var(--color-status-success-fg)]"
-                          : "bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-fg)]",
-                      ].join(" ")}
-                    >
-                      {row.state ? "Activo" : "Inactivo"}
-                    </span>
-                  </td>
-                  <td className="relative h-[52px] px-3 text-right">
-                    {canManage ? (
-                      <>
-                        <button
-                          type="button"
-                          className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
-                          aria-label="Acciones"
-                          onClick={() =>
-                            setMenuId((id) => (id === row.id ? null : row.id))
-                          }
-                        >
-                          <MoreVertical
-                            className="size-[18px]"
-                            strokeWidth={1.5}
-                            aria-hidden
-                          />
-                        </button>
-                        {menuId === row.id ? (
-                          <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
-                            <button
-                              type="button"
-                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                              onClick={() => openEdit(row)}
-                            >
-                              Editar
-                            </button>
-                            <button
-                              type="button"
-                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                              onClick={() => void onDelete(row)}
-                            >
-                              Eliminar
-                            </button>
-                          </div>
-                        ) : null}
-                      </>
-                    ) : (
-                      <span className="text-[var(--color-nachipa-secondary)]">
-                        —
-                      </span>
-                    )}
-                  </td>
-                </tr>
+      <DataTableCard
+        toolbar={
+          <>
+            <DataTableSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="Buscar área…"
+            />
+            <DataTableSelect
+              value={locationFilter}
+              onChange={setLocationFilter}
+              aria-label="Filtrar por lugar"
+              className="h-8 w-[200px] shrink-0 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-2 text-[12px] text-[var(--color-nachipa-body)] outline-none"
+            >
+              <option value="all">Lugar: todos</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {displayName(loc.name)}
+                </option>
               ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex h-[68px] shrink-0 items-center border-t border-[var(--color-nachipa-border-subtle)] px-4">
-          <p className="text-[12px] font-medium text-[var(--color-nachipa-title)]">
-            {loading ? "Cargando…" : `Total áreas: ${filtered.length}`}
-          </p>
-        </div>
-      </div>
+            </DataTableSelect>
+            <DataTableOutlineButton
+              onClick={onExport}
+              disabled={loading || filtered.length === 0}
+            >
+              <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
+              Exportar
+            </DataTableOutlineButton>
+          </>
+        }
+        footer={
+          <TablePagination
+            totalLabel={
+              loading
+                ? "Cargando…"
+                : `${total} ${total === 1 ? "área" : "áreas"}`
+            }
+            page={page}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            hidePageSize
+          />
+        }
+      >
+        <table className="w-full min-w-[640px] table-fixed border-collapse text-left text-[12px]">
+          <colgroup>
+            <col style={{ width: "32%" }} />
+            <col style={{ width: "36%" }} />
+            <col style={{ width: "16%" }} />
+            <col style={{ width: "16%" }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <TableHeaderCell
+                rounded="left"
+                sortable
+                sortDir={nameSort}
+                onSort={() =>
+                  setNameSort((d) =>
+                    d === "asc" ? "desc" : d === "desc" ? null : "asc",
+                  )
+                }
+              >
+                Nombre
+              </TableHeaderCell>
+              <TableHeaderCell>Lugar de trabajo</TableHeaderCell>
+              <TableHeaderCell>Estado</TableHeaderCell>
+              <TableHeaderCell rounded="right" align="right">
+                Acciones
+              </TableHeaderCell>
+            </tr>
+          </thead>
+          <tbody>
+            {!loading && total === 0 ? (
+              <tr>
+                <td
+                  colSpan={4}
+                  className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
+                >
+                  No hay áreas para mostrar.
+                </td>
+              </tr>
+            ) : null}
+            {pageItems.map((row) => (
+              <tr
+                key={row.id}
+                className="border-b border-[var(--color-tremor-border)] last:border-b-0"
+              >
+                <td className="h-[52px] truncate px-3 font-medium text-[var(--color-nachipa-title)]">
+                  {displayName(row.name)}
+                </td>
+                <td className="h-[52px] truncate px-3 text-[var(--color-nachipa-body)]">
+                  {locationNameById.get(row.locationId) ?? "—"}
+                </td>
+                <td className="h-[52px] px-3">
+                  <StatusChip tone={row.state ? "success" : "danger"}>
+                    {row.state ? "Activo" : "Inactivo"}
+                  </StatusChip>
+                </td>
+                <td className="relative h-[52px] px-3 text-right">
+                  {canManage ? (
+                    <>
+                      <button
+                        type="button"
+                        className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
+                        aria-label="Acciones"
+                        onClick={() =>
+                          setMenuId((id) => (id === row.id ? null : row.id))
+                        }
+                      >
+                        <MoreVertical
+                          className="size-[18px]"
+                          strokeWidth={1.5}
+                          aria-hidden
+                        />
+                      </button>
+                      {menuId === row.id ? (
+                        <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
+                          <button
+                            type="button"
+                            className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                            onClick={() => openEdit(row)}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
+                            onClick={() => void onDelete(row)}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <span className="text-[var(--color-nachipa-secondary)]">
+                      —
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </DataTableCard>
 
       <Modal
         open={modalOpen}

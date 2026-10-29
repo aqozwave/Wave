@@ -9,7 +9,18 @@ export type DocumentSubtype =
   | "maritimo"
   | "activo";
 
-/** Quién puede ver el tipo en el expediente. */
+/** Figma «Aplica a». */
+export type DocumentAppliesTo = "crew" | "external" | "crew_and_external";
+
+/** Figma «Lo suben» / «Lo ven». */
+export type DocumentActorScope =
+  | "prevention_or_admin"
+  | "prevention_admin_hr_assets"
+  | "admin"
+  | "hr"
+  | "assets";
+
+/** Legacy: quién ve en el expediente. */
 export type DocumentVisibility =
   | "nobody"
   | "employee"
@@ -23,6 +34,11 @@ export type DocumentType = {
   code: string;
   name: string;
   subtype: string;
+  appliesTo: string;
+  requiresExpiry: boolean;
+  uploadBy: string;
+  viewBy: string;
+  crewCanView: boolean;
   visibility: string;
   businessId: string;
   state: boolean;
@@ -44,6 +60,11 @@ export type DocumentTypeWriteBody = {
   code?: string;
   name?: string;
   subtype?: DocumentSubtype;
+  appliesTo?: DocumentAppliesTo;
+  requiresExpiry?: boolean;
+  uploadBy?: DocumentActorScope;
+  viewBy?: DocumentActorScope;
+  crewCanView?: boolean;
   visibility?: DocumentVisibility;
   businessId?: string;
   state?: boolean;
@@ -72,7 +93,12 @@ export async function listDocumentTypesRequest(
   accessToken: string,
   page = 1,
   limit = 200,
-  filters?: { businessId?: string; subtype?: DocumentSubtype; search?: string },
+  filters?: {
+    businessId?: string;
+    subtype?: DocumentSubtype;
+    appliesTo?: DocumentAppliesTo;
+    search?: string;
+  },
 ): Promise<ListDocumentTypesResult> {
   const params = new URLSearchParams({
     page: String(page),
@@ -80,6 +106,7 @@ export async function listDocumentTypesRequest(
   });
   if (filters?.businessId) params.set("businessId", filters.businessId);
   if (filters?.subtype) params.set("subtype", filters.subtype);
+  if (filters?.appliesTo) params.set("appliesTo", filters.appliesTo);
   if (filters?.search) params.set("search", filters.search);
   const res = await fetch(`/api/v1/document-types?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },

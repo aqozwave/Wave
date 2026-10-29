@@ -272,7 +272,7 @@ con cierre "En una frase" y Glosario del paso.
 | 0 | Fundaciones | Hecha (health, Prisma baseline, Bruno, web HealthStatus) |
 | 1 | Auth y usuarios | Hecha — login+MFA, JWT, `/me`, refresh, logout, register/confirm/reset, Toast, idle 1h, Bruno + OpenAPI auth |
 | 2 | Empresas | Hecha — CRUD + web Configuración/Empresas + ETL nachipa-prod + restore sesión |
-| 3 | Ubicaciones | En curso — tabla `locations` + FK User |
+| 3 | Ubicaciones | Hecha — CRUD + Flota/lugares + ETL + aislamiento tenant |
 | 4 | Áreas | Pendiente |
 | 5 | Catálogos | Pendiente |
 | 6 | Roles y permisos | Pendiente |

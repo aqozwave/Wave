@@ -12,6 +12,14 @@ import type {
 /** Actor mínimo tenant. */
 type Actor = Pick<AuthUser, "internalRol" | "businessId">;
 
+/**
+ * Mantener visibility legacy alineada a crewCanView
+ * para clientes / listados que aún leen ese campo.
+ */
+function visibilityFromCrewCanView(crewCanView: boolean): string {
+  return crewCanView ? "employee" : "supervisor";
+}
+
 /** Serializa fila → contrato. */
 function toResponse(row: {
   id: string;
@@ -19,6 +27,11 @@ function toResponse(row: {
   code: string;
   name: string;
   subtype: string;
+  appliesTo: string;
+  requiresExpiry: boolean;
+  uploadBy: string;
+  viewBy: string;
+  crewCanView: boolean;
   visibility: string;
   businessId: string;
   state: boolean;
@@ -32,6 +45,11 @@ function toResponse(row: {
     code: row.code,
     name: row.name,
     subtype: row.subtype,
+    appliesTo: row.appliesTo,
+    requiresExpiry: row.requiresExpiry,
+    uploadBy: row.uploadBy,
+    viewBy: row.viewBy,
+    crewCanView: row.crewCanView,
     visibility: row.visibility,
     businessId: row.businessId,
     state: row.state,
@@ -62,6 +80,7 @@ function listWhere(
   }
 
   if (query.subtype) base.subtype = query.subtype;
+  if (query.appliesTo) base.appliesTo = query.appliesTo;
   if (query.search?.trim()) {
     const q = query.search.trim();
     base.OR = [
@@ -109,7 +128,7 @@ function assertTenantAccess(actor: Actor, businessId: string): void {
   }
 }
 
-/** Lista paginada. */
+/** Listado paginado. */
 export async function listDocumentTypes(
   actor: Actor,
   query: ListDocumentTypesQuery,
@@ -120,15 +139,14 @@ export async function listDocumentTypes(
   limit: number;
 }> {
   const where = listWhere(actor, query);
-  const skip = (query.page - 1) * query.limit;
-  const [total, rows] = await Promise.all([
-    prisma.documentType.count({ where }),
+  const [rows, total] = await Promise.all([
     prisma.documentType.findMany({
       where,
-      orderBy: [{ code: "asc" }],
-      skip,
+      orderBy: [{ code: "asc" }, { name: "asc" }],
+      skip: (query.page - 1) * query.limit,
       take: query.limit,
     }),
+    prisma.documentType.count({ where }),
   ]);
   return {
     items: rows.map(toResponse),
@@ -138,7 +156,7 @@ export async function listDocumentTypes(
   };
 }
 
-/** Detalle. */
+/** Detalle por id. */
 export async function getDocumentTypeById(
   actor: Actor,
   id: string,
@@ -170,13 +188,22 @@ export async function createDocumentType(
     throw new AppError(400, "business_not_found", "Empresa no encontrada");
   }
 
+  const crewCanView = body.crewCanView ?? true;
+  const visibility =
+    body.visibility ?? visibilityFromCrewCanView(crewCanView);
+
   try {
     const row = await prisma.documentType.create({
       data: {
         code: body.code,
         name: body.name,
         subtype: body.subtype ?? "general",
-        visibility: body.visibility ?? "employee",
+        appliesTo: body.appliesTo ?? "crew_and_external",
+        requiresExpiry: body.requiresExpiry ?? false,
+        uploadBy: body.uploadBy ?? "prevention_or_admin",
+        viewBy: body.viewBy ?? "prevention_or_admin",
+        crewCanView,
+        visibility,
         businessId,
         state: body.state ?? true,
       },
@@ -237,6 +264,18 @@ export async function updateDocumentType(
   if (payload.code !== undefined) data.code = payload.code;
   if (payload.name !== undefined) data.name = payload.name;
   if (payload.subtype !== undefined) data.subtype = payload.subtype;
+  if (payload.appliesTo !== undefined) data.appliesTo = payload.appliesTo;
+  if (payload.requiresExpiry !== undefined) {
+    data.requiresExpiry = payload.requiresExpiry;
+  }
+  if (payload.uploadBy !== undefined) data.uploadBy = payload.uploadBy;
+  if (payload.viewBy !== undefined) data.viewBy = payload.viewBy;
+  if (payload.crewCanView !== undefined) {
+    data.crewCanView = payload.crewCanView;
+    if (payload.visibility === undefined) {
+      data.visibility = visibilityFromCrewCanView(payload.crewCanView);
+    }
+  }
   if (payload.visibility !== undefined) data.visibility = payload.visibility;
   if (payload.state !== undefined) data.state = payload.state;
   if (nextBusinessId !== existing.businessId) {

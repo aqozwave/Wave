@@ -7,9 +7,20 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { MoreVertical, Route, Search } from "lucide-react";
+import { Download, MoreVertical, Route } from "lucide-react";
 import { Button } from "../../components/Button/Button";
+import {
+  DataTableCard,
+  DataTableOutlineButton,
+  DataTableSearch,
+} from "../../components/DataTableCard/DataTableCard";
 import { Modal } from "../../components/Modal/Modal";
+import { StatusChip } from "../../components/StatusChip/StatusChip";
+import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
+import {
+  TablePagination,
+  useClientTablePagination,
+} from "../../components/TablePagination/TablePagination";
 import { TextField } from "../../components/TextField/TextField";
 import { Toggle } from "../../components/Toggle/Toggle";
 import { useToast } from "../../components/Toast/ToastProvider";
@@ -25,6 +36,7 @@ import {
   type Travesia,
 } from "../../lib/api/travesias";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { downloadCsv } from "../../lib/exportCsv";
 
 /** API que el header usa para abrir el modal de alta. */
 export type TravesiasPanelHandle = {
@@ -80,6 +92,8 @@ export const TravesiasPanel = forwardRef<TravesiasPanelHandle>(
     const [form, setForm] = useState<FormState>(EMPTY_FORM);
     const [submitting, setSubmitting] = useState(false);
     const [menuId, setMenuId] = useState<string | null>(null);
+    /** Dirección de orden por nombre; null = sin ordenar. */
+    const [nameSort, setNameSort] = useState<"asc" | "desc" | null>(null);
 
     const businessNameById = useMemo(() => {
       const map = new Map<string, string>();
@@ -119,15 +133,35 @@ export const TravesiasPanel = forwardRef<TravesiasPanelHandle>(
 
     const filtered = useMemo(() => {
       const q = search.trim().toLowerCase();
-      if (!q) return items;
-      return items.filter((row) => {
-        const biz = businessNameById.get(row.businessId) ?? "";
-        return [row.name, String(row.requiredPassages), biz]
-          .join(" ")
-          .toLowerCase()
-          .includes(q);
-      });
-    }, [items, search, businessNameById]);
+      let rows = items;
+      if (q) {
+        rows = rows.filter((row) => {
+          const biz = businessNameById.get(row.businessId) ?? "";
+          return [row.name, String(row.requiredPassages), biz]
+            .join(" ")
+            .toLowerCase()
+            .includes(q);
+        });
+      }
+      // Orden por nombre si está activo.
+      if (nameSort) {
+        rows = [...rows].sort((a, b) => {
+          const cmp = a.name.localeCompare(b.name, "es");
+          return nameSort === "asc" ? cmp : -cmp;
+        });
+      }
+      return rows;
+    }, [items, search, businessNameById, nameSort]);
+
+    const {
+      page,
+      setPage,
+      pageSize,
+      setPageSize,
+      pageCount,
+      pageItems,
+      total,
+    } = useClientTablePagination(filtered);
 
     function openCreate() {
       setEditing(null);
@@ -234,6 +268,34 @@ export const TravesiasPanel = forwardRef<TravesiasPanelHandle>(
       }
     }
 
+    /** Descarga CSV de las filas filtradas (no solo la página actual). */
+    function onExport() {
+      if (filtered.length === 0) {
+        showToast("No hay filas para exportar.", "info");
+        return;
+      }
+      downloadCsv(
+        filtered,
+        [
+          { header: "Nombre", value: (row) => displayName(row.name) },
+          { header: "Pasadas", value: (row) => row.requiredPassages },
+          // Columna empresa: solo disponible y relevante para superadmin.
+          ...(isSuperadmin
+            ? [
+                {
+                  header: "Empresa",
+                  value: (row: Travesia) =>
+                    businessNameById.get(row.businessId) ?? "",
+                },
+              ]
+            : []),
+          { header: "Estado", value: (row) => (row.state ? "Activo" : "Inactivo") },
+        ],
+        "travesias",
+      );
+      showToast("CSV descargado.", "success");
+    }
+
     const selectClass =
       "h-[42px] w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-brand-sky)_25%,transparent)]";
 
@@ -241,148 +303,152 @@ export const TravesiasPanel = forwardRef<TravesiasPanelHandle>(
 
     return (
       <>
-        <label className="flex h-11 w-full max-w-[448px] shrink-0 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white pl-4 pr-3.5">
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar travesía…"
-            className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--color-nachipa-placeholder)]"
-          />
-          <Search
-            className="size-4 shrink-0 text-[var(--color-icon-default)]"
-            strokeWidth={1.5}
-            aria-hidden
-          />
-        </label>
-
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--color-tremor-border)] bg-white">
-          <div className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto">
-            <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[12px]">
-              <colgroup>
-                <col style={{ width: isSuperadmin ? "28%" : "36%" }} />
-                <col style={{ width: isSuperadmin ? "18%" : "22%" }} />
-                {isSuperadmin ? <col style={{ width: "22%" }} /> : null}
-                <col style={{ width: "14%" }} />
-                <col style={{ width: "14%" }} />
-              </colgroup>
-              <thead>
-                <tr className="bg-[var(--color-table-head-bg,#f8f9fb)] text-[12px] font-semibold text-[var(--color-table-head-text,#6b6b73)]">
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Nombre
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Pasadas
-                  </th>
-                  {isSuperadmin ? (
-                    <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                      Empresa
-                    </th>
-                  ) : null}
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Estado
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3 text-right">
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {!loading && filtered.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={colCount}
-                      className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
-                    >
-                      No hay travesías para mostrar.
-                    </td>
-                  </tr>
+        <DataTableCard
+          toolbar={
+            <>
+              {/* Búsqueda en la toolbar (patrón DataTable Figma). */}
+              <DataTableSearch
+                value={search}
+                onChange={setSearch}
+                placeholder="Buscar travesía…"
+              />
+              <DataTableOutlineButton onClick={onExport}>
+                <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
+                Exportar
+              </DataTableOutlineButton>
+            </>
+          }
+          footer={
+            <TablePagination
+              totalLabel={
+                loading
+                  ? "Cargando…"
+                  : `${total} ${total === 1 ? "travesía" : "travesías"}`
+              }
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              hidePageSize
+            />
+          }
+        >
+          <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[12px]">
+            <colgroup>
+              <col style={{ width: isSuperadmin ? "28%" : "36%" }} />
+              <col style={{ width: isSuperadmin ? "18%" : "22%" }} />
+              {isSuperadmin ? <col style={{ width: "22%" }} /> : null}
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "14%" }} />
+            </colgroup>
+            <thead>
+              <tr>
+                {/* Encabezado Nombre: redondeado izquierdo, ordenable. */}
+                <TableHeaderCell
+                  rounded="left"
+                  sortable
+                  sortDir={nameSort}
+                  onSort={() =>
+                    setNameSort((d) =>
+                      d === "asc" ? "desc" : d === "desc" ? null : "asc",
+                    )
+                  }
+                >
+                  Nombre
+                </TableHeaderCell>
+                <TableHeaderCell>Pasadas</TableHeaderCell>
+                {isSuperadmin ? (
+                  <TableHeaderCell>Empresa</TableHeaderCell>
                 ) : null}
-                {filtered.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-t border-[var(--color-nachipa-border-subtle)]"
+                <TableHeaderCell>Estado</TableHeaderCell>
+                {/* Acciones: redondeado derecho, alineado a la derecha. */}
+                <TableHeaderCell rounded="right" align="right">
+                  Acciones
+                </TableHeaderCell>
+              </tr>
+            </thead>
+            <tbody>
+              {!loading && total === 0 ? (
+                <tr>
+                  <td
+                    colSpan={colCount}
+                    className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
                   >
-                    <td className="h-[52px] truncate px-3 font-medium text-[var(--color-nachipa-title)]">
-                      {displayName(row.name)}
+                    No hay travesías para mostrar.
+                  </td>
+                </tr>
+              ) : null}
+              {pageItems.map((row) => (
+                <tr
+                  key={row.id}
+                  className="border-b border-[var(--color-tremor-border)] last:border-b-0"
+                >
+                  <td className="h-[52px] truncate px-3 font-medium text-[var(--color-nachipa-title)]">
+                    {displayName(row.name)}
+                  </td>
+                  <td className="h-[52px] truncate px-3 tabular-nums text-[var(--color-nachipa-body)]">
+                    {row.requiredPassages}
+                  </td>
+                  {isSuperadmin ? (
+                    <td className="h-[52px] truncate px-3 text-[var(--color-nachipa-body)]">
+                      {businessNameById.get(row.businessId) ?? "—"}
                     </td>
-                    <td className="h-[52px] truncate px-3 tabular-nums text-[var(--color-nachipa-body)]">
-                      {row.requiredPassages}
-                    </td>
-                    {isSuperadmin ? (
-                      <td className="h-[52px] truncate px-3 text-[var(--color-nachipa-body)]">
-                        {businessNameById.get(row.businessId) ?? "—"}
-                      </td>
-                    ) : null}
-                    <td className="h-[52px] px-3">
-                      <span
-                        className={[
-                          "inline-flex rounded-full px-2 py-0.5 text-[12px] font-medium leading-4",
-                          row.state
-                            ? "bg-[var(--color-status-success-bg)] text-[var(--color-status-success-fg)]"
-                            : "bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-fg)]",
-                        ].join(" ")}
-                      >
-                        {row.state ? "Activo" : "Inactivo"}
+                  ) : null}
+                  <td className="h-[52px] px-3">
+                    <StatusChip tone={row.state ? "success" : "danger"}>
+                      {row.state ? "Activo" : "Inactivo"}
+                    </StatusChip>
+                  </td>
+                  <td className="relative h-[52px] px-3 text-right">
+                    {canManage ? (
+                      <>
+                        <button
+                          type="button"
+                          className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
+                          aria-label="Acciones"
+                          onClick={() =>
+                            setMenuId((id) =>
+                              id === row.id ? null : row.id,
+                            )
+                          }
+                        >
+                          <MoreVertical
+                            className="size-[18px]"
+                            strokeWidth={1.5}
+                            aria-hidden
+                          />
+                        </button>
+                        {menuId === row.id ? (
+                          <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                              onClick={() => openEdit(row)}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
+                              onClick={() => void onDelete(row)}
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="text-[var(--color-nachipa-secondary)]">
+                        —
                       </span>
-                    </td>
-                    <td className="relative h-[52px] px-3 text-right">
-                      {canManage ? (
-                        <>
-                          <button
-                            type="button"
-                            className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
-                            aria-label="Acciones"
-                            onClick={() =>
-                              setMenuId((id) =>
-                                id === row.id ? null : row.id,
-                              )
-                            }
-                          >
-                            <MoreVertical
-                              className="size-[18px]"
-                              strokeWidth={1.5}
-                              aria-hidden
-                            />
-                          </button>
-                          {menuId === row.id ? (
-                            <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
-                              <button
-                                type="button"
-                                className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                                onClick={() => openEdit(row)}
-                              >
-                                Editar
-                              </button>
-                              <button
-                                type="button"
-                                className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                                onClick={() => void onDelete(row)}
-                              >
-                                Eliminar
-                              </button>
-                            </div>
-                          ) : null}
-                        </>
-                      ) : (
-                        <span className="text-[var(--color-nachipa-secondary)]">
-                          —
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex h-[68px] shrink-0 items-center border-t border-[var(--color-nachipa-border-subtle)] px-4">
-            <p className="text-[12px] font-medium text-[var(--color-nachipa-title)]">
-              {loading
-                ? "Cargando…"
-                : `Total travesías: ${filtered.length}`}
-            </p>
-          </div>
-        </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </DataTableCard>
 
         <Modal
           open={modalOpen}

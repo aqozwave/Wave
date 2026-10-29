@@ -629,6 +629,25 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/api/v1/auth/clear-session",
+  tags: ["Auth"],
+  summary: "Limpiar cookie de sesión (público)",
+  description:
+    "Revoca el refresh de la cookie si existe y la borra. Sin Bearer (confirm-email, reset, otra cuenta).",
+  responses: {
+    200: {
+      description: "Cookie limpiada",
+      content: {
+        "application/json": {
+          schema: logoutResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
   method: "get",
   path: "/api/v1/businesses",
   tags: ["Businesses"],
@@ -2546,7 +2565,7 @@ registry.registerPath({
   tags: ["CrewMemberDocuments"],
   summary: "Subir documento (base64 JSON)",
   description:
-    "documentTypeId del maestro. Magic bytes deben coincidir con mimeType (PDF/JPEG/PNG/WebP), máx 10 MB. Descarga con X-Content-Type-Options: nosniff. sourceModule opcional.",
+    "documentTypeId del maestro de la misma empresa. Magic bytes deben coincidir con mimeType (PDF/Word/JPEG/PNG/WebP), máx 10 MB. Descarga con X-Content-Type-Options: nosniff. sourceModule opcional.",
   security: [{ bearerAuth: [] }],
   request: {
     params: z.object({ id: z.uuid() }),

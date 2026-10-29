@@ -351,6 +351,21 @@ export async function logoutRequest(accessToken: string): Promise<void> {
   }
 }
 
+/**
+ * POST /auth/clear-session — sin Bearer: revoca cookie refresh y la borra.
+ * Usar en confirm-email, reset-password y «Usar otra cuenta».
+ */
+export async function clearSessionRequest(): Promise<void> {
+  const res = await fetch("/api/v1/auth/clear-session", {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    throw toApiError(res, body);
+  }
+}
+
 /** Respuesta genérica con mensaje (forgot / resend). */
 export type MessageSuccess = {
   message: string;

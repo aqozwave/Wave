@@ -739,7 +739,10 @@ export function FichaTripulante() {
             ) : null}
 
             {tab === "documentos" && id ? (
-              <CrewDocumentsPanel crewMemberId={id} />
+              <CrewDocumentsPanel
+                crewMemberId={id}
+                businessId={crew.businessId}
+              />
             ) : null}
 
             {tab === "libreta" ? (

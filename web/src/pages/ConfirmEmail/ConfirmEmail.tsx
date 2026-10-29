@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { AuthFormLayout } from "../../components/AuthFormLayout/AuthFormLayout";
 import { ApiError, confirmEmailRequest } from "../../lib/api/auth";
+import { useAuth } from "../../lib/auth/AuthContext";
 
 /** Estados de la confirmación automática al abrir el enlace. */
 type Status = "loading" | "ok" | "error";
@@ -9,8 +10,10 @@ type Status = "loading" | "ok" | "error";
 /**
  * Confirma la cuenta con ?token= del correo (POST /auth/confirm-email).
  * Se ejecuta al montar; no pide datos al usuario.
+ * Antes limpia cualquier sesión previa (cookie del admin que invitó).
  */
 export function ConfirmEmail() {
+  const { bootstrapped, clearPublicSession } = useAuth();
   const [params] = useSearchParams();
   const token = params.get("token")?.trim() ?? "";
 
@@ -23,10 +26,18 @@ export function ConfirmEmail() {
     if (!token) {
       return;
     }
+    // Esperar bootstrap: si limpiamos antes, el refresh puede volver a poner la cookie.
+    if (!bootstrapped) {
+      return;
+    }
 
     let cancelled = false;
 
     void (async () => {
+      // Evita que la cookie del admin restaure sesión al ir a /login.
+      await clearPublicSession();
+      if (cancelled) return;
+
       try {
         const result = await confirmEmailRequest(token);
         if (!cancelled) {
@@ -48,7 +59,7 @@ export function ConfirmEmail() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, bootstrapped, clearPublicSession]);
 
   const boxClass =
     status === "ok"

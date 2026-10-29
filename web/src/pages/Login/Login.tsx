@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, Navigate, useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import {
   Clock,
   Eye,
@@ -59,7 +59,14 @@ function formatCooldown(totalSeconds: number): string {
  * POST /auth/login con X-Client web; access en memoria, refresh en cookie.
  */
 export function Login() {
-  const { accessToken, login, verifyMfa } = useAuth();
+  const {
+    accessToken,
+    user,
+    bootstrapped,
+    login,
+    verifyMfa,
+    clearPublicSession,
+  } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -73,6 +80,8 @@ export function Login() {
   const [attemptsLeft, setAttemptsLeft] = useState(MFA_MAX_ATTEMPTS);
   /** Countdown para habilitar «Reenviar código». */
   const [resendIn, setResendIn] = useState(0);
+  /** Evita redirigir en silencio si ya hay sesión (invitación / otra cuenta). */
+  const [dismissedSessionBanner, setDismissedSessionBanner] = useState(false);
 
   /** Tick del cooldown de reenvío MFA. */
   useEffect(() => {
@@ -83,8 +92,25 @@ export function Login() {
     return () => window.clearTimeout(id);
   }, [resendIn]);
 
-  if (accessToken) {
-    return <Navigate to="/" replace />;
+  /** Sesión restaurada desde cookie: pedir Continuar / Usar otra cuenta. */
+  const existingSession =
+    bootstrapped &&
+    Boolean(accessToken) &&
+    Boolean(user) &&
+    !dismissedSessionBanner &&
+    !mfa;
+
+  async function onUseOtherAccount() {
+    setSubmitting(true);
+    try {
+      await clearPublicSession();
+      setDismissedSessionBanner(true);
+      showToast("Sesión anterior cerrada. Podés iniciar con otra cuenta.", "info");
+    } catch {
+      showToast("No se pudo cerrar la sesión anterior.", "danger");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   /** Minutos de validez del código (desde expiresInSeconds del challenge). */
@@ -244,7 +270,38 @@ export function Login() {
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col items-center justify-center bg-[var(--color-tremor-background)] px-6 py-10">
-        {mfa ? (
+        {existingSession && user ? (
+          <div className="flex w-full max-w-[400px] flex-col items-center gap-4">
+            <Logo size="auth" />
+            <div className="flex flex-col items-center gap-1.5 text-center">
+              <h2 className="text-2xl font-semibold leading-[30px] text-[var(--color-nachipa-title)]">
+                Sesión activa
+              </h2>
+              <p className="text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
+                Ya hay una sesión como{" "}
+                <span className="font-semibold text-[var(--color-nachipa-title)]">
+                  {user.firstName} {user.lastName}
+                </span>{" "}
+                ({user.email}).
+              </p>
+            </div>
+            <Button
+              type="button"
+              disabled={submitting}
+              onClick={() => navigate("/", { replace: true })}
+            >
+              Continuar
+            </Button>
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => void onUseOtherAccount()}
+              className="text-[13px] font-semibold text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-50"
+            >
+              Usar otra cuenta
+            </button>
+          </div>
+        ) : mfa ? (
           <form
             onSubmit={onVerifyMfa}
             className="flex w-full max-w-[400px] flex-col items-center gap-4"

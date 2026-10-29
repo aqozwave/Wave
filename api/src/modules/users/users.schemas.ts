@@ -1,3 +1,4 @@
+import { strongPasswordSchema } from "../../lib/passwordPolicy.js";
 import { chileanRunSchema } from "../../lib/rut.js";
 import { z } from "../../lib/zod.js";
 
@@ -39,6 +40,8 @@ export const userAdminResponseSchema = z
     loginAttempts: z.number().int().nonnegative(),
     lockUntil: z.string().datetime().nullable(),
     lastLoginAt: z.string().datetime().nullable(),
+    /** Acceso con vencimiento (ISO); null = sin límite. */
+    accessExpiresAt: z.string().datetime().nullable(),
     deletedAt: z.string().datetime().nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -74,7 +77,7 @@ export const listUsersResponseSchema = z
 /** Body POST /users — alta admin (envía enlace para elegir contraseña y confirmar). */
 export const createUserBodySchema = z.object({
   email: z.email().trim().toLowerCase(),
-  password: z.string().min(8),
+  password: strongPasswordSchema,
   username: z
     .string()
     .trim()
@@ -89,6 +92,8 @@ export const createUserBodySchema = z.object({
   locationId: z.uuid().nullable().optional(),
   areaId: z.uuid().nullable().optional(),
   state: z.boolean().optional(),
+  /** ISO datetime o null; útiles para externos temporales. */
+  accessExpiresAt: z.string().datetime().nullable().optional(),
 });
 
 export const createUserRequestSchema = z.object({
@@ -119,7 +124,7 @@ export const unlockUserRequestSchema = z.object({
 export const updateUserBodySchema = z
   .object({
     email: z.email().trim().toLowerCase().optional(),
-    password: z.string().min(8).optional(),
+    password: strongPasswordSchema.optional(),
     username: z
       .string()
       .trim()
@@ -135,6 +140,7 @@ export const updateUserBodySchema = z
     areaId: z.uuid().nullable().optional(),
     state: z.boolean().optional(),
     confirmed: z.boolean().optional(),
+    accessExpiresAt: z.string().datetime().nullable().optional(),
   })
   .refine((body) => Object.keys(body).length > 0, {
     message: "Debe enviar al menos un campo para actualizar",

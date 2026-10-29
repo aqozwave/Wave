@@ -63,6 +63,9 @@ function toUserAdminResponse(row: UserAdminRow): UserAdminResponse {
     loginAttempts: row.loginAttempts,
     lockUntil: row.lockUntil ? row.lockUntil.toISOString() : null,
     lastLoginAt: row.lastLoginAt ? row.lastLoginAt.toISOString() : null,
+    accessExpiresAt: row.accessExpiresAt
+      ? row.accessExpiresAt.toISOString()
+      : null,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -385,6 +388,12 @@ export async function createUser(
       businessId,
       locationId,
       areaId,
+      accessExpiresAt:
+        body.accessExpiresAt === undefined
+          ? undefined
+          : body.accessExpiresAt
+            ? new Date(body.accessExpiresAt)
+            : null,
     },
     include: userAdminInclude,
   });
@@ -482,6 +491,15 @@ export async function updateUser(
     data.tokenVersion = { increment: 1 };
   }
 
+  if (body.accessExpiresAt !== undefined) {
+    data.accessExpiresAt = body.accessExpiresAt
+      ? new Date(body.accessExpiresAt)
+      : null;
+  }
+
+  // Si se rota la clave admin, también revocamos refresh activos.
+  const revokeRefreshOnPassword = body.password !== undefined;
+
   if (body.roleId !== undefined) {
     data.role =
       body.roleId === null
@@ -517,10 +535,19 @@ export async function updateUser(
     data.pendingEmail = null;
   }
 
-  const updated = await prisma.user.update({
-    where: { id: existing.id },
-    data,
-    include: userAdminInclude,
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.user.update({
+      where: { id: existing.id },
+      data,
+      include: userAdminInclude,
+    });
+    if (revokeRefreshOnPassword) {
+      await tx.refreshToken.updateMany({
+        where: { userId: existing.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
+    return row;
   });
 
   return toUserAdminResponse(updated);

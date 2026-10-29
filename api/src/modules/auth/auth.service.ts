@@ -22,6 +22,7 @@ import {
 import { hashPassword, verifyPassword } from "../../lib/password.js";
 import { prisma } from "../../lib/prisma.js";
 import {
+  hashRefreshToken,
   signAccessToken,
   signRefreshToken,
   verifyRefreshToken,
@@ -70,6 +71,25 @@ const MAX_LOGIN_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5);
 /** Minutos de bloqueo tras superar MAX_LOGIN_ATTEMPTS. */
 const LOCK_MINUTES = Number(process.env.LOGIN_LOCK_MINUTES ?? 15);
 
+/** Mensaje único login (anti-enumeración: usuario inexistente = clave mala). */
+const INVALID_CREDENTIALS_MESSAGE = "Credenciales inválidas";
+
+/**
+ * Hash argon2 lazy para igualar tiempo cuando el email no existe.
+ * Evita filtrar existencia por latencia de verifyPassword.
+ */
+let dummyPasswordHashPromise: Promise<string> | null = null;
+
+/** Hash dummy (mismo costo argon2 que un usuario real). */
+function getDummyPasswordHash(): Promise<string> {
+  if (!dummyPasswordHashPromise) {
+    dummyPasswordHashPromise = hashPassword(
+      "__wave_timing_dummy_password_not_used__",
+    );
+  }
+  return dummyPasswordHashPromise;
+}
+
 /** Proyecta User de Prisma al contrato AuthUser (sin secretos). */
 function toAuthUser(user: User): AuthUser {
   return {
@@ -87,8 +107,25 @@ function toAuthUser(user: User): AuthUser {
   };
 }
 
-/** Emite access + refresh firmados con la tokenVersion actual. */
-function issueTokens(user: User): LoginResponse {
+/** Rechaza login/refresh si el acceso temporal ya venció. */
+function assertAccessNotExpired(user: User): void {
+  if (user.accessExpiresAt && user.accessExpiresAt.getTime() <= Date.now()) {
+    throw new AppError(
+      403,
+      "access_expired",
+      "El acceso de esta cuenta venció. Contactá al administrador.",
+    );
+  }
+}
+
+/**
+ * Emite access + refresh; persiste el hash del refresh (rotación / revocación).
+ * Si `revokeTokenId` viene, marca esa fila como revocada (rotación).
+ */
+async function issueTokens(
+  user: User,
+  options?: { revokeTokenId?: string },
+): Promise<LoginResponse> {
   const accessToken = signAccessToken({
     sub: user.id,
     username: user.username,
@@ -96,21 +133,39 @@ function issueTokens(user: User): LoginResponse {
     businessId: user.businessId,
     v: user.tokenVersion,
   });
-  const refreshToken = signRefreshToken({
+  const signed = signRefreshToken({
     sub: user.id,
     v: user.tokenVersion,
+  });
+
+  await prisma.$transaction(async (tx) => {
+    if (options?.revokeTokenId) {
+      await tx.refreshToken.updateMany({
+        where: { id: options.revokeTokenId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
+    await tx.refreshToken.create({
+      data: {
+        id: signed.jti,
+        userId: user.id,
+        tokenHash: hashRefreshToken(signed.token),
+        expiresAt: signed.expiresAt,
+      },
+    });
   });
 
   return {
     user: toAuthUser(user),
     accessToken,
-    refreshToken,
+    refreshToken: signed.token,
   };
 }
 
 /**
  * Login: valida credenciales; con MFA emite challenge + mail (sin tokens).
- * Sin MFA (LOGIN_MFA_ENABLED=false) emite tokens directo.
+ * Sin MFA (LOGIN_MFA_ENABLED=false, típico en local) emite tokens directo.
+ * Respuesta idéntica si el email no existe o la clave falla (anti-enumeración).
  */
 export async function loginUser(
   input: LoginBody,
@@ -123,7 +178,9 @@ export async function loginUser(
   });
 
   if (!user) {
-    throw new AppError(401, "invalid_credentials", "Credenciales inválidas");
+    // Mismo costo aproximado que un fallo real (argon2 verify).
+    await verifyPassword(await getDummyPasswordHash(), input.password);
+    throw new AppError(401, "invalid_credentials", INVALID_CREDENTIALS_MESSAGE);
   }
 
   if (user.lockUntil && user.lockUntil.getTime() > Date.now()) {
@@ -161,7 +218,7 @@ export async function loginUser(
       );
     }
 
-    throw new AppError(401, "invalid_credentials", "Credenciales inválidas");
+    throw new AppError(401, "invalid_credentials", INVALID_CREDENTIALS_MESSAGE);
   }
 
   if (!user.state) {
@@ -175,6 +232,8 @@ export async function loginUser(
       "Debes confirmar tu cuenta antes de iniciar sesión",
     );
   }
+
+  assertAccessNotExpired(user);
 
   // Credenciales OK: limpiamos intentos; lastLoginAt se setea al verificar MFA.
   await prisma.user.update({
@@ -248,6 +307,8 @@ export async function verifyLoginMfa(
   if (!user) {
     throw new AppError(401, "mfa_challenge_invalid", "Challenge inválido");
   }
+
+  assertAccessNotExpired(user);
 
   const updated = await prisma.user.update({
     where: { id: user.id },
@@ -472,8 +533,8 @@ export async function deleteMyPhoto(
 }
 
 /**
- * Renueva access (y rota refresh) a partir de un refresh JWT válido.
- * Si tokenVersion no coincide, la sesión ya fue invalidada (logout).
+ * Renueva access y rota el refresh (revoca el usado, emite uno nuevo en BD).
+ * Si tokenVersion no coincide o el hash no está activo, 401.
  */
 export async function refreshSession(
   refreshToken: string,
@@ -482,6 +543,27 @@ export async function refreshSession(
   try {
     payload = verifyRefreshToken(refreshToken);
   } catch {
+    throw new AppError(401, "invalid_refresh", "Refresh inválido o expirado");
+  }
+
+  const tokenHash = hashRefreshToken(refreshToken);
+  const stored = await prisma.refreshToken.findFirst({
+    where: {
+      id: payload.jti,
+      tokenHash,
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+  });
+
+  if (!stored || stored.userId !== payload.sub) {
+    // Posible reuso tras rotación: revoca todos los del usuario.
+    if (payload.sub) {
+      await prisma.refreshToken.updateMany({
+        where: { userId: payload.sub, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
     throw new AppError(401, "invalid_refresh", "Refresh inválido o expirado");
   }
 
@@ -496,19 +578,51 @@ export async function refreshSession(
     throw new AppError(401, "invalid_refresh", "Refresh inválido o expirado");
   }
 
-  return issueTokens(user);
+  assertAccessNotExpired(user);
+
+  return issueTokens(user, { revokeTokenId: stored.id });
 }
 
 /**
- * Invalida todos los JWT del usuario subiendo tokenVersion.
- * El access/refresh viejos dejan de pasar authenticate / refresh.
+ * Invalida JWT (tokenVersion++) y revoca todos los refresh del usuario.
  */
 export async function logoutUser(userId: string): Promise<void> {
-  await prisma.user.update({
-    where: { id: userId },
-    data: {
-      tokenVersion: { increment: 1 },
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    }),
+    prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
+  ]);
+}
+
+/**
+ * Logout suave (flujos públicos): revoca el refresh de la cookie si existe.
+ * No exige Bearer; no sube tokenVersion de otros dispositivos.
+ */
+export async function revokePresentedRefresh(
+  refreshToken: string | undefined,
+): Promise<void> {
+  if (!refreshToken) return;
+
+  let payload;
+  try {
+    payload = verifyRefreshToken(refreshToken);
+  } catch {
+    return;
+  }
+
+  const tokenHash = hashRefreshToken(refreshToken);
+  await prisma.refreshToken.updateMany({
+    where: {
+      id: payload.jti,
+      tokenHash,
+      revokedAt: null,
     },
+    data: { revokedAt: new Date() },
   });
 }
 
@@ -748,13 +862,20 @@ export async function changeMyPassword(
   }
 
   const passwordHash = await hashPassword(newPassword);
-  const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      passwordHash,
-      // Invalida access/refresh previos; el handler reemite con la versión nueva.
-      tokenVersion: { increment: 1 },
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    const next = await tx.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        // Invalida access/refresh previos; el handler reemite con la versión nueva.
+        tokenVersion: { increment: 1 },
+      },
+    });
+    await tx.refreshToken.updateMany({
+      where: { userId: user.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return next;
   });
 
   return issueTokens(updated);
@@ -794,12 +915,12 @@ export async function resetPasswordWithToken(
 
   const passwordHash = await hashPassword(newPassword);
 
-  const [, user] = await prisma.$transaction([
-    prisma.emailToken.update({
+  const user = await prisma.$transaction(async (tx) => {
+    await tx.emailToken.update({
       where: { id: record.id },
       data: { usedAt: new Date() },
-    }),
-    prisma.user.update({
+    });
+    const next = await tx.user.update({
       where: { id: record.userId },
       data: {
         passwordHash,
@@ -808,8 +929,13 @@ export async function resetPasswordWithToken(
         // El enlace prueba el correo: una invitación queda confirmada al elegir clave.
         ...(record.user.confirmed ? {} : { confirmed: true }),
       },
-    }),
-  ]);
+    });
+    await tx.refreshToken.updateMany({
+      where: { userId: record.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return next;
+  });
 
   return {
     message: "Contraseña actualizada. Ya puedes iniciar sesión.",

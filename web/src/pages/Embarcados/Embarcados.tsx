@@ -5,12 +5,24 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { Download, MoreVertical, Plus, Search, Ship } from "lucide-react";
+import { Download, MoreVertical, Plus, Ship } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 
 import { Button } from "../../components/Button/Button";
+import {
+  DataTableCard,
+  DataTableOutlineButton,
+  DataTableSearch,
+  DataTableSelect,
+} from "../../components/DataTableCard/DataTableCard";
 import { Modal } from "../../components/Modal/Modal";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
+import { StatusChip, type StatusChipTone } from "../../components/StatusChip/StatusChip";
+import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
+import {
+  TablePagination,
+  useClientTablePagination,
+} from "../../components/TablePagination/TablePagination";
 import { TextField } from "../../components/TextField/TextField";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { useToast } from "../../components/Toast/ToastProvider";
@@ -46,11 +58,9 @@ import {
   type BoardingBookUiState,
 } from "../../lib/boardingBook";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { downloadCsv } from "../../lib/exportCsv";
 import { isRutValid, normalizeRut } from "../../lib/rut";
 import { OfficerAssignmentsPanel } from "./OfficerAssignmentsPanel";
-
-/** Filas por página (Figma: 10). */
-const PAGE_SIZE = 10;
 
 /** Form de alta: campos mínimos + opcionales de ficha. */
 type CreateForm = {
@@ -113,15 +123,14 @@ function initialsOf(row: CrewMember): string {
   return `${a}${b}`.toUpperCase() || "?";
 }
 
-/** Clases del chip de vigencia libro. */
-function vigenciaChipClass(state: BoardingBookUiState): string {
-  if (state === "vigente") {
-    return "bg-[var(--color-status-success-bg)] text-[var(--color-status-success-fg)]";
-  }
-  if (state === "por_vencer") {
-    return "bg-[var(--color-status-warning-bg,#ffedd5)] text-[var(--color-status-warning-fg,#c2410c)]";
-  }
-  return "bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-fg)]";
+/**
+ * Tono de StatusChip según estado de vigencia del libro de embarque.
+ * vigente → verde, por vencer → ámbar, vencido → rojo.
+ */
+function vigenciaTone(state: BoardingBookUiState): StatusChipTone {
+  if (state === "vigente") return "success";
+  if (state === "por_vencer") return "warning";
+  return "danger";
 }
 
 /**
@@ -141,7 +150,6 @@ export function Embarcados() {
   const [stateFilter, setStateFilter] = useState<"all" | "active" | "inactive">(
     "all",
   );
-  const [page, setPage] = useState(1);
   const [menuId, setMenuId] = useState<string | null>(null);
 
   const [locations, setLocations] = useState<Location[]>([]);
@@ -265,16 +273,9 @@ export function Embarcados() {
     });
   }, [items, search, tab, stateFilter]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, pageCount);
-  const pageItems = filtered.slice(
-    (safePage - 1) * PAGE_SIZE,
-    safePage * PAGE_SIZE,
-  );
-
-  useEffect(() => {
-    setPage(1);
-  }, [search, tab, stateFilter]);
+  /* Paginación cliente: resetea automáticamente cuando cambia filtered. */
+  const { page, setPage, pageSize, setPageSize, pageCount, pageItems, total } =
+    useClientTablePagination(filtered);
 
   /** Empresa efectiva para filtrar catálogos del modal. */
   const formBusinessId = isSuperadmin
@@ -466,6 +467,45 @@ export function Embarcados() {
     }
   }
 
+  /** Descarga CSV de los embarcados filtrados (no solo la página actual). */
+  function onExport() {
+    if (filtered.length === 0) {
+      showToast("No hay filas para exportar.", "info");
+      return;
+    }
+    downloadCsv(
+      filtered,
+      [
+        { header: "Nombre", value: (row) => fullName(row) },
+        { header: "RUN", value: (row) => row.run },
+        { header: "Estado", value: (row) => (row.state ? "Activo" : "Inactivo") },
+        {
+          header: "Vigencia libro",
+          value: (row) => formatBoardingBookDate(row.boardingBookValidUntil),
+        },
+        {
+          header: "Título marítimo",
+          // Nombre del título desde el mapa; vacío si no tiene.
+          value: (row) =>
+            row.competencyCertificateId
+              ? displayName(certName.get(row.competencyCertificateId) ?? "")
+              : "",
+        },
+        {
+          header: "Nave",
+          value: (row) => displayName(locationName.get(row.locationId) ?? ""),
+        },
+        {
+          header: "Área",
+          value: (row) =>
+            row.areaId ? displayName(areaName.get(row.areaId) ?? "") : "",
+        },
+      ],
+      "embarcados",
+    );
+    showToast("CSV descargado.", "success");
+  }
+
   const tabs: { id: BoardingBookTab; label: string; count: number }[] = [
     { id: "all", label: "Todos", count: tabCounts.all },
     { id: "vigente", label: "Vigentes", count: tabCounts.vigente },
@@ -520,263 +560,205 @@ export function Embarcados() {
           })}
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--color-tremor-border)] bg-white">
-          {/* Toolbar */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-tremor-border)] px-4 py-3">
-            <label className="flex h-8 min-w-[200px] flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3">
-              <Search
-                className="size-3.5 shrink-0 text-[var(--color-icon-default)]"
-                strokeWidth={1.5}
-                aria-hidden
-              />
-              <input
-                type="search"
+        {/* Tarjeta DataTable Figma: toolbar interna + tabla scrolleable + pie. */}
+        <DataTableCard
+          toolbar={
+            <>
+              <DataTableSearch
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={setSearch}
                 placeholder="Buscar embarcado"
-                className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-[var(--color-nachipa-placeholder)]"
               />
-            </label>
-            <select
-              className="h-8 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-2 text-[12px] text-[var(--color-nachipa-body)]"
-              value={stateFilter}
-              onChange={(e) =>
-                setStateFilter(e.target.value as "all" | "active" | "inactive")
+              <DataTableSelect
+                value={stateFilter}
+                onChange={(v) =>
+                  setStateFilter(v as "all" | "active" | "inactive")
+                }
+                aria-label="Filtrar por estado"
+              >
+                <option value="all">Estado: todos</option>
+                <option value="active">Activos</option>
+                <option value="inactive">Inactivos</option>
+              </DataTableSelect>
+              <DataTableOutlineButton onClick={onExport}>
+                <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
+                Exportar
+              </DataTableOutlineButton>
+              <Button
+                type="button"
+                size="small"
+                className="!w-auto"
+                onClick={openCreate}
+              >
+                <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
+                Agregar embarcado
+              </Button>
+            </>
+          }
+          footer={
+            <TablePagination
+              totalLabel={
+                loading ? "Cargando…" : `${total} embarcados`
               }
-            >
-              <option value="all">Estado: todos</option>
-              <option value="active">Activos</option>
-              <option value="inactive">Inactivos</option>
-            </select>
-            <button
-              type="button"
-              className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] px-3 text-[12px] text-[var(--color-nachipa-title)]"
-              disabled
-              title="Próximamente"
-            >
-              <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
-              Exportar
-            </button>
-            <Button
-              type="button"
-              size="small"
-              className="!w-auto"
-              onClick={openCreate}
-            >
-              <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
-              Agregar embarcado
-            </Button>
-          </div>
-
-          <div className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto">
-            <table className="w-full min-w-[1100px] border-collapse text-left text-[12px]">
-              <thead>
-                <tr className="bg-[var(--color-table-head-bg,#f8f9fb)] text-[12px] font-semibold text-[var(--color-table-head-text,#6b6b73)]">
-                  <th className="h-9 w-12 border-b border-[var(--color-tremor-border)] px-3" />
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Nombre
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Estado
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Vigencia libro
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Título marítimo
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Nave
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Área
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
-                    Cumplimiento
-                  </th>
-                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3 text-right">
-                    Acciones
-                  </th>
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          }
+        >
+          <table className="w-full min-w-[1100px] border-collapse text-left text-[12px]">
+            <thead>
+              <tr>
+                {/* Columna checkbox: redondeada a la izquierda (Figma). */}
+                <TableHeaderCell rounded="left" className="w-12">{null}</TableHeaderCell>
+                <TableHeaderCell>Nombre</TableHeaderCell>
+                <TableHeaderCell>Estado</TableHeaderCell>
+                <TableHeaderCell>Vigencia libro</TableHeaderCell>
+                <TableHeaderCell>Título marítimo</TableHeaderCell>
+                <TableHeaderCell>Nave</TableHeaderCell>
+                <TableHeaderCell>Área</TableHeaderCell>
+                <TableHeaderCell>Cumplimiento</TableHeaderCell>
+                {/* Columna acciones: redondeada a la derecha (Figma). */}
+                <TableHeaderCell rounded="right" align="right">
+                  Acciones
+                </TableHeaderCell>
+              </tr>
+            </thead>
+            <tbody>
+              {!loading && pageItems.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
+                  >
+                    No hay embarcados para mostrar.
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {!loading && pageItems.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={9}
-                      className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
-                    >
-                      No hay embarcados para mostrar.
+              ) : null}
+              {pageItems.map((row) => {
+                const bookState = getBoardingBookUiState(
+                  row.boardingBookValidUntil,
+                );
+                const daysLeft = daysUntilBoardingBookExpiry(
+                  row.boardingBookValidUntil,
+                );
+                return (
+                  <tr
+                    key={row.id}
+                    className="border-b border-[var(--color-tremor-border)] last:border-b-0 hover:bg-[var(--color-nachipa-bg-page)]"
+                  >
+                    <td className="h-[52px] px-3">
+                      <input
+                        type="checkbox"
+                        className="size-4 rounded border-[var(--color-tremor-border)]"
+                        aria-label={`Seleccionar ${fullName(row)}`}
+                      />
+                    </td>
+                    <td className="h-[52px] px-3">
+                      <Link
+                        to={`/embarcados/${row.id}`}
+                        className="flex max-w-[280px] items-center gap-2.5"
+                      >
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-status-info-bg)] text-[11px] font-semibold text-[var(--color-status-info-fg)]">
+                          {initialsOf(row)}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium text-[var(--color-nachipa-primary)] hover:underline">
+                            {fullName(row)}
+                          </span>
+                          <span className="block truncate text-[11px] text-[var(--color-nachipa-secondary)]">
+                            {row.run}
+                          </span>
+                        </span>
+                      </Link>
+                    </td>
+                    <td className="h-[52px] px-3">
+                      {/* StatusChip Figma: success = activo, danger = inactivo. */}
+                      <StatusChip tone={row.state ? "success" : "danger"}>
+                        {row.state ? "Activo" : "Inactivo"}
+                      </StatusChip>
+                    </td>
+                    <td className="h-[52px] px-3">
+                      <div className="text-[var(--color-nachipa-body)]">
+                        {formatBoardingBookDate(row.boardingBookValidUntil)}
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                        {/* StatusChip para vigencia: success/warning/danger según estado. */}
+                        <StatusChip tone={vigenciaTone(bookState)}>
+                          {boardingBookStateLabel(bookState)}
+                        </StatusChip>
+                        {daysLeft !== null ? (
+                          <span className="text-[11px] text-[var(--color-nachipa-secondary)]">
+                            {daysLeft < 0
+                              ? `Venció hace ${Math.abs(daysLeft)} d`
+                              : `Vence en ${daysLeft} d`}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="h-[52px] max-w-[220px] truncate px-3 text-[var(--color-nachipa-body)]">
+                      {row.competencyCertificateId
+                        ? displayName(
+                            certName.get(row.competencyCertificateId) ?? "—",
+                          )
+                        : "—"}
+                    </td>
+                    <td className="h-[52px] truncate px-3 text-[var(--color-nachipa-body)]">
+                      {displayName(locationName.get(row.locationId) ?? "—")}
+                    </td>
+                    <td className="h-[52px] truncate px-3 text-[var(--color-nachipa-body)]">
+                      {row.areaId
+                        ? displayName(areaName.get(row.areaId) ?? "—")
+                        : "—"}
+                    </td>
+                    <td className="h-[52px] px-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-[90px] overflow-hidden rounded-full bg-[var(--color-nachipa-border-subtle)]">
+                          <div className="h-full w-0 rounded-full bg-[var(--color-nachipa-secondary)]" />
+                        </div>
+                        <span className="text-[11px] tabular-nums text-[var(--color-nachipa-secondary)]">
+                          —
+                        </span>
+                      </div>
+                    </td>
+                    <td className="relative h-[52px] px-3 text-right">
+                      <button
+                        type="button"
+                        className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
+                        aria-label="Acciones"
+                        onClick={() =>
+                          setMenuId((id) => (id === row.id ? null : row.id))
+                        }
+                      >
+                        <MoreVertical
+                          className="size-[18px]"
+                          strokeWidth={1.5}
+                          aria-hidden
+                        />
+                      </button>
+                      {menuId === row.id ? (
+                        <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
+                          <button
+                            type="button"
+                            className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                            onClick={() => {
+                              setMenuId(null);
+                              void navigate(`/embarcados/${row.id}`);
+                            }}
+                          >
+                            Ver ficha
+                          </button>
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
-                ) : null}
-                {pageItems.map((row) => {
-                  const bookState = getBoardingBookUiState(
-                    row.boardingBookValidUntil,
-                  );
-                  const daysLeft = daysUntilBoardingBookExpiry(
-                    row.boardingBookValidUntil,
-                  );
-                  return (
-                    <tr
-                      key={row.id}
-                      className="border-t border-[var(--color-nachipa-border-subtle)] hover:bg-[var(--color-nachipa-bg-page)]"
-                    >
-                      <td className="h-[52px] px-3">
-                        <input
-                          type="checkbox"
-                          className="size-4 rounded border-[var(--color-tremor-border)]"
-                          aria-label={`Seleccionar ${fullName(row)}`}
-                        />
-                      </td>
-                      <td className="h-[52px] px-3">
-                        <Link
-                          to={`/embarcados/${row.id}`}
-                          className="flex max-w-[280px] items-center gap-2.5"
-                        >
-                          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-status-info-bg)] text-[11px] font-semibold text-[var(--color-status-info-fg)]">
-                            {initialsOf(row)}
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block truncate font-medium text-[var(--color-nachipa-primary)] hover:underline">
-                              {fullName(row)}
-                            </span>
-                            <span className="block truncate text-[11px] text-[var(--color-nachipa-secondary)]">
-                              {row.run}
-                            </span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td className="h-[52px] px-3">
-                        <span
-                          className={[
-                            "inline-flex rounded-full px-2 py-0.5 text-[12px] font-medium",
-                            row.state
-                              ? "bg-[var(--color-status-success-bg)] text-[var(--color-status-success-fg)]"
-                              : "bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-fg)]",
-                          ].join(" ")}
-                        >
-                          {row.state ? "Activo" : "Inactivo"}
-                        </span>
-                      </td>
-                      <td className="h-[52px] px-3">
-                        <div className="text-[var(--color-nachipa-body)]">
-                          {formatBoardingBookDate(row.boardingBookValidUntil)}
-                        </div>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                          <span
-                            className={[
-                              "inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium",
-                              vigenciaChipClass(bookState),
-                            ].join(" ")}
-                          >
-                            {boardingBookStateLabel(bookState)}
-                          </span>
-                          {daysLeft !== null ? (
-                            <span className="text-[11px] text-[var(--color-nachipa-secondary)]">
-                              {daysLeft < 0
-                                ? `Venció hace ${Math.abs(daysLeft)} d`
-                                : `Vence en ${daysLeft} d`}
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="h-[52px] max-w-[220px] truncate px-3 text-[var(--color-nachipa-body)]">
-                        {row.competencyCertificateId
-                          ? displayName(
-                              certName.get(row.competencyCertificateId) ?? "—",
-                            )
-                          : "—"}
-                      </td>
-                      <td className="h-[52px] truncate px-3 text-[var(--color-nachipa-body)]">
-                        {displayName(
-                          locationName.get(row.locationId) ?? "—",
-                        )}
-                      </td>
-                      <td className="h-[52px] truncate px-3 text-[var(--color-nachipa-body)]">
-                        {row.areaId
-                          ? displayName(areaName.get(row.areaId) ?? "—")
-                          : "—"}
-                      </td>
-                      <td className="h-[52px] px-3">
-                        <div className="flex items-center gap-2">
-                          <div className="h-1.5 w-[90px] overflow-hidden rounded-full bg-[var(--color-nachipa-border-subtle)]">
-                            <div className="h-full w-0 rounded-full bg-[var(--color-nachipa-secondary)]" />
-                          </div>
-                          <span className="text-[11px] tabular-nums text-[var(--color-nachipa-secondary)]">
-                            —
-                          </span>
-                        </div>
-                      </td>
-                      <td className="relative h-[52px] px-3 text-right">
-                        <button
-                          type="button"
-                          className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
-                          aria-label="Acciones"
-                          onClick={() =>
-                            setMenuId((id) => (id === row.id ? null : row.id))
-                          }
-                        >
-                          <MoreVertical
-                            className="size-[18px]"
-                            strokeWidth={1.5}
-                            aria-hidden
-                          />
-                        </button>
-                        {menuId === row.id ? (
-                          <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
-                            <button
-                              type="button"
-                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                              onClick={() => {
-                                setMenuId(null);
-                                void navigate(`/embarcados/${row.id}`);
-                              }}
-                            >
-                              Ver ficha
-                            </button>
-                          </div>
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex h-12 shrink-0 items-center justify-between border-t border-[var(--color-nachipa-border-subtle)] px-4">
-            <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
-              {loading
-                ? "Cargando…"
-                : `Total embarcados: ${filtered.length}`}
-            </p>
-            <div className="flex items-center gap-3 text-[12px] text-[var(--color-nachipa-title)]">
-              <span>Ítems por página {PAGE_SIZE}</span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  className="rounded px-2 py-1 hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-40"
-                  disabled={safePage <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  ‹
-                </button>
-                <span className="tabular-nums">
-                  {safePage} / {pageCount}
-                </span>
-                <button
-                  type="button"
-                  className="rounded px-2 py-1 hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-40"
-                  disabled={safePage >= pageCount}
-                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                >
-                  ›
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+                );
+              })}
+            </tbody>
+          </table>
+        </DataTableCard>
       </div>
 
       <Modal

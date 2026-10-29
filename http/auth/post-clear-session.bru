@@ -1,0 +1,26 @@
+meta {
+  name: Post clear-session
+  type: http
+  seq: 25
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/clear-session
+  body: none
+  auth: none
+}
+
+docs {
+  Público: revoca el refresh de la cookie (si hay) y la borra.
+  Sin Bearer. Usado por confirm-email / reset / «Usar otra cuenta».
+}
+
+assert {
+  res.status: eq 200
+  res.body.ok: eq true
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

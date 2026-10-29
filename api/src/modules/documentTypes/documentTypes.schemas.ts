@@ -1,6 +1,6 @@
 import { z } from "../../lib/zod.js";
 
-/** Subtipos del maestro (alineados al seed HR). */
+/** Subtipos del maestro (Figma + seed HR). */
 export const documentSubtypeSchema = z.enum([
   "general",
   "finiquito",
@@ -10,7 +10,26 @@ export const documentSubtypeSchema = z.enum([
   "activo",
 ]);
 
-/** Quién puede ver el tipo en el expediente. */
+/** A quién aplica el tipo (Figma «Aplica a»). */
+export const documentAppliesToSchema = z.enum([
+  "crew",
+  "external",
+  "crew_and_external",
+]);
+
+/**
+ * Roles que suben / ven el documento (Figma «Lo suben» / «Lo ven»).
+ * Valores estables; labels en UI.
+ */
+export const documentActorScopeSchema = z.enum([
+  "prevention_or_admin",
+  "prevention_admin_hr_assets",
+  "admin",
+  "hr",
+  "assets",
+]);
+
+/** Legacy: quién ve en el expediente (se sincroniza con crewCanView). */
 export const documentVisibilitySchema = z.enum([
   "nobody",
   "employee",
@@ -18,20 +37,30 @@ export const documentVisibilitySchema = z.enum([
   "supervisor",
 ]);
 
+/** Código HR: 2 a 4 letras (Figma D41). */
+const documentCodeSchema = z
+  .string({ error: "Código es requerido" })
+  .trim()
+  .transform((v) => v.toUpperCase())
+  .refine((v) => /^[A-Z]{2,4}$/.test(v), {
+    message: "El código debe tener 2 a 4 letras",
+  });
+
 /** Campos create / update. */
 export const documentTypeFieldsSchema = z.object({
-  code: z
-    .string({ error: "Código es requerido" })
-    .trim()
-    .min(1)
-    .max(16)
-    .transform((v) => v.toUpperCase()),
+  code: documentCodeSchema,
   name: z
     .string({ error: "Nombre es requerido" })
     .trim()
     .min(1)
     .transform((v) => v.toLowerCase()),
   subtype: documentSubtypeSchema.optional(),
+  appliesTo: documentAppliesToSchema.optional(),
+  requiresExpiry: z.boolean().optional(),
+  uploadBy: documentActorScopeSchema.optional(),
+  viewBy: documentActorScopeSchema.optional(),
+  crewCanView: z.boolean().optional(),
+  /** Legacy opcional; si no viene, se deriva de crewCanView. */
   visibility: documentVisibilitySchema.optional(),
   businessId: z.uuid().optional(),
   state: z.boolean().optional(),
@@ -44,6 +73,11 @@ export const documentTypeResponseSchema = z
     code: z.string(),
     name: z.string(),
     subtype: z.string(),
+    appliesTo: z.string(),
+    requiresExpiry: z.boolean(),
+    uploadBy: z.string(),
+    viewBy: z.string(),
+    crewCanView: z.boolean(),
     visibility: z.string(),
     businessId: z.uuid(),
     state: z.boolean(),
@@ -63,6 +97,7 @@ export const listDocumentTypesQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).default(100),
   businessId: z.uuid().optional(),
   subtype: documentSubtypeSchema.optional(),
+  appliesTo: documentAppliesToSchema.optional(),
   search: z.string().trim().optional(),
 });
 

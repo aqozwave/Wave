@@ -10,6 +10,7 @@ import { Plus, Shield } from "lucide-react";
 
 import { Button } from "../../components/Button/Button";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
+import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
 import { TextField } from "../../components/TextField/TextField";
 import { Toggle } from "../../components/Toggle/Toggle";
 import { Topbar } from "../../components/Topbar/Topbar";
@@ -461,16 +462,26 @@ export function Roles() {
                   <div className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-tremor-border)]">
                     <table className="w-full min-w-[640px] border-collapse text-left text-[12px]">
                       <thead>
-                        <tr className="bg-[var(--color-table-head-bg,#f8f9fb)] text-[12px] font-semibold text-[var(--color-table-head-text,#6b6b73)]">
-                          <th className="h-9 px-3">Módulo</th>
-                          {ACTION_COLUMNS.map((col) => (
-                            <th
-                              key={col.key}
-                              className="h-9 w-20 px-2 text-center"
-                            >
-                              {col.label}
-                            </th>
-                          ))}
+                        <tr>
+                          {/* Módulo: redondeado izquierdo (Figma TableHeaderCell). */}
+                          <TableHeaderCell rounded="left">Módulo</TableHeaderCell>
+                          {ACTION_COLUMNS.map((col, i) => {
+                            /* La última columna de acción lleva radio derecho (Figma). */
+                            const isLast = i === ACTION_COLUMNS.length - 1;
+                            return (
+                              <th
+                                key={col.key}
+                                className={[
+                                  "h-9 w-20 border-b border-[var(--color-tremor-border)] bg-[var(--color-table-head-bg,#f8f9fb)] px-2 text-center text-[12px] font-semibold text-[var(--color-table-head-text,#6b6b73)]",
+                                  isLast ? "rounded-r-lg" : "",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" ")}
+                              >
+                                {col.label}
+                              </th>
+                            );
+                          })}
                         </tr>
                       </thead>
                       <tbody>

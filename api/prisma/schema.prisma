@@ -159,11 +159,15 @@ model User {
   lastLoginIp     String?          @map("last_login_ip")
   loginAttempts   Int              @default(0) @map("login_attempts")
   lockUntil       DateTime?        @map("lock_until") @db.Timestamptz
+  /// Acceso con vencimiento (útiles para externos / invitados temporales).
+  accessExpiresAt DateTime?        @map("access_expires_at") @db.Timestamptz
   deletedAt       DateTime?        @map("deleted_at") @db.Timestamptz
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz
   emailTokens     EmailToken[]
   loginChallenges LoginChallenge[]
+  /// Refresh rotativos (hash); permite revocar uno sin invalidar todos.
+  refreshTokens   RefreshToken[]
   /// Tripulante vinculado (FK en crew_members.user_id; 1:1).
   crewMember      CrewMember?
   /// Documentos de tripulante subidos por este usuario.
@@ -175,6 +179,21 @@ model User {
   @@index([locationId])
   @@index([areaId])
   @@map("users")
+}
+
+/// Refresh JWT rotativo: solo se guarda el hash SHA-256 (revocable).
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// SHA-256 hex del JWT de refresh (nunca el token en claro).
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId])
+  @@map("refresh_tokens")
 }
 
 /// Empresa (tenant). Soft delete; nombre único entre no borradas (índice parcial en migración).
@@ -219,12 +238,22 @@ model Business {
 model DocumentType {
   id            String    @id @default(uuid()) @db.Uuid
   legacyMongoId String?   @unique @map("legacy_mongo_id")
-  /// Código corto estable (ej. CO, EN, VI).
+  /// Código corto estable (ej. CO, EN, VI) — 2 a 4 letras.
   code          String
   name          String
   /// general | finiquito | requerimiento | prevencion | maritimo | activo
   subtype       String    @default("general")
-  /// nobody | employee | employee_supervisor | supervisor
+  /// crew | external | crew_and_external (Figma «Aplica a»).
+  appliesTo     String    @default("crew_and_external") @map("applies_to")
+  /// Si true, al cargar pide fecha de vencimiento (Figma «Vence»).
+  requiresExpiry Boolean  @default(false) @map("requires_expiry")
+  /// Quién puede subir: prevention_or_admin | prevention_admin_hr_assets | admin | hr | assets
+  uploadBy      String    @default("prevention_or_admin") @map("upload_by")
+  /// Quién puede ver (roles admin): mismos códigos que uploadBy.
+  viewBy        String    @default("prevention_or_admin") @map("view_by")
+  /// Si el tripulante ve el documento en su expediente.
+  crewCanView   Boolean   @default(true) @map("crew_can_view")
+  /// Legacy: nobody | employee | employee_supervisor | supervisor (sincronizado con crewCanView).
   visibility    String    @default("employee") @map("visibility")
   businessId    String    @map("business_id") @db.Uuid
   business      Business  @relation(fields: [businessId], references: [id])
@@ -237,6 +266,7 @@ model DocumentType {
   @@index([businessId])
   @@index([code, businessId])
   @@index([subtype])
+  @@index([appliesTo])
   @@map("document_types")
 }
 

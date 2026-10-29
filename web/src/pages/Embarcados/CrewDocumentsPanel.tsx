@@ -10,6 +10,11 @@ import { Download, Eye, FileText, Plus, Upload } from "lucide-react";
 
 import { Button } from "../../components/Button/Button";
 import { Modal } from "../../components/Modal/Modal";
+import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
+import {
+  TablePagination,
+  useClientTablePagination,
+} from "../../components/TablePagination/TablePagination";
 import { useToast } from "../../components/Toast/ToastProvider";
 import {
   createCrewMemberDocumentRequest,
@@ -28,11 +33,31 @@ import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 type Props = {
   /** Id del tripulante cuya ficha se muestra. */
   crewMemberId: string;
+  /** Empresa del tripulante: el select de tipos solo muestra los de esta empresa. */
+  businessId: string;
 };
 
 /** MIME aceptados (alineados al API + magic bytes). */
 const ACCEPT_MIME =
-  "application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp";
+  "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp,.pdf,.doc,.docx,.jpg,.jpeg,.png,.webp";
+
+/**
+ * MIME declarado al API: el navegador a veces manda file.type vacío.
+ * Fallback por extensión para Word/PDF/JPG.
+ */
+function resolveUploadMime(file: File): string {
+  if (file.type) return file.type;
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".pdf")) return "application/pdf";
+  if (name.endsWith(".doc")) return "application/msword";
+  if (name.endsWith(".docx")) {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+  if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+  if (name.endsWith(".png")) return "image/png";
+  if (name.endsWith(".webp")) return "image/webp";
+  return "application/octet-stream";
+}
 
 /** Máximo 10 MB (mismo tope del API). */
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -61,9 +86,9 @@ function displayTypeName(name: string): string {
 
 /**
  * Listado, alta, vista previa y descarga de documentos del expediente.
- * Tipo maestro + archivo (PDF/JPEG/PNG/WebP).
+ * Tipo maestro de la misma empresa + PDF / Word / imagen.
  */
-export function CrewDocumentsPanel({ crewMemberId }: Props) {
+export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const canUpload =
@@ -85,15 +110,17 @@ export function CrewDocumentsPanel({ crewMemberId }: Props) {
   const [uploading, setUploading] = useState(false);
 
   const load = useCallback(async () => {
-    if (!accessToken) return;
+    if (!accessToken || !businessId) return;
     setLoading(true);
     try {
       const [docs, types] = await Promise.all([
         listCrewMemberDocumentsRequest(accessToken, crewMemberId),
-        listDocumentTypesRequest(accessToken, 1, 200),
+        listDocumentTypesRequest(accessToken, 1, 200, { businessId }),
       ]);
       setItems(docs.items);
-      setDocTypes(types.items.filter((t) => t.state));
+      setDocTypes(
+        types.items.filter((t) => t.state && t.businessId === businessId),
+      );
     } catch (err) {
       showToast(
         err instanceof ApiError
@@ -105,11 +132,15 @@ export function CrewDocumentsPanel({ crewMemberId }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, crewMemberId, showToast]);
+  }, [accessToken, businessId, crewMemberId, showToast]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  /* Paginación cliente: la lista de documentos puede crecer con el tiempo. */
+  const { page, setPage, pageSize, setPageSize, pageCount, pageItems } =
+    useClientTablePagination(items);
 
   /** Abre el modal de alta. */
   function openUpload() {
@@ -136,7 +167,7 @@ export function CrewDocumentsPanel({ crewMemberId }: Props) {
       return;
     }
     if (!file) {
-      showToast("Elegí un archivo PDF o imagen.", "danger");
+      showToast("Elegí un archivo PDF, Word o imagen.", "danger");
       return;
     }
     if (file.size > MAX_BYTES) {
@@ -150,7 +181,7 @@ export function CrewDocumentsPanel({ crewMemberId }: Props) {
       await createCrewMemberDocumentRequest(accessToken, crewMemberId, {
         documentTypeId,
         fileName: file.name,
-        mimeType: file.type || "application/pdf",
+        mimeType: resolveUploadMime(file),
         contentBase64,
         sourceModule: "crew",
       });
@@ -222,7 +253,7 @@ export function CrewDocumentsPanel({ crewMemberId }: Props) {
               Documentos del expediente
             </p>
             <p className="mt-0.5 text-[12px] text-[var(--color-nachipa-secondary)]">
-              Carga, vista previa y descarga. PDF o imagen, máx. 10 MB.
+              Carga, vista previa y descarga. PDF, Word o imagen, máx. 10 MB.
             </p>
           </div>
           {canUpload ? (
@@ -263,21 +294,23 @@ export function CrewDocumentsPanel({ crewMemberId }: Props) {
             ) : null}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] border-collapse text-left">
-              <thead>
-                <tr className="bg-[var(--color-nachipa-bg-page,#f3f4f6)] text-[12px] font-medium text-[var(--color-nachipa-secondary)]">
-                  <th className="rounded-tl-xl px-4 py-2.5">Tipo</th>
-                  <th className="px-4 py-2.5">Archivo</th>
-                  <th className="px-4 py-2.5">Origen</th>
-                  <th className="px-4 py-2.5">Fecha</th>
-                  <th className="rounded-tr-xl px-4 py-2.5 text-right">
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((doc) => {
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px] border-collapse text-left">
+                <thead>
+                  <tr>
+                    {/* Encabezados Figma TableHeaderCell: redondeado izq/der en extremos. */}
+                    <TableHeaderCell rounded="left">Tipo</TableHeaderCell>
+                    <TableHeaderCell>Archivo</TableHeaderCell>
+                    <TableHeaderCell>Origen</TableHeaderCell>
+                    <TableHeaderCell>Fecha</TableHeaderCell>
+                    <TableHeaderCell rounded="right" align="right">
+                      Acciones
+                    </TableHeaderCell>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageItems.map((doc) => {
                   const isPreview =
                     busy?.id === doc.id && busy.mode === "preview";
                   const isDownload =
@@ -352,9 +385,20 @@ export function CrewDocumentsPanel({ crewMemberId }: Props) {
                     </tr>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
+                </tbody>
+              </table>
+            </div>
+            {/* Pie de paginación compacto (hidePageSize: panel secundario). */}
+            <TablePagination
+              totalLabel={`${items.length} ${items.length === 1 ? "documento" : "documentos"}`}
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              hidePageSize
+            />
+          </>
         )}
       </div>
 
@@ -362,7 +406,7 @@ export function CrewDocumentsPanel({ crewMemberId }: Props) {
         open={uploadOpen}
         icon={Upload}
         title="Subir documento"
-        subtitle="Elegí el tipo del catálogo y un PDF o imagen (máx. 10 MB)."
+        subtitle="Elegí el tipo del catálogo y un PDF, Word o imagen (máx. 10 MB)."
         onClose={closeUpload}
         maxWidthClass="w-full max-w-[480px] sm:w-[480px]"
         footer={

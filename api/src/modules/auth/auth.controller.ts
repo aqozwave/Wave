@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
+import { refreshTtlMs } from "../../lib/tokens.js";
 import {
   confirmEmailResponseSchema,
   deleteMyPhotoResponseSchema,
@@ -42,6 +43,7 @@ import {
   resendAccountConfirmation,
   resendLoginMfa,
   resetPasswordWithToken,
+  revokePresentedRefresh,
   updateMe,
   uploadMyPhoto,
   verifyLoginMfa,
@@ -91,8 +93,8 @@ function readCookie(req: Request, name: string): string | undefined {
 
 /** Cookie HttpOnly del refresh para el cliente web (mismo origen vía proxy). */
 function setRefreshCookie(res: Response, refreshToken: string): void {
-  // 7 días en ms — alineado al default JWT_REFRESH_EXPIRES_IN.
-  const maxAgeMs = 7 * 24 * 60 * 60 * 1000;
+  // Max-Age alineado a JWT_REFRESH_EXPIRES_IN (default 7d).
+  const maxAgeMs = refreshTtlMs();
   const parts = [
     `${REFRESH_COOKIE}=${refreshToken}`,
     "HttpOnly",
@@ -312,6 +314,21 @@ export async function logoutHandler(
   await logoutUser(req.user.id);
   clearRefreshCookie(res);
 
+  const bodyOut = logoutResponseSchema.parse({ ok: true });
+  res.status(200).json(bodyOut);
+}
+
+/**
+ * POST /clear-session — logout suave sin Bearer (confirm-email / reset / “usar otra cuenta”).
+ * Revoca el refresh de la cookie si existe y siempre limpia Set-Cookie.
+ */
+export async function clearSessionHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const presented = readCookie(req, REFRESH_COOKIE);
+  await revokePresentedRefresh(presented);
+  clearRefreshCookie(res);
   const bodyOut = logoutResponseSchema.parse({ ok: true });
   res.status(200).json(bodyOut);
 }

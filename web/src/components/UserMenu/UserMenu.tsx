@@ -112,8 +112,16 @@ export function UserMenu() {
   async function onChangePassword(event: FormEvent) {
     event.preventDefault();
     if (!accessToken) return;
-    if (newPassword.length < 8) {
-      showToast("La nueva contraseña debe tener al menos 8 caracteres.", "danger");
+    if (
+      newPassword.length < 8 ||
+      !/[A-ZÁÉÍÓÚÑ]/.test(newPassword) ||
+      !/[a-záéíóúñ]/.test(newPassword) ||
+      !/[0-9]/.test(newPassword)
+    ) {
+      showToast(
+        "La nueva contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número.",
+        "danger",
+      );
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -489,7 +497,7 @@ export function UserMenu() {
             onChange={(event) => setNewPassword(event.target.value)}
             required
             minLength={8}
-            placeholder="Mínimo 8 caracteres"
+            placeholder="8+ · mayúscula · minúscula · número"
           />
           <TextField
             label="Confirmar nueva contraseña"

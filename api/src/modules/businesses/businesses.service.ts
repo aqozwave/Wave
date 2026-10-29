@@ -1,5 +1,4 @@
 import { Prisma } from "@prisma/client";
-import { DOCUMENT_TYPE_SEED } from "../../lib/documentTypeSeed.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
@@ -136,38 +135,25 @@ export async function listBusinesses(
 /**
  * Crea una empresa (solo superadmin a nivel de ruta).
  * Nombre único entre no borradas (índice parcial en BD).
- * Siembra el catálogo inicial de tipos de documento (códigos HR).
+ * Tipos de documento: vacíos; cada empresa los carga en Catálogos.
  */
 export async function createBusiness(
   body: CreateBusinessBody,
 ): Promise<BusinessResponse> {
   try {
-    const row = await prisma.$transaction(async (tx) => {
-      const business = await tx.business.create({
-        data: {
-          rut: body.rut ?? null,
-          name: body.name,
-          giro: body.giro ?? null,
-          country: body.country ?? "Chile",
-          commune: body.commune ?? null,
-          city: body.city ?? null,
-          phone: body.phone ?? null,
-          email: body.email ?? null,
-          description: body.description ?? null,
-          state: body.state ?? true,
-        },
-      });
-      await tx.documentType.createMany({
-        data: DOCUMENT_TYPE_SEED.map((seed) => ({
-          code: seed.code,
-          name: seed.name,
-          subtype: seed.subtype,
-          visibility: seed.visibility,
-          businessId: business.id,
-          state: true,
-        })),
-      });
-      return business;
+    const row = await prisma.business.create({
+      data: {
+        rut: body.rut ?? null,
+        name: body.name,
+        giro: body.giro ?? null,
+        country: body.country ?? "Chile",
+        commune: body.commune ?? null,
+        city: body.city ?? null,
+        phone: body.phone ?? null,
+        email: body.email ?? null,
+        description: body.description ?? null,
+        state: body.state ?? true,
+      },
     });
     return toBusinessResponse(row);
   } catch (err) {

@@ -132,7 +132,7 @@ export async function createCrewMemberDocument(
     throw new AppError(
       400,
       "validation_error",
-      "Tipo de archivo no permitido (PDF, JPEG, PNG o WebP)",
+      "Tipo de archivo no permitido (PDF, Word, JPEG, PNG o WebP)",
     );
   }
 
@@ -154,7 +154,7 @@ export async function createCrewMemberDocument(
     throw new AppError(
       400,
       "validation_error",
-      "El contenido del archivo no es un PDF, JPEG, PNG o WebP válido",
+      "El contenido del archivo no es un PDF, Word, JPEG, PNG o WebP válido",
     );
   }
   if (sniffed !== body.mimeType) {
