@@ -40,7 +40,7 @@ import {
   type LocationWriteBody,
 } from "../../lib/api/locations";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
-import { downloadCsv } from "../../lib/exportCsv";
+import { downloadXls } from "../../lib/exportXls";
 import { AreasPanel, type AreasPanelHandle } from "./AreasPanel";
 import { MuellesPanel, type MuellesPanelHandle } from "./MuellesPanel";
 import { PortsPanel, type PortsPanelHandle } from "./PortsPanel";
@@ -317,7 +317,7 @@ export function Ubicaciones() {
       showToast("No hay filas para exportar.", "info");
       return;
     }
-    downloadCsv(
+    downloadXls(
       filtered,
       [
         { header: "Nombre", value: (row) => displayName(row.name) },
@@ -337,7 +337,7 @@ export function Ubicaciones() {
       ],
       "lugares",
     );
-    showToast("CSV descargado.", "success");
+    showToast("Excel descargado.", "success");
   }
 
   /** Select nativo: mismo focus sky que TextField (Figma border/focus). */

@@ -58,7 +58,7 @@ import {
   type BoardingBookUiState,
 } from "../../lib/boardingBook";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
-import { downloadCsv } from "../../lib/exportCsv";
+import { downloadXls } from "../../lib/exportXls";
 import { isRutValid, normalizeRut } from "../../lib/rut";
 import { OfficerAssignmentsPanel } from "./OfficerAssignmentsPanel";
 
@@ -473,7 +473,7 @@ export function Embarcados() {
       showToast("No hay filas para exportar.", "info");
       return;
     }
-    downloadCsv(
+    downloadXls(
       filtered,
       [
         { header: "Nombre", value: (row) => fullName(row) },
@@ -503,7 +503,7 @@ export function Embarcados() {
       ],
       "embarcados",
     );
-    showToast("CSV descargado.", "success");
+    showToast("Excel descargado.", "success");
   }
 
   const tabs: { id: BoardingBookTab; label: string; count: number }[] = [

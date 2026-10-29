@@ -36,7 +36,7 @@ import {
   type Travesia,
 } from "../../lib/api/travesias";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
-import { downloadCsv } from "../../lib/exportCsv";
+import { downloadXls } from "../../lib/exportXls";
 
 /** API que el header usa para abrir el modal de alta. */
 export type TravesiasPanelHandle = {
@@ -274,7 +274,7 @@ export const TravesiasPanel = forwardRef<TravesiasPanelHandle>(
         showToast("No hay filas para exportar.", "info");
         return;
       }
-      downloadCsv(
+      downloadXls(
         filtered,
         [
           { header: "Nombre", value: (row) => displayName(row.name) },
@@ -293,7 +293,7 @@ export const TravesiasPanel = forwardRef<TravesiasPanelHandle>(
         ],
         "travesias",
       );
-      showToast("CSV descargado.", "success");
+      showToast("Excel descargado.", "success");
     }
 
     const selectClass =

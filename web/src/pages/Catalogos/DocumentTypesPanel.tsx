@@ -40,7 +40,7 @@ import {
   type DocumentTypeWriteBody,
 } from "../../lib/api/documentTypes";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
-import { downloadCsv } from "../../lib/exportCsv";
+import { downloadXls } from "../../lib/exportXls";
 
 /** API que el header usa para abrir el modal de alta. */
 export type DocumentTypesPanelHandle = {
@@ -352,7 +352,7 @@ export const DocumentTypesPanel = forwardRef<DocumentTypesPanelHandle>(
         showToast("No hay filas para exportar.", "info");
         return;
       }
-      downloadCsv(
+      downloadXls(
         filtered,
         [
           { header: "Código", value: (row) => row.code },
@@ -380,7 +380,7 @@ export const DocumentTypesPanel = forwardRef<DocumentTypesPanelHandle>(
         ],
         "tipos-documento",
       );
-      showToast("CSV descargado.", "success");
+      showToast("Excel descargado.", "success");
     }
 
     const selectClass =

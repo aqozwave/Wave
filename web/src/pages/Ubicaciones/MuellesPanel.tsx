@@ -42,7 +42,7 @@ import {
   type Port,
 } from "../../lib/api/ports";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
-import { downloadCsv } from "../../lib/exportCsv";
+import { downloadXls } from "../../lib/exportXls";
 
 /** API que el header usa para abrir el modal de alta. */
 export type MuellesPanelHandle = {
@@ -345,7 +345,7 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
       showToast("No hay filas para exportar.", "info");
       return;
     }
-    downloadCsv(
+    downloadXls(
       filtered,
       [
         { header: "Nombre", value: (row) => displayName(row.name) },
@@ -364,7 +364,7 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
       ],
       "muelles",
     );
-    showToast("CSV descargado.", "success");
+    showToast("Excel descargado.", "success");
   }
 
   const selectClass =

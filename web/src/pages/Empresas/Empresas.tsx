@@ -34,7 +34,7 @@ import {
   type BusinessWriteBody,
 } from "../../lib/api/businesses";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
-import { downloadCsv } from "../../lib/exportCsv";
+import { downloadXls } from "../../lib/exportXls";
 import { isRutValid, normalizeRut } from "../../lib/rut";
 
 /** Form create (Figma 1 paso) + edit extendido. */
@@ -271,7 +271,7 @@ export function Empresas() {
       showToast("No hay filas para exportar.", "info");
       return;
     }
-    downloadCsv(
+    downloadXls(
       filtered,
       [
         { header: "RUT", value: (row) => row.rut ?? "" },
@@ -282,7 +282,7 @@ export function Empresas() {
       ],
       "empresas",
     );
-    showToast("CSV descargado.", "success");
+    showToast("Excel descargado.", "success");
   }
 
   const lockKeyFields = Boolean(editing) && !isSuperadmin;

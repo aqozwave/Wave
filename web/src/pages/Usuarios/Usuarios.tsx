@@ -165,9 +165,15 @@ function roleLabel(row: AdminUser): string {
   return "Usuario";
 }
 
+/** Nombre de empresa para la columna Empresa (— si no tiene / Superadmin). */
+function companyLabel(row: AdminUser): string {
+  if (!row.business?.name) return "—";
+  return displayName(row.business.name);
+}
+
 /**
  * Alcance de S7/D36: la nave si tiene lugar;
- * si no, «Todo el sistema» (Superadmin) o «Empresa» (admin).
+ * si no, «Todo el sistema» (Superadmin) o «Empresa».
  */
 function scopeLabel(
   row: AdminUser,
@@ -178,8 +184,7 @@ function scopeLabel(
     if (place) return displayName(place);
   }
   if (isSystemSuperadmin(row)) return "Todo el sistema";
-  if (row.internalRol === "admin") return "Empresa";
-  return row.business?.name ? displayName(row.business.name) : "—";
+  return "Empresa";
 }
 
 /** «1 activo» / «3 activos» para el subtítulo del administrador. */
@@ -876,13 +881,14 @@ export function Usuarios() {
             />
           }
         >
-          <table className="w-full min-w-[1094px] border-collapse text-left">
+          <table className="w-full min-w-[1200px] border-collapse text-left">
             <colgroup>
-              <col style={{ width: "330px" }} />
-              <col style={{ width: "170px" }} />
+              <col style={{ width: "280px" }} />
               <col style={{ width: "180px" }} />
-              <col style={{ width: "180px" }} />
-              <col style={{ width: "190px" }} />
+              <col style={{ width: "150px" }} />
+              <col style={{ width: "150px" }} />
+              <col style={{ width: "140px" }} />
+              <col style={{ width: "160px" }} />
               <col style={{ width: "44px" }} />
             </colgroup>
             <thead>
@@ -896,6 +902,7 @@ export function Usuarios() {
                 >
                   Usuario
                 </TableHeaderCell>
+                <TableHeaderCell>Empresa</TableHeaderCell>
                 <TableHeaderCell>Rol</TableHeaderCell>
                 <TableHeaderCell>Alcance</TableHeaderCell>
                 <TableHeaderCell>Estado</TableHeaderCell>
@@ -908,7 +915,7 @@ export function Usuarios() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
                   >
                     Cargando…
@@ -918,7 +925,7 @@ export function Usuarios() {
               {!loading && total === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]"
                   >
                     No hay usuarios para mostrar.
@@ -959,6 +966,9 @@ export function Usuarios() {
                               </span>
                             </span>
                           </div>
+                        </td>
+                        <td className="h-14 truncate px-3 text-[13px] text-[var(--color-nachipa-body)]">
+                          {companyLabel(row)}
                         </td>
                         <td className="h-14 truncate px-3 text-[13px] text-[var(--color-nachipa-body)]">
                           {roleLabel(row)}

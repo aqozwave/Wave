@@ -36,7 +36,7 @@ import {
   type Course,
 } from "../../lib/api/courses";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
-import { downloadCsv } from "../../lib/exportCsv";
+import { downloadXls } from "../../lib/exportXls";
 
 /** API que el header usa para abrir el modal de alta. */
 export type CoursesPanelHandle = {
@@ -259,7 +259,7 @@ export const CoursesPanel = forwardRef<CoursesPanelHandle>(function CoursesPanel
       showToast("No hay filas para exportar.", "info");
       return;
     }
-    downloadCsv(
+    downloadXls(
       filtered,
       [
         { header: "Nombre", value: (row) => displayName(row.name) },
@@ -279,7 +279,7 @@ export const CoursesPanel = forwardRef<CoursesPanelHandle>(function CoursesPanel
       ],
       "cursos",
     );
-    showToast("CSV descargado.", "success");
+    showToast("Excel descargado.", "success");
   }
 
   const selectClass =
