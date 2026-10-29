@@ -1,4 +1,9 @@
 import type { CrewMemberDocument, DocumentType } from "@prisma/client";
+import {
+  assertCanUploadDocumentType,
+  assertDocumentTypeAppliesToCrew,
+  canViewDocumentType,
+} from "../../lib/documentActorAccess.js";
 import { AppError } from "../../lib/errors.js";
 import { sniffCrewDocumentMime } from "../../lib/fileSniff.js";
 import {
@@ -16,8 +21,8 @@ import type {
   CrewMemberDocumentResponse,
 } from "./crewMemberDocuments.schemas.js";
 
-/** Actor mínimo tenant. */
-type Actor = Pick<AuthUser, "id" | "internalRol" | "businessId">;
+/** Actor mínimo tenant + rol para uploadBy/viewBy. */
+type Actor = Pick<AuthUser, "id" | "internalRol" | "businessId" | "roleId">;
 
 /** Fila con tipo incluido. */
 type DocWithType = CrewMemberDocument & { documentType: DocumentType };
@@ -74,6 +79,26 @@ async function loadCrewForActor(actor: Actor, crewMemberId: string) {
   return crew;
 }
 
+/** role.key del actor (null si no tiene rol asignado). */
+async function loadActorRoleKey(actor: Actor): Promise<string | null> {
+  if (!actor.roleId) return null;
+  const role = await prisma.role.findFirst({
+    where: { id: actor.roleId, deletedAt: null },
+    select: { key: true },
+  });
+  return role?.key ?? null;
+}
+
+/** Contexto de visibilidad para un expediente. */
+async function viewContext(actor: Actor, crewUserId: string | null) {
+  const roleKey = await loadActorRoleKey(actor);
+  return {
+    internalRol: actor.internalRol,
+    roleKey,
+    isSubjectCrew: Boolean(crewUserId && crewUserId === actor.id),
+  };
+}
+
 /** Decodifica base64 (raw o data-URL). */
 function decodeBase64Content(contentBase64: string): Buffer {
   const trimmed = contentBase64.trim();
@@ -85,12 +110,13 @@ function decodeBase64Content(contentBase64: string): Buffer {
   return Buffer.from(payload, "base64");
 }
 
-/** Lista documentos no borrados del tripulante. */
+/** Lista documentos no borrados visibles según viewBy / crewCanView. */
 export async function listCrewMemberDocuments(
   actor: Actor,
   crewMemberId: string,
 ): Promise<{ items: CrewMemberDocumentResponse[]; total: number }> {
-  await loadCrewForActor(actor, crewMemberId);
+  const crew = await loadCrewForActor(actor, crewMemberId);
+  const ctx = await viewContext(actor, crew.userId);
 
   const rows = await prisma.crewMemberDocument.findMany({
     where: { crewMemberId, deletedAt: null },
@@ -98,9 +124,13 @@ export async function listCrewMemberDocuments(
     orderBy: { createdAt: "desc" },
   });
 
+  const visible = rows.filter((row) =>
+    canViewDocumentType(row.documentType, ctx),
+  );
+
   return {
-    items: rows.map(toDocumentResponse),
-    total: rows.length,
+    items: visible.map(toDocumentResponse),
+    total: visible.length,
   };
 }
 
@@ -127,6 +157,13 @@ export async function createCrewMemberDocument(
       "Tipo de documento no válido para esta empresa",
     );
   }
+
+  assertDocumentTypeAppliesToCrew(docType);
+  const roleKey = await loadActorRoleKey(actor);
+  assertCanUploadDocumentType(docType, {
+    internalRol: actor.internalRol,
+    roleKey,
+  });
 
   if (!ALLOWED_CREW_DOC_MIMES.has(body.mimeType)) {
     throw new AppError(
@@ -203,7 +240,8 @@ export async function resolveCrewMemberDocumentFile(
   originalName: string;
   mimeType: string;
 }> {
-  await loadCrewForActor(actor, crewMemberId);
+  const crew = await loadCrewForActor(actor, crewMemberId);
+  const ctx = await viewContext(actor, crew.userId);
 
   const doc = await prisma.crewMemberDocument.findFirst({
     where: {
@@ -211,8 +249,12 @@ export async function resolveCrewMemberDocumentFile(
       crewMemberId,
       deletedAt: null,
     },
+    include: { documentType: true },
   });
   if (!doc) {
+    throw new AppError(404, "document_not_found", "Documento no encontrado");
+  }
+  if (!canViewDocumentType(doc.documentType, ctx)) {
     throw new AppError(404, "document_not_found", "Documento no encontrado");
   }
   if (!isCrewDocumentRelativePath(doc.filePath)) {
@@ -230,7 +272,7 @@ export async function resolveCrewMemberDocumentFile(
   };
 }
 
-/** Soft delete + intenta borrar archivo. */
+/** Soft delete + intenta borrar archivo (mismo permiso que subir). */
 export async function deleteCrewMemberDocument(
   actor: Actor,
   crewMemberId: string,
@@ -245,6 +287,12 @@ export async function deleteCrewMemberDocument(
   if (!existing) {
     throw new AppError(404, "document_not_found", "Documento no encontrado");
   }
+
+  const roleKey = await loadActorRoleKey(actor);
+  assertCanUploadDocumentType(existing.documentType, {
+    internalRol: actor.internalRol,
+    roleKey,
+  });
 
   const updated = await prisma.crewMemberDocument.update({
     where: { id: documentId },

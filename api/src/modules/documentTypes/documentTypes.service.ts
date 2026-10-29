@@ -1,4 +1,9 @@
 import { Prisma } from "@prisma/client";
+import {
+  actorMatchesScope,
+  resolveDocumentActorTags,
+  type DocumentActorScope,
+} from "../../lib/documentActorAccess.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
@@ -9,8 +14,35 @@ import type {
   UpdateDocumentTypeBody,
 } from "./documentTypes.schemas.js";
 
-/** Actor mínimo tenant. */
-type Actor = Pick<AuthUser, "internalRol" | "businessId">;
+/** Actor mínimo tenant + rol (filtro forUpload). */
+type Actor = Pick<AuthUser, "internalRol" | "businessId" | "roleId">;
+
+/** Scopes uploadBy que el actor puede usar (null = sin filtro / superadmin). */
+async function uploadScopesForActor(
+  actor: Actor,
+): Promise<DocumentActorScope[] | null> {
+  if (actor.internalRol === "superadmin") return null;
+  let roleKey: string | null = null;
+  if (actor.roleId) {
+    const role = await prisma.role.findFirst({
+      where: { id: actor.roleId, deletedAt: null },
+      select: { key: true },
+    });
+    roleKey = role?.key ?? null;
+  }
+  const tags = resolveDocumentActorTags({
+    internalRol: actor.internalRol,
+    roleKey,
+  });
+  const allScopes: DocumentActorScope[] = [
+    "prevention_or_admin",
+    "prevention_admin_hr_assets",
+    "admin",
+    "hr",
+    "assets",
+  ];
+  return allScopes.filter((scope) => actorMatchesScope(scope, tags));
+}
 
 /**
  * Mantener visibility legacy alineada a crewCanView
@@ -91,6 +123,28 @@ function listWhere(
   return base;
 }
 
+/**
+ * Aplica filtros de forUpload (subida a ficha de tripulante).
+ * Excluye appliesTo=external y restringe uploadBy al actor.
+ */
+async function applyForUploadFilter(
+  actor: Actor,
+  where: Prisma.DocumentTypeWhereInput,
+  forUpload: boolean | undefined,
+): Promise<Prisma.DocumentTypeWhereInput> {
+  if (!forUpload) return where;
+
+  const scopes = await uploadScopesForActor(actor);
+  const uploadFilter: Prisma.DocumentTypeWhereInput = {
+    state: true,
+    appliesTo: { in: ["crew", "crew_and_external"] },
+  };
+  if (scopes !== null) {
+    uploadFilter.uploadBy = { in: scopes };
+  }
+  return { AND: [where, uploadFilter] };
+}
+
 /** businessId de alta. */
 function resolveCreateBusinessId(
   actor: Actor,
@@ -138,7 +192,8 @@ export async function listDocumentTypes(
   page: number;
   limit: number;
 }> {
-  const where = listWhere(actor, query);
+  const baseWhere = listWhere(actor, query);
+  const where = await applyForUploadFilter(actor, baseWhere, query.forUpload);
   const [rows, total] = await Promise.all([
     prisma.documentType.findMany({
       where,

@@ -287,6 +287,7 @@ Un paso a la vez, con mi confirmación antes de avanzar. **Ninguna sección se m
 
 ### Deuda cercana (prioridad sugerida)
 
-1. **Verificación formal** de secciones 4–7 + regresión auth (login, refresh, ruta protegida, tenant).
-2. **Enforcement** de `uploadBy` / `viewBy` / `crewCanView` en carga de documentos.
+1. **Verificación formal** de secciones 4–7 (auth B hecha; falta checklist tenant con datos en 2 empresas).
+2. ~~Enforcement `uploadBy` / `viewBy` / `crewCanView`~~ **Hecho** (API + `forUpload` en ficha).
 3. **Sección 8** — cursos por tripulante y vencimientos.
+4. Roles de sistema `hr` / `assets` / `prevencion` (hoy se mapean por `role.key` o `contratista`→prevention).

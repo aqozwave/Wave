@@ -27,6 +27,8 @@ body:json {
 docs {
   Sube PDF mínimo en base64. Corré Get document types antes (setea documentTypeId, preferencia WL).
   Variables: crewMemberId, documentTypeId.
+  Enforcement: uploadBy del tipo debe incluir al actor (403 document_upload_forbidden).
+  appliesTo=external → 400 document_type_not_for_crew.
 }
 
 script:pre-request {

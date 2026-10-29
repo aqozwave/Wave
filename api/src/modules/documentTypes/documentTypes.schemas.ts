@@ -99,6 +99,14 @@ export const listDocumentTypesQuerySchema = z.object({
   subtype: documentSubtypeSchema.optional(),
   appliesTo: documentAppliesToSchema.optional(),
   search: z.string().trim().optional(),
+  /**
+   * Si true: solo tipos que el actor puede subir (uploadBy)
+   * y que aplican a tripulante (no solo external).
+   */
+  forUpload: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => v === "true"),
 });
 
 export const listDocumentTypesRequestSchema = z.object({

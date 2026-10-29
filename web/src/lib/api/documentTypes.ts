@@ -98,6 +98,8 @@ export async function listDocumentTypesRequest(
     subtype?: DocumentSubtype;
     appliesTo?: DocumentAppliesTo;
     search?: string;
+    /** Solo tipos que el actor puede subir a un tripulante. */
+    forUpload?: boolean;
   },
 ): Promise<ListDocumentTypesResult> {
   const params = new URLSearchParams({
@@ -108,6 +110,7 @@ export async function listDocumentTypesRequest(
   if (filters?.subtype) params.set("subtype", filters.subtype);
   if (filters?.appliesTo) params.set("appliesTo", filters.appliesTo);
   if (filters?.search) params.set("search", filters.search);
+  if (filters?.forUpload) params.set("forUpload", "true");
   const res = await fetch(`/api/v1/document-types?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });

@@ -115,7 +115,10 @@ export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
     try {
       const [docs, types] = await Promise.all([
         listCrewMemberDocumentsRequest(accessToken, crewMemberId),
-        listDocumentTypesRequest(accessToken, 1, 200, { businessId }),
+        listDocumentTypesRequest(accessToken, 1, 200, {
+          businessId,
+          forUpload: true,
+        }),
       ]);
       setItems(docs.items);
       setDocTypes(
