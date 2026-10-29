@@ -10,6 +10,8 @@ export type CompetencyCertificate = {
   name: string;
   businessId: string;
   officerKind: OfficerKind | null;
+  /** Si true, el embarcado debe tener muelles y travesías. */
+  requiresMuelleTravesia: boolean;
   state: boolean;
   deletedAt: string | null;
   createdAt: string;
@@ -29,6 +31,7 @@ export type CompetencyCertificateWriteBody = {
   name?: string;
   businessId?: string;
   officerKind?: OfficerKind | null;
+  requiresMuelleTravesia?: boolean;
   state?: boolean;
 };
 

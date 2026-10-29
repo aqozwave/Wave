@@ -8,6 +8,7 @@
  * Idempotente: upsert por legacyMongoId (= Mongo _id).
  * Resuelve businessID → businesses.legacyMongoId.
  * Migra officerKind (captain | first_pilot); valores inválidos → null.
+ * requiresMuelleTravesia = true si officerKind es captain o first_pilot.
  * Omite docs sin name o sin businessID.
  * Solo lectura en Mongo.
  */
@@ -127,10 +128,14 @@ async function main(): Promise<void> {
       }
 
       const name = normalizeName(rawName);
+      const officerKind = normalizeOfficerKind(doc.officerKind);
       const payload = {
         name,
         businessId,
-        officerKind: normalizeOfficerKind(doc.officerKind),
+        officerKind,
+        // Misma regla de backfill que la migración: oficiales de nave → exigir.
+        requiresMuelleTravesia:
+          officerKind === "captain" || officerKind === "first_pilot",
         state: doc.state ?? true,
         deletedAt: doc.deletedAt ?? null,
       };

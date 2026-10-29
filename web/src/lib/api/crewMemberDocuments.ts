@@ -1,14 +1,24 @@
 import { ApiError, type ApiErrorBody } from "./auth";
 
+/** Resumen del tipo maestro embebido en el documento. */
+export type DocumentTypeSummary = {
+  id: string;
+  code: string;
+  name: string;
+  subtype: string;
+};
+
 /** Documento de tripulante (metadatos). */
 export type CrewMemberDocument = {
   id: string;
   legacyMongoId: string | null;
   crewMemberId: string;
-  type: string;
+  documentTypeId: string;
+  documentType: DocumentTypeSummary;
   originalName: string;
   mimeType: string;
   size: number;
+  sourceModule: string;
   uploadedById: string | null;
   deletedAt: string | null;
   createdAt: string;
@@ -23,10 +33,11 @@ export type ListCrewMemberDocumentsResult = {
 
 /** Body create (archivo en base64). */
 export type CreateCrewMemberDocumentBody = {
-  type?: "warning_letter";
+  documentTypeId: string;
   fileName: string;
   mimeType: string;
   contentBase64: string;
+  sourceModule?: "crew" | "prevention" | "assets" | "system";
 };
 
 /** Parsea error estándar Wave. */
@@ -89,12 +100,14 @@ export async function deleteCrewMemberDocumentRequest(
   return body as CrewMemberDocument;
 }
 
-/** URL de descarga (usar con Bearer vía fetch blob). */
+/** URL de descarga / vista (usar con Bearer vía fetch blob). */
 export function crewMemberDocumentDownloadUrl(
   crewMemberId: string,
   documentId: string,
+  inline = false,
 ): string {
-  return `/api/v1/crew-members/${crewMemberId}/documents/${documentId}/download`;
+  const base = `/api/v1/crew-members/${crewMemberId}/documents/${documentId}/download`;
+  return inline ? `${base}?inline=1` : base;
 }
 
 /** Descarga el archivo y dispara save-as en el navegador. */
@@ -119,6 +132,38 @@ export async function downloadCrewMemberDocumentRequest(
   a.download = fileName;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Abre el documento en una pestaña nueva (PDF/imagen).
+ * Pide el stream con disposition inline.
+ */
+export async function previewCrewMemberDocumentRequest(
+  accessToken: string,
+  crewMemberId: string,
+  documentId: string,
+): Promise<void> {
+  const res = await fetch(
+    crewMemberDocumentDownloadUrl(crewMemberId, documentId, true),
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    throw toApiError(res, body);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, "_blank", "noopener,noreferrer");
+  if (!opened) {
+    URL.revokeObjectURL(url);
+    throw new ApiError(
+      0,
+      "popup_blocked",
+      "El navegador bloqueó la vista previa. Permití ventanas emergentes.",
+    );
+  }
+  // Liberar el blob cuando la pestaña ya pudo cargarlo.
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** Lee File → base64 (sin prefijo data:). */

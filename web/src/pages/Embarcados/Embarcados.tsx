@@ -25,12 +25,18 @@ import {
   type CompetencyCertificate,
 } from "../../lib/api/competencyCertificates";
 import {
+  createCrewMemberMuelleRequest,
+  createCrewMemberTravesiaRequest,
+} from "../../lib/api/crewMemberAssignments";
+import {
   createCrewMemberRequest,
   listCrewMembersRequest,
   type CrewMember,
 } from "../../lib/api/crewMembers";
 import { listLocationsRequest, type Location } from "../../lib/api/locations";
+import { listMuellesRequest, type Muelle } from "../../lib/api/muelles";
 import { listRanksRequest, type Rank } from "../../lib/api/ranks";
+import { listTravesiasRequest, type Travesia } from "../../lib/api/travesias";
 import {
   boardingBookStateLabel,
   daysUntilBoardingBookExpiry,
@@ -41,6 +47,7 @@ import {
 } from "../../lib/boardingBook";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { isRutValid, normalizeRut } from "../../lib/rut";
+import { OfficerAssignmentsPanel } from "./OfficerAssignmentsPanel";
 
 /** Filas por página (Figma: 10). */
 const PAGE_SIZE = 10;
@@ -58,6 +65,7 @@ type CreateForm = {
   areaId: string;
   rankId: string;
   competencyCertificateId: string;
+  observation: string;
 };
 
 /** Form vacío al abrir el modal. */
@@ -72,6 +80,7 @@ const EMPTY_CREATE: CreateForm = {
   areaId: "",
   rankId: "",
   competencyCertificateId: "",
+  observation: "",
 };
 
 /** Convierte input date a ISO 8601 (inicio del día UTC) para el contrato Zod. */
@@ -140,37 +149,57 @@ export function Embarcados() {
   const [certs, setCerts] = useState<CompetencyCertificate[]>([]);
   const [ranks, setRanks] = useState<Rank[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [muelles, setMuelles] = useState<Muelle[]>([]);
+  const [travesias, setTravesias] = useState<Travesia[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState<CreateForm>(EMPTY_CREATE);
+  const [selectedMuelleIds, setSelectedMuelleIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [selectedTravesiaIds, setSelectedTravesiaIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [crew, locs, areaList, certList, rankList, bizList] =
-        await Promise.all([
-          // API max limit = 100 (Zod); 94 migrados caben en una página.
-          listCrewMembersRequest(accessToken, {
-            page: 1,
-            limit: 100,
-            includeInactive: true,
-          }),
-          listLocationsRequest(accessToken),
-          listAreasRequest(accessToken),
-          listCompetencyCertificatesRequest(accessToken),
-          listRanksRequest(accessToken),
-          isSuperadmin
-            ? listBusinessesRequest(accessToken, 1, 100)
-            : Promise.resolve({ items: [] as Business[] }),
-        ]);
+      const [
+        crew,
+        locs,
+        areaList,
+        certList,
+        rankList,
+        bizList,
+        muelleList,
+        travesiaList,
+      ] = await Promise.all([
+        // API max limit = 100 (Zod); 94 migrados caben en una página.
+        listCrewMembersRequest(accessToken, {
+          page: 1,
+          limit: 100,
+          includeInactive: true,
+        }),
+        listLocationsRequest(accessToken),
+        listAreasRequest(accessToken),
+        listCompetencyCertificatesRequest(accessToken),
+        listRanksRequest(accessToken),
+        isSuperadmin
+          ? listBusinessesRequest(accessToken, 1, 100)
+          : Promise.resolve({ items: [] as Business[] }),
+        listMuellesRequest(accessToken, 1, 100),
+        listTravesiasRequest(accessToken, 1, 100),
+      ]);
       setItems(crew.items);
       setLocations(locs.items);
       setAreas(areaList.items);
       setCerts(certList.items);
       setRanks(rankList.items);
       setBusinesses(bizList.items);
+      setMuelles(muelleList.items.filter((m) => m.state));
+      setTravesias(travesiaList.items.filter((t) => t.state));
     } catch (err) {
       showToast(
         err instanceof ApiError
@@ -275,6 +304,26 @@ export function Embarcados() {
     return certs.filter((c) => c.businessId === formBusinessId);
   }, [certs, formBusinessId]);
 
+  const formMuelles = useMemo(() => {
+    if (!formBusinessId) return muelles;
+    return muelles.filter((m) => m.businessId === formBusinessId);
+  }, [muelles, formBusinessId]);
+
+  const formTravesias = useMemo(() => {
+    if (!formBusinessId) return travesias;
+    return travesias.filter((t) => t.businessId === formBusinessId);
+  }, [travesias, formBusinessId]);
+
+  /** Título elegido: si exige muelles/travesías, el panel se expande. */
+  const selectedCert = useMemo(
+    () =>
+      formCerts.find((c) => c.id === form.competencyCertificateId) ?? null,
+    [formCerts, form.competencyCertificateId],
+  );
+  const requiresOfficerAssignments = Boolean(
+    selectedCert?.requiresMuelleTravesia,
+  );
+
   /** Actualiza un campo del form de alta. */
   function setField<K extends keyof CreateForm>(key: K, value: CreateForm[K]) {
     setForm((prev) => {
@@ -291,16 +340,44 @@ export function Embarcados() {
       }
       return next;
     });
+    if (key === "businessId" || key === "competencyCertificateId") {
+      setSelectedMuelleIds(new Set());
+      setSelectedTravesiaIds(new Set());
+    }
+  }
+
+  /** Marca / desmarca un muelle del checklist. */
+  function toggleMuelle(id: string) {
+    setSelectedMuelleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  /** Marca / desmarca una travesía del checklist. */
+  function toggleTravesia(id: string) {
+    setSelectedTravesiaIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   function openCreate() {
     setForm(EMPTY_CREATE);
+    setSelectedMuelleIds(new Set());
+    setSelectedTravesiaIds(new Set());
     setCreateOpen(true);
   }
 
   function closeCreate() {
     setCreateOpen(false);
     setForm(EMPTY_CREATE);
+    setSelectedMuelleIds(new Set());
+    setSelectedTravesiaIds(new Set());
   }
 
   /** Alta: valida RUN y campos requeridos, crea y abre la ficha. */
@@ -332,6 +409,15 @@ export function Embarcados() {
       showToast("La nave / ubicación es requerida.", "danger");
       return;
     }
+    if (requiresOfficerAssignments) {
+      if (selectedMuelleIds.size < 1 || selectedTravesiaIds.size < 1) {
+        showToast(
+          "Con este título hace falta al menos 1 muelle y 1 travesía.",
+          "danger",
+        );
+        return;
+      }
+    }
 
     setSubmitting(true);
     try {
@@ -346,8 +432,26 @@ export function Embarcados() {
         areaId: form.areaId || null,
         rankId: form.rankId || null,
         competencyCertificateId: form.competencyCertificateId || null,
+        observation: form.observation.trim() || null,
         state: true,
       });
+      // Asignaciones de oficial: solo si el título lo exige.
+      if (requiresOfficerAssignments) {
+        for (const muelleId of selectedMuelleIds) {
+          await createCrewMemberMuelleRequest(
+            accessToken,
+            created.id,
+            muelleId,
+          );
+        }
+        for (const travesiaId of selectedTravesiaIds) {
+          await createCrewMemberTravesiaRequest(
+            accessToken,
+            created.id,
+            travesiaId,
+          );
+        }
+      }
       showToast("Embarcado creado.", "success");
       closeCreate();
       await load();
@@ -681,7 +785,11 @@ export function Embarcados() {
         title="Agregar embarcado"
         subtitle="Datos básicos y vigencia del libro. El resto se completa en la ficha."
         onClose={closeCreate}
-        maxWidthClass="w-full max-w-[560px] sm:w-[560px]"
+        maxWidthClass={
+          requiresOfficerAssignments
+            ? "w-full max-w-[880px] sm:w-[880px]"
+            : "w-full max-w-[560px] sm:w-[560px]"
+        }
         footer={
           <div className="flex justify-end gap-3">
             <button
@@ -787,6 +895,30 @@ export function Embarcados() {
             </select>
           </label>
 
+          {/* Título antes que cargo: el título define al embarcado; el cargo lo fija la empresa. */}
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+              Título marítimo{" "}
+              <span className="font-normal text-[var(--color-nachipa-secondary)]">
+                opcional
+              </span>
+            </span>
+            <select
+              className={selectClass}
+              value={form.competencyCertificateId}
+              onChange={(e) =>
+                setField("competencyCertificateId", e.target.value)
+              }
+            >
+              <option value="">Sin título</option>
+              {formCerts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {displayName(c.name)}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
               <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
@@ -831,27 +963,30 @@ export function Embarcados() {
             </label>
           </div>
 
+          {requiresOfficerAssignments ? (
+            <OfficerAssignmentsPanel
+              muelles={formMuelles}
+              travesias={formTravesias}
+              selectedMuelleIds={selectedMuelleIds}
+              selectedTravesiaIds={selectedTravesiaIds}
+              onToggleMuelle={toggleMuelle}
+              onToggleTravesia={toggleTravesia}
+            />
+          ) : null}
+
           <label className="flex flex-col gap-1.5">
             <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
-              Título marítimo{" "}
-              <span className="font-normal text-[var(--color-nachipa-secondary)]">
-                opcional
-              </span>
+              Observación
             </span>
-            <select
-              className={selectClass}
-              value={form.competencyCertificateId}
-              onChange={(e) =>
-                setField("competencyCertificateId", e.target.value)
-              }
-            >
-              <option value="">Sin título</option>
-              {formCerts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {displayName(c.name)}
-                </option>
-              ))}
-            </select>
+            <textarea
+              className="min-h-[84px] w-full resize-y rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 py-2 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-nachipa-primary)]"
+              value={form.observation}
+              onChange={(e) => setField("observation", e.target.value)}
+              placeholder="Notas internas del tripulante"
+            />
+            <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+              Visible para administradores
+            </span>
           </label>
         </form>
       </Modal>

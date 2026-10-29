@@ -1,0 +1,48 @@
+meta {
+  name: Get document types
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/document-types?page=1&limit=100
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Maestro tipos de documento por empresa.
+  Guarda documentTypeId (preferencia código WL) para Post crew document.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && body && Array.isArray(body.items)) {
+    const wl = body.items.find((i) => i.code === "WL");
+    const pick = wl || body.items[0];
+    if (pick && pick.id) {
+      bru.setEnvVar("documentTypeId", pick.id);
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -6,7 +6,7 @@ export const officerKindSchema = z.enum(["captain", "first_pilot"]);
 /**
  * Campos de certificado de competencia.
  * name en minúsculas; businessId opcional en body (admin usa el suyo;
- * superadmin lo exige al crear). officerKind opcional.
+ * superadmin lo exige al crear). officerKind etiqueta; requiresMuelleTravesia regla.
  */
 export const competencyCertificateFieldsSchema = z.object({
   name: z
@@ -16,8 +16,10 @@ export const competencyCertificateFieldsSchema = z.object({
     .transform((v) => v.toLowerCase()),
   /** Empresa dueña. Obligatorio para superadmin al crear. */
   businessId: z.uuid().optional(),
-  /** Capitán / primer piloto; null limpia la clasificación. */
+  /** Capitán / primer piloto; null limpia la clasificación (solo etiqueta). */
   officerKind: officerKindSchema.nullable().optional(),
+  /** Si true, el embarcado con este título debe tener muelles y travesías. */
+  requiresMuelleTravesia: z.boolean().optional(),
   state: z.boolean().optional(),
 });
 
@@ -29,6 +31,7 @@ export const competencyCertificateResponseSchema = z
     name: z.string(),
     businessId: z.uuid(),
     officerKind: officerKindSchema.nullable(),
+    requiresMuelleTravesia: z.boolean(),
     state: z.boolean(),
     deletedAt: z.string().datetime().nullable(),
     createdAt: z.string().datetime(),

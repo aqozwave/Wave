@@ -172,6 +172,16 @@ import {
   listCrewMemberMuellesResponseSchema,
   listCrewMemberTravesiasResponseSchema,
 } from "../modules/crewMemberAssignments/crewMemberAssignments.schemas.js";
+import {
+  createDocumentTypeBodySchema,
+  createDocumentTypeResponseSchema,
+  deleteDocumentTypeResponseSchema,
+  documentSubtypeSchema,
+  getDocumentTypeResponseSchema,
+  listDocumentTypesResponseSchema,
+  updateDocumentTypeBodySchema,
+  updateDocumentTypeResponseSchema,
+} from "../modules/documentTypes/documentTypes.schemas.js";
 
 const registry = new OpenAPIRegistry();
 
@@ -1314,7 +1324,7 @@ registry.registerPath({
   tags: ["CompetencyCertificates"],
   summary: "Crear certificado",
   description:
-    "Admin o superadmin. businessId obligatorio para superadmin. officerKind opcional (captain | first_pilot).",
+    "Admin/superadmin + permiso maestros.certificates. businessId obligatorio para superadmin. requiresMuelleTravesia opcional.",
   security: [{ bearerAuth: [] }],
   request: {
     body: {
@@ -1416,6 +1426,129 @@ registry.registerPath({
     },
     401: { description: "Sin token" },
     403: { description: "No admin/superadmin" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/document-types",
+  tags: ["DocumentTypes"],
+  summary: "Listar tipos de documento",
+  description:
+    "Maestro por empresa (códigos HR). Superadmin: filtro businessId. Admin/user: su empresa. Permiso maestros.document_types read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(200).default(100).optional(),
+      businessId: z.uuid().optional(),
+      subtype: documentSubtypeSchema.optional(),
+      search: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listDocumentTypesResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/document-types",
+  tags: ["DocumentTypes"],
+  summary: "Crear tipo de documento",
+  description:
+    "Admin/superadmin + permiso maestros.document_types create. businessId obligatorio para superadmin.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createDocumentTypeBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": { schema: createDocumentTypeResponseSchema },
+      },
+    },
+    400: { description: "Validación o empresa inexistente" },
+    401: { description: "Sin token" },
+    403: { description: "No admin/superadmin o sin permiso" },
+    409: { description: "Código duplicado en la empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/document-types/{id}",
+  tags: ["DocumentTypes"],
+  summary: "Obtener tipo de documento",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Tipo",
+      content: {
+        "application/json": { schema: getDocumentTypeResponseSchema },
+      },
+    },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/document-types/{id}",
+  tags: ["DocumentTypes"],
+  summary: "Actualizar tipo de documento",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateDocumentTypeBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizado",
+      content: {
+        "application/json": { schema: updateDocumentTypeResponseSchema },
+      },
+    },
+    404: { description: "No encontrado" },
+    409: { description: "Código duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/document-types/{id}",
+  tags: ["DocumentTypes"],
+  summary: "Eliminar tipo de documento (soft)",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteDocumentTypeResponseSchema },
+      },
+    },
     404: { description: "No encontrado" },
   },
 });
@@ -2412,7 +2545,7 @@ registry.registerPath({
   tags: ["CrewMemberDocuments"],
   summary: "Subir documento (base64 JSON)",
   description:
-    "Guarda en disco local bajo uploads/{businessId}/crew-members/…. PDF/JPEG/PNG/WebP, máx 10 MB.",
+    "documentTypeId del maestro. Magic bytes deben coincidir con mimeType (PDF/JPEG/PNG/WebP), máx 10 MB. Descarga con X-Content-Type-Options: nosniff. sourceModule opcional.",
   security: [{ bearerAuth: [] }],
   request: {
     params: z.object({ id: z.uuid() }),

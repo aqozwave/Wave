@@ -43,8 +43,18 @@ function extensionForMime(mimeType: string): string {
 }
 
 /**
+ * Carpeta bajo crew-members/ a partir del código de tipo (o legacy warning_letter).
+ * Solo [a-z0-9_-] para no inventar path traversal con el code.
+ */
+function folderForDocType(type: string): string {
+  if (type === "warning_letter") return "warning-letters";
+  const safe = type.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  return safe || "doc";
+}
+
+/**
  * Ruta relativa de documento de tripulante.
- * /uploads/{businessId}/crew-members/{crewId}/warning-letters/{rand}.ext
+ * /uploads/{businessId}/crew-members/{crewId}/{code}/{rand}.ext
  */
 export function buildCrewDocumentRelativePath(input: {
   businessId: string;
@@ -52,8 +62,7 @@ export function buildCrewDocumentRelativePath(input: {
   type: string;
   mimeType: string;
 }): string {
-  const sub =
-    input.type === "warning_letter" ? "warning-letters" : input.type;
+  const sub = folderForDocType(input.type);
   const rand = crypto.randomBytes(8).toString("hex");
   const ext = extensionForMime(input.mimeType);
   return `${RELATIVE_PREFIX}/${input.businessId}/crew-members/${input.crewMemberId}/${sub}/${rand}${ext}`;

@@ -19,6 +19,7 @@ function toCertificateResponse(row: {
   name: string;
   businessId: string;
   officerKind: "captain" | "first_pilot" | null;
+  requiresMuelleTravesia: boolean;
   state: boolean;
   deletedAt: Date | null;
   createdAt: Date;
@@ -30,6 +31,7 @@ function toCertificateResponse(row: {
     name: row.name,
     businessId: row.businessId,
     officerKind: row.officerKind,
+    requiresMuelleTravesia: row.requiresMuelleTravesia,
     state: row.state,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
@@ -193,6 +195,7 @@ export async function createCompetencyCertificate(
         name: body.name,
         businessId,
         officerKind: body.officerKind ?? null,
+        requiresMuelleTravesia: body.requiresMuelleTravesia ?? false,
         state: body.state ?? true,
       },
     });
@@ -256,6 +259,9 @@ export async function updateCompetencyCertificate(
   if (payload.name !== undefined) data.name = payload.name;
   if (payload.state !== undefined) data.state = payload.state;
   if (payload.officerKind !== undefined) data.officerKind = payload.officerKind;
+  if (payload.requiresMuelleTravesia !== undefined) {
+    data.requiresMuelleTravesia = payload.requiresMuelleTravesia;
+  }
   if (nextBusinessId !== existing.businessId) {
     data.business = { connect: { id: nextBusinessId } };
   }

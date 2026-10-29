@@ -8,6 +8,7 @@ import {
 import {
   CalendarClock,
   ClipboardList,
+  FileText,
   Pencil,
   Plus,
   TriangleAlert,
@@ -30,18 +31,30 @@ import {
   type CompetencyCertificate,
 } from "../../lib/api/competencyCertificates";
 import {
+  createCrewMemberMuelleRequest,
+  createCrewMemberTravesiaRequest,
+  deleteCrewMemberMuelleRequest,
+  deleteCrewMemberTravesiaRequest,
+  listCrewMemberMuellesRequest,
+  listCrewMemberTravesiasRequest,
+} from "../../lib/api/crewMemberAssignments";
+import {
   getCrewMemberRequest,
   updateCrewMemberRequest,
   type CrewMember,
 } from "../../lib/api/crewMembers";
 import { listLocationsRequest, type Location } from "../../lib/api/locations";
+import { listMuellesRequest, type Muelle } from "../../lib/api/muelles";
 import { listRanksRequest, type Rank } from "../../lib/api/ranks";
+import { listTravesiasRequest, type Travesia } from "../../lib/api/travesias";
 import {
   formatBoardingBookDate,
   getBoardingBookUiState,
 } from "../../lib/boardingBook";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { isRutValid, normalizeRut } from "../../lib/rut";
+import { CrewDocumentsPanel } from "./CrewDocumentsPanel";
+import { OfficerAssignmentsPanel } from "./OfficerAssignmentsPanel";
 
 /** Form de edición (Figma D34 · Actualizar embarcado). */
 type EditForm = {
@@ -82,6 +95,7 @@ type FichaTab =
   | "capacitaciones"
   | "libreta"
   | "datos"
+  | "documentos"
   | "historial";
 
 /** Capitaliza para UI. */
@@ -124,32 +138,59 @@ export function FichaTripulante() {
   const [certs, setCerts] = useState<CompetencyCertificate[]>([]);
   const [ranks, setRanks] = useState<Rank[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [muelles, setMuelles] = useState<Muelle[]>([]);
+  const [travesias, setTravesias] = useState<Travesia[]>([]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState<EditForm | null>(null);
+  const [selectedMuelleIds, setSelectedMuelleIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [selectedTravesiaIds, setSelectedTravesiaIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  /** assignmentId por muelleId / travesiaId para poder borrar al desmarcar. */
+  const [muelleAssignmentById, setMuelleAssignmentById] = useState<
+    Map<string, string>
+  >(() => new Map());
+  const [travesiaAssignmentById, setTravesiaAssignmentById] = useState<
+    Map<string, string>
+  >(() => new Map());
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken || !id) return;
     setLoading(true);
     try {
-      const [row, locs, areaList, certList, rankList, bizList] =
-        await Promise.all([
-          getCrewMemberRequest(accessToken, id),
-          listLocationsRequest(accessToken),
-          listAreasRequest(accessToken),
-          listCompetencyCertificatesRequest(accessToken),
-          listRanksRequest(accessToken),
-          isSuperadmin
-            ? listBusinessesRequest(accessToken, 1, 100)
-            : Promise.resolve({ items: [] as Business[] }),
-        ]);
+      const [
+        row,
+        locs,
+        areaList,
+        certList,
+        rankList,
+        bizList,
+        muelleList,
+        travesiaList,
+      ] = await Promise.all([
+        getCrewMemberRequest(accessToken, id),
+        listLocationsRequest(accessToken),
+        listAreasRequest(accessToken),
+        listCompetencyCertificatesRequest(accessToken),
+        listRanksRequest(accessToken),
+        isSuperadmin
+          ? listBusinessesRequest(accessToken, 1, 100)
+          : Promise.resolve({ items: [] as Business[] }),
+        listMuellesRequest(accessToken, 1, 100),
+        listTravesiasRequest(accessToken, 1, 100),
+      ]);
       setCrew(row);
       setLocations(locs.items);
       setAreas(areaList.items);
       setCerts(certList.items);
       setRanks(rankList.items);
       setBusinesses(bizList.items);
+      setMuelles(muelleList.items.filter((m) => m.state));
+      setTravesias(travesiaList.items.filter((t) => t.state));
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo cargar la ficha.",
@@ -221,9 +262,30 @@ export function FichaTripulante() {
     return certs.filter((c) => c.businessId === formBusinessId);
   }, [certs, formBusinessId]);
 
-  /** Rellena el form desde el tripulante cargado. */
-  function openEdit() {
-    if (!crew) return;
+  const formMuelles = useMemo(() => {
+    if (!formBusinessId) return muelles;
+    return muelles.filter((m) => m.businessId === formBusinessId);
+  }, [muelles, formBusinessId]);
+
+  const formTravesias = useMemo(() => {
+    if (!formBusinessId) return travesias;
+    return travesias.filter((t) => t.businessId === formBusinessId);
+  }, [travesias, formBusinessId]);
+
+  const selectedCert = useMemo(() => {
+    if (!form?.competencyCertificateId) return null;
+    return (
+      formCerts.find((c) => c.id === form.competencyCertificateId) ?? null
+    );
+  }, [form, formCerts]);
+
+  const requiresOfficerAssignments = Boolean(
+    selectedCert?.requiresMuelleTravesia,
+  );
+
+  /** Rellena el form y las asignaciones actuales. */
+  async function openEdit() {
+    if (!crew || !accessToken) return;
     setForm({
       firstName: displayName(crew.firstName),
       lastName: displayName(crew.lastName),
@@ -241,15 +303,46 @@ export function FichaTripulante() {
       competencyCertificateId: crew.competencyCertificateId ?? "",
       state: crew.state,
     });
+    try {
+      const [muelleAsg, travesiaAsg] = await Promise.all([
+        listCrewMemberMuellesRequest(accessToken, crew.id),
+        listCrewMemberTravesiasRequest(accessToken, crew.id),
+      ]);
+      const muelleMap = new Map<string, string>();
+      const muelleIds = new Set<string>();
+      for (const row of muelleAsg.items) {
+        muelleMap.set(row.muelleId, row.id);
+        muelleIds.add(row.muelleId);
+      }
+      const travesiaMap = new Map<string, string>();
+      const travesiaIds = new Set<string>();
+      for (const row of travesiaAsg.items) {
+        travesiaMap.set(row.travesiaId, row.id);
+        travesiaIds.add(row.travesiaId);
+      }
+      setMuelleAssignmentById(muelleMap);
+      setTravesiaAssignmentById(travesiaMap);
+      setSelectedMuelleIds(muelleIds);
+      setSelectedTravesiaIds(travesiaIds);
+    } catch {
+      setMuelleAssignmentById(new Map());
+      setTravesiaAssignmentById(new Map());
+      setSelectedMuelleIds(new Set());
+      setSelectedTravesiaIds(new Set());
+    }
     setEditOpen(true);
   }
 
   function closeEdit() {
     setEditOpen(false);
     setForm(null);
+    setSelectedMuelleIds(new Set());
+    setSelectedTravesiaIds(new Set());
+    setMuelleAssignmentById(new Map());
+    setTravesiaAssignmentById(new Map());
   }
 
-  /** Actualiza un campo; limpia FKs al cambiar empresa/nave. */
+  /** Actualiza un campo; limpia FKs al cambiar empresa/nave/título. */
   function setField<K extends keyof EditForm>(key: K, value: EditForm[K]) {
     setForm((prev) => {
       if (!prev) return prev;
@@ -265,9 +358,31 @@ export function FichaTripulante() {
       }
       return next;
     });
+    if (key === "businessId" || key === "competencyCertificateId") {
+      setSelectedMuelleIds(new Set());
+      setSelectedTravesiaIds(new Set());
+    }
   }
 
-  /** PATCH del tripulante y refresca la ficha. */
+  function toggleMuelle(muelleId: string) {
+    setSelectedMuelleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(muelleId)) next.delete(muelleId);
+      else next.add(muelleId);
+      return next;
+    });
+  }
+
+  function toggleTravesia(travesiaId: string) {
+    setSelectedTravesiaIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(travesiaId)) next.delete(travesiaId);
+      else next.add(travesiaId);
+      return next;
+    });
+  }
+
+  /** PATCH del tripulante + sync de muelles/travesías si aplica. */
   async function onSaveEdit(event: FormEvent) {
     event.preventDefault();
     if (!accessToken || !crew || !form) return;
@@ -296,6 +411,15 @@ export function FichaTripulante() {
       showToast("La empresa es requerida.", "danger");
       return;
     }
+    if (requiresOfficerAssignments) {
+      if (selectedMuelleIds.size < 1 || selectedTravesiaIds.size < 1) {
+        showToast(
+          "Con este título hace falta al menos 1 muelle y 1 travesía.",
+          "danger",
+        );
+        return;
+      }
+    }
 
     setSubmitting(true);
     try {
@@ -316,6 +440,72 @@ export function FichaTripulante() {
         state: form.state,
         ...(isSuperadmin ? { businessId: form.businessId } : {}),
       });
+
+      // Sync asignaciones: el PATCH del título debe ir primero (API lo exige).
+      const initialMuelleIds = new Set(muelleAssignmentById.keys());
+      const initialTravesiaIds = new Set(travesiaAssignmentById.keys());
+
+      if (requiresOfficerAssignments) {
+        for (const muelleId of selectedMuelleIds) {
+          if (!initialMuelleIds.has(muelleId)) {
+            await createCrewMemberMuelleRequest(
+              accessToken,
+              crew.id,
+              muelleId,
+            );
+          }
+        }
+        for (const muelleId of initialMuelleIds) {
+          if (!selectedMuelleIds.has(muelleId)) {
+            const assignmentId = muelleAssignmentById.get(muelleId);
+            if (assignmentId) {
+              await deleteCrewMemberMuelleRequest(
+                accessToken,
+                crew.id,
+                assignmentId,
+              );
+            }
+          }
+        }
+        for (const travesiaId of selectedTravesiaIds) {
+          if (!initialTravesiaIds.has(travesiaId)) {
+            await createCrewMemberTravesiaRequest(
+              accessToken,
+              crew.id,
+              travesiaId,
+            );
+          }
+        }
+        for (const travesiaId of initialTravesiaIds) {
+          if (!selectedTravesiaIds.has(travesiaId)) {
+            const assignmentId = travesiaAssignmentById.get(travesiaId);
+            if (assignmentId) {
+              await deleteCrewMemberTravesiaRequest(
+                accessToken,
+                crew.id,
+                assignmentId,
+              );
+            }
+          }
+        }
+      } else {
+        // Si el título ya no exige, limpia asignaciones previas.
+        for (const assignmentId of muelleAssignmentById.values()) {
+          await deleteCrewMemberMuelleRequest(
+            accessToken,
+            crew.id,
+            assignmentId,
+          );
+        }
+        for (const assignmentId of travesiaAssignmentById.values()) {
+          await deleteCrewMemberTravesiaRequest(
+            accessToken,
+            crew.id,
+            assignmentId,
+          );
+        }
+      }
+
       setCrew(updated);
       showToast("Datos actualizados.", "success");
       closeEdit();
@@ -334,6 +524,7 @@ export function FichaTripulante() {
     { id: "capacitaciones", label: "Capacitaciones" },
     { id: "libreta", label: "Libreta de embarque" },
     { id: "datos", label: "Datos personales" },
+    { id: "documentos", label: "Documentos" },
     { id: "historial", label: "Historial" },
   ];
 
@@ -405,7 +596,9 @@ export function FichaTripulante() {
                   <button
                     type="button"
                     className="inline-flex h-9 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                    onClick={openEdit}
+                    onClick={() => {
+                      void openEdit();
+                    }}
                   >
                     <Pencil className="size-4" strokeWidth={1.5} aria-hidden />
                     Editar datos
@@ -534,13 +727,19 @@ export function FichaTripulante() {
                     type="button"
                     size="small"
                     className="!w-auto"
-                    onClick={openEdit}
+                    onClick={() => {
+                      void openEdit();
+                    }}
                   >
                     <Pencil className="size-3.5" strokeWidth={1.5} aria-hidden />
                     Actualizar embarcado
                   </Button>
                 </div>
               </div>
+            ) : null}
+
+            {tab === "documentos" && id ? (
+              <CrewDocumentsPanel crewMemberId={id} />
             ) : null}
 
             {tab === "libreta" ? (
@@ -569,9 +768,23 @@ export function FichaTripulante() {
         title="Actualizar embarcado"
         subtitle="Datos personales, nave y vigencia del libro."
         onClose={closeEdit}
-        maxWidthClass="w-full max-w-[640px] sm:w-[640px]"
+        maxWidthClass={
+          requiresOfficerAssignments
+            ? "w-full max-w-[880px] sm:w-[880px]"
+            : "w-full max-w-[640px] sm:w-[640px]"
+        }
         footer={
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {requiresOfficerAssignments &&
+            (selectedMuelleIds.size < 1 || selectedTravesiaIds.size < 1) ? (
+              <span className="mr-auto text-[12px] text-[var(--color-status-danger-fg)]">
+                {selectedMuelleIds.size < 1 && selectedTravesiaIds.size < 1
+                  ? "Falta 1 muelle y 1 travesía para guardar"
+                  : selectedMuelleIds.size < 1
+                    ? "Falta 1 muelle para guardar"
+                    : "Falta 1 travesía para guardar"}
+              </span>
+            ) : null}
             <button
               type="button"
               className="h-9 rounded-[var(--radius-md)] bg-[var(--color-nachipa-tab)] px-3.5 text-[13px] font-medium text-[var(--color-nachipa-body)] hover:brightness-95 disabled:opacity-60"
@@ -640,11 +853,6 @@ export function FichaTripulante() {
               onChange={(e) => setField("direction", e.target.value)}
             />
             <TextField
-              label="Observación"
-              value={form.observation}
-              onChange={(e) => setField("observation", e.target.value)}
-            />
-            <TextField
               label="Vigencia libro de embarque"
               type="date"
               value={form.boardingBookValidUntil}
@@ -694,6 +902,27 @@ export function FichaTripulante() {
               </select>
             </label>
 
+            {/* Título antes que cargo: el título define al embarcado; el cargo lo fija la empresa. */}
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                Título marítimo
+              </span>
+              <select
+                className={selectClass}
+                value={form.competencyCertificateId}
+                onChange={(e) =>
+                  setField("competencyCertificateId", e.target.value)
+                }
+              >
+                <option value="">Sin título</option>
+                {formCerts.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {displayName(c.name)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <label className="flex flex-col gap-1.5">
                 <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
@@ -731,24 +960,57 @@ export function FichaTripulante() {
               </label>
             </div>
 
+            {requiresOfficerAssignments ? (
+              <OfficerAssignmentsPanel
+                muelles={formMuelles}
+                travesias={formTravesias}
+                selectedMuelleIds={selectedMuelleIds}
+                selectedTravesiaIds={selectedTravesiaIds}
+                onToggleMuelle={toggleMuelle}
+                onToggleTravesia={toggleTravesia}
+              />
+            ) : null}
+
+            {/* Documentos viven en la ficha (tab), no en este modal. */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-[var(--color-nachipa-bg-page,#f9fafc)] px-3.5 py-3">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Documentos del expediente
+                </p>
+                <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                  Vista previa y descarga en la ficha del tripulante
+                </p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                onClick={() => {
+                  closeEdit();
+                  setTab("documentos");
+                }}
+              >
+                <FileText
+                  className="size-3.5"
+                  strokeWidth={1.5}
+                  aria-hidden
+                />
+                Ir a documentos
+              </button>
+            </div>
+
             <label className="flex flex-col gap-1.5">
               <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                Título marítimo
+                Observación
               </span>
-              <select
-                className={selectClass}
-                value={form.competencyCertificateId}
-                onChange={(e) =>
-                  setField("competencyCertificateId", e.target.value)
-                }
-              >
-                <option value="">Sin título</option>
-                {formCerts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {displayName(c.name)}
-                  </option>
-                ))}
-              </select>
+              <textarea
+                className="min-h-[84px] w-full resize-y rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 py-2 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-nachipa-primary)]"
+                value={form.observation}
+                onChange={(e) => setField("observation", e.target.value)}
+                placeholder="Notas internas del tripulante"
+              />
+              <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                Visible para administradores
+              </span>
             </label>
 
             <label className="flex items-center gap-2 text-[13px] text-[var(--color-nachipa-title)]">

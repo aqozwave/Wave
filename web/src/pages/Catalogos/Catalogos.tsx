@@ -11,14 +11,23 @@ import {
 } from "./CertificatesPanel";
 import { CoursesPanel, type CoursesPanelHandle } from "./CoursesPanel";
 import { DegreesPanel, type DegreesPanelHandle } from "./DegreesPanel";
+import {
+  DocumentTypesPanel,
+  type DocumentTypesPanelHandle,
+} from "./DocumentTypesPanel";
 import { RanksPanel, type RanksPanelHandle } from "./RanksPanel";
 
 /** Tabs activos de Catálogos maestros. */
-type CatalogTab = "ranks" | "degrees" | "certificates" | "courses";
+type CatalogTab =
+  | "ranks"
+  | "degrees"
+  | "certificates"
+  | "courses"
+  | "documentTypes";
 
 /**
  * Pantalla Catálogos maestros.
- * Rangos, títulos académicos, títulos marítimos y cursos.
+ * Rangos, títulos, cursos y tipos de documento del expediente.
  */
 export function Catalogos() {
   const { user } = useAuth();
@@ -29,6 +38,7 @@ export function Catalogos() {
   const degreesPanelRef = useRef<DegreesPanelHandle>(null);
   const certificatesPanelRef = useRef<CertificatesPanelHandle>(null);
   const coursesPanelRef = useRef<CoursesPanelHandle>(null);
+  const documentTypesPanelRef = useRef<DocumentTypesPanelHandle>(null);
 
   /** Texto del botón de alta según tab (nombres del portal viejo). */
   const createLabel =
@@ -38,7 +48,9 @@ export function Catalogos() {
         ? "Nuevo título académico"
         : tab === "certificates"
           ? "Nuevo título marítimo"
-          : "Nuevo curso";
+          : tab === "courses"
+            ? "Nuevo curso"
+            : "Nuevo tipo de documento";
 
   /** Abre el modal del panel activo. */
   function openCreate() {
@@ -46,7 +58,8 @@ export function Catalogos() {
     else if (tab === "degrees") degreesPanelRef.current?.openCreate();
     else if (tab === "certificates")
       certificatesPanelRef.current?.openCreate();
-    else coursesPanelRef.current?.openCreate();
+    else if (tab === "courses") coursesPanelRef.current?.openCreate();
+    else documentTypesPanelRef.current?.openCreate();
   }
 
   return (
@@ -64,7 +77,7 @@ export function Catalogos() {
             { label: "Catálogos maestros" },
           ]}
           title="Catálogos maestros"
-          description="Rangos, títulos académicos, títulos marítimos y cursos. Datos de referencia por empresa."
+          description="Rangos, títulos, cursos y tipos de documento del expediente. Datos de referencia por empresa."
           actions={
             canManage ? (
               <Button
@@ -80,7 +93,7 @@ export function Catalogos() {
         />
 
         <div
-          className="flex shrink-0 gap-1.5"
+          className="flex shrink-0 flex-wrap gap-1.5"
           role="tablist"
           aria-label="Secciones de catálogos"
         >
@@ -90,6 +103,7 @@ export function Catalogos() {
               { id: "degrees" as const, label: "Títulos académicos" },
               { id: "certificates" as const, label: "Títulos marítimos" },
               { id: "courses" as const, label: "Cursos" },
+              { id: "documentTypes" as const, label: "Tipos de documento" },
             ] as const
           ).map((t) => {
             const active = tab === t.id;
@@ -134,6 +148,12 @@ export function Catalogos() {
         {tab === "courses" ? (
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden">
             <CoursesPanel ref={coursesPanelRef} />
+          </div>
+        ) : null}
+
+        {tab === "documentTypes" ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden">
+            <DocumentTypesPanel ref={documentTypesPanelRef} />
           </div>
         ) : null}
       </div>

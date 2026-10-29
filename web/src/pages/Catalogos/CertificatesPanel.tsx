@@ -48,6 +48,8 @@ type FormState = {
   businessId: string;
   /** "" = null en API. */
   officerKind: "" | OfficerKind;
+  /** Exige asignar muelles y travesías al tripulante. */
+  requiresMuelleTravesia: boolean;
   state: boolean;
 };
 
@@ -55,6 +57,7 @@ const EMPTY_FORM: FormState = {
   name: "",
   businessId: "",
   officerKind: "",
+  requiresMuelleTravesia: false,
   state: true,
 };
 
@@ -157,6 +160,7 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
         name: row.name,
         businessId: row.businessId,
         officerKind: row.officerKind ?? "",
+        requiresMuelleTravesia: row.requiresMuelleTravesia,
         state: row.state,
       });
       setModalOpen(true);
@@ -191,10 +195,12 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
           state: boolean;
           businessId?: string;
           officerKind: OfficerKind | null;
+          requiresMuelleTravesia: boolean;
         } = {
           name: form.name.trim(),
           state: form.state,
           officerKind: form.officerKind === "" ? null : form.officerKind,
+          requiresMuelleTravesia: form.requiresMuelleTravesia,
         };
         if (isSuperadmin && form.businessId) {
           body.businessId = form.businessId;
@@ -245,7 +251,7 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
     const selectClass =
       "h-[42px] w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-brand-sky)_25%,transparent)]";
 
-    const colCount = isSuperadmin ? 5 : 4;
+    const colCount = isSuperadmin ? 6 : 5;
 
     return (
       <>
@@ -288,6 +294,9 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
                     Oficial de nave
                   </th>
                   <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
+                    Muelles / travesías
+                  </th>
+                  <th className="h-9 border-b border-[var(--color-tremor-border)] px-3">
                     Estado
                   </th>
                   <th className="h-9 border-b border-[var(--color-tremor-border)] px-3 text-right">
@@ -321,6 +330,18 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
                     ) : null}
                     <td className="h-[52px] truncate px-3 text-[var(--color-nachipa-body)]">
                       {officerKindLabel(row.officerKind)}
+                    </td>
+                    <td className="h-[52px] px-3">
+                      <span
+                        className={[
+                          "inline-flex rounded-full px-2 py-0.5 text-[12px] font-medium leading-4",
+                          row.requiresMuelleTravesia
+                            ? "bg-[var(--color-status-info-bg)] text-[var(--color-status-info-fg)]"
+                            : "bg-[var(--color-nachipa-bg-page)] text-[var(--color-nachipa-secondary)]",
+                        ].join(" ")}
+                      >
+                        {row.requiresMuelleTravesia ? "Exigido" : "No"}
+                      </span>
                     </td>
                     <td className="h-[52px] px-3">
                       <span
@@ -396,7 +417,7 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
           open={modalOpen}
           icon={Award}
           title={editing ? "Editar título marítimo" : "Nuevo título marítimo"}
-          subtitle="Título marítimo del catálogo. Capitán y primer piloto son oficiales de nave."
+          subtitle="El check de muelles/travesías aplica a cualquier título. Solo admin con permiso puede guardar."
           onClose={closeModal}
           maxWidthClass="w-full max-w-[520px] sm:w-[520px]"
           footer={
@@ -481,7 +502,26 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
                   </option>
                 ))}
               </select>
+              <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                Solo etiqueta. No define muelles ni travesías.
+              </span>
             </label>
+
+            <div className="flex items-center justify-between gap-4 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] px-3.5 py-3">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Exige muelles y travesías
+                </p>
+                <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                  En el modal del embarcado pide al menos 1 muelle y 1 travesía
+                </p>
+              </div>
+              <Toggle
+                checked={form.requiresMuelleTravesia}
+                onChange={(next) => setField("requiresMuelleTravesia", next)}
+                aria-label="Exige muelles y travesías"
+              />
+            </div>
 
             <div className="flex items-center justify-between gap-4 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] px-3.5 py-3">
               <div className="min-w-0">

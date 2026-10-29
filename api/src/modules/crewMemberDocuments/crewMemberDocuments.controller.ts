@@ -54,11 +54,16 @@ export async function downloadCrewMemberDocumentHandler(
     documentId: string;
   };
   const file = await resolveCrewMemberDocumentFile(req.user, id, documentId);
+  const inlineRaw = (req.query as { inline?: string }).inline;
+  const asInline = inlineRaw === "1" || inlineRaw === "true";
+  const disposition = asInline ? "inline" : "attachment";
 
+  // nosniff: el navegador no “adivina” otro tipo (p. ej. HTML ejecutable).
+  res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Content-Type", file.mimeType);
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename="${encodeURIComponent(file.originalName)}"`,
+    `${disposition}; filename="${encodeURIComponent(file.originalName)}"`,
   );
   createReadStream(file.fullPath).pipe(res);
 }

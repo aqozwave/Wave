@@ -24,6 +24,7 @@ export const PERMISSION_RESOURCE = {
   MAESTROS_RANKS: "maestros.ranks",
   MAESTROS_DEGREES: "maestros.degrees",
   MAESTROS_CERTIFICATES: "maestros.certificates",
+  MAESTROS_DOCUMENT_TYPES: "maestros.document_types",
   MAESTROS_PORTS: "maestros.ports",
   MAESTROS_MUELLES: "maestros.muelles",
   MAESTROS_TRAVESIAS: "maestros.travesias",
@@ -105,6 +106,11 @@ export const PERMISSION_CATALOG: PermissionCatalogModule[] = [
       {
         resource: PERMISSION_RESOURCE.MAESTROS_CERTIFICATES,
         label: "Títulos marítimos",
+        actions: PERMISSION_ACTIONS,
+      },
+      {
+        resource: PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES,
+        label: "Tipos de documento",
         actions: PERMISSION_ACTIONS,
       },
       {
@@ -248,6 +254,7 @@ export const SYSTEM_ROLE_DEFS = [
       allActions(PERMISSION_RESOURCE.MAESTROS_RANKS),
       allActions(PERMISSION_RESOURCE.MAESTROS_DEGREES),
       allActions(PERMISSION_RESOURCE.MAESTROS_CERTIFICATES),
+      allActions(PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES),
       allActions(PERMISSION_RESOURCE.MAESTROS_PORTS),
       allActions(PERMISSION_RESOURCE.MAESTROS_MUELLES),
       allActions(PERMISSION_RESOURCE.MAESTROS_TRAVESIAS),

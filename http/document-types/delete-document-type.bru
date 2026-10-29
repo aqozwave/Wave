@@ -1,0 +1,38 @@
+meta {
+  name: Delete document type
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/document-types/{{documentTypeId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Soft delete (deletedAt + state false).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("documentTypeId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y documentTypeId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.deletedAt: isDefined
+  res.body.state: eq false
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

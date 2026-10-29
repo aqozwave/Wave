@@ -41,8 +41,8 @@ async function loadCrewForActor(actor: Actor, crewMemberId: string) {
 }
 
 /**
- * Solo capitán / primer piloto (officerKind del certificado) pueden recibir
- * muelles o travesías. El resto de títulos no aplica.
+ * Solo títulos con requiresMuelleTravesia=true pueden recibir muelles/travesías.
+ * El flag se configura en Catálogos (permiso maestros.certificates).
  */
 async function assertCrewCanReceiveOfficerAssignments(
   crew: Awaited<ReturnType<typeof loadCrewForActor>>,
@@ -51,23 +51,20 @@ async function assertCrewCanReceiveOfficerAssignments(
     throw new AppError(
       403,
       "officer_assignments_not_allowed",
-      "Solo tripulantes con certificado de capitán o primer piloto pueden tener muelles o travesías",
+      "Este tripulante no tiene un título que exija muelles o travesías",
     );
   }
 
   const cert = await prisma.competencyCertificate.findFirst({
     where: { id: crew.competencyCertificateId, deletedAt: null },
-    select: { officerKind: true },
+    select: { requiresMuelleTravesia: true },
   });
 
-  if (
-    !cert ||
-    (cert.officerKind !== "captain" && cert.officerKind !== "first_pilot")
-  ) {
+  if (!cert || !cert.requiresMuelleTravesia) {
     throw new AppError(
       403,
       "officer_assignments_not_allowed",
-      "Solo tripulantes con certificado de capitán o primer piloto pueden tener muelles o travesías",
+      "El título marítimo de este tripulante no exige muelles ni travesías",
     );
   }
 }

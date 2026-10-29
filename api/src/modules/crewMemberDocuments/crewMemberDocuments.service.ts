@@ -1,11 +1,13 @@
-import type { CrewMemberDocument } from "@prisma/client";
+import type { CrewMemberDocument, DocumentType } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
+import { sniffCrewDocumentMime } from "../../lib/fileSniff.js";
 import {
   ALLOWED_CREW_DOC_MIMES,
   MAX_CREW_DOC_BYTES,
   isCrewDocumentRelativePath,
   resolveUploadFullPath,
   writeCrewDocumentFile,
+  unlinkCrewDocumentFile,
 } from "../../lib/localUploads.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
@@ -17,16 +19,26 @@ import type {
 /** Actor mínimo tenant. */
 type Actor = Pick<AuthUser, "id" | "internalRol" | "businessId">;
 
+/** Fila con tipo incluido. */
+type DocWithType = CrewMemberDocument & { documentType: DocumentType };
+
 /** Serializa fila → contrato (sin filePath). */
-function toDocumentResponse(row: CrewMemberDocument): CrewMemberDocumentResponse {
+function toDocumentResponse(row: DocWithType): CrewMemberDocumentResponse {
   return {
     id: row.id,
     legacyMongoId: row.legacyMongoId,
     crewMemberId: row.crewMemberId,
-    type: row.type,
+    documentTypeId: row.documentTypeId,
+    documentType: {
+      id: row.documentType.id,
+      code: row.documentType.code,
+      name: row.documentType.name,
+      subtype: row.documentType.subtype,
+    },
     originalName: row.originalName,
     mimeType: row.mimeType,
     size: row.size,
+    sourceModule: row.sourceModule,
     uploadedById: row.uploadedById,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
@@ -35,10 +47,7 @@ function toDocumentResponse(row: CrewMemberDocument): CrewMemberDocumentResponse
 }
 
 /** 404 genérico si el actor no ve la empresa del tripulante. */
-function assertCrewTenantAccess(
-  actor: Actor,
-  businessId: string,
-): void {
+function assertCrewTenantAccess(actor: Actor, businessId: string): void {
   if (actor.internalRol === "superadmin") return;
   if (!actor.businessId || actor.businessId !== businessId) {
     throw new AppError(
@@ -85,6 +94,7 @@ export async function listCrewMemberDocuments(
 
   const rows = await prisma.crewMemberDocument.findMany({
     where: { crewMemberId, deletedAt: null },
+    include: { documentType: true },
     orderBy: { createdAt: "desc" },
   });
 
@@ -94,13 +104,29 @@ export async function listCrewMemberDocuments(
   };
 }
 
-/** Alta: valida mime/tamaño, escribe disco, guarda metadatos. */
+/** Alta: valida tipo de la misma empresa, mime/tamaño, escribe disco. */
 export async function createCrewMemberDocument(
   actor: Actor,
   crewMemberId: string,
   body: CreateCrewMemberDocumentBody,
 ): Promise<CrewMemberDocumentResponse> {
   const crew = await loadCrewForActor(actor, crewMemberId);
+
+  const docType = await prisma.documentType.findFirst({
+    where: {
+      id: body.documentTypeId,
+      businessId: crew.businessId,
+      deletedAt: null,
+      state: true,
+    },
+  });
+  if (!docType) {
+    throw new AppError(
+      400,
+      "document_type_not_found",
+      "Tipo de documento no válido para esta empresa",
+    );
+  }
 
   if (!ALLOWED_CREW_DOC_MIMES.has(body.mimeType)) {
     throw new AppError(
@@ -122,24 +148,43 @@ export async function createCrewMemberDocument(
     );
   }
 
+  // Magic bytes: el contenido real manda sobre el mimeType del cliente.
+  const sniffed = sniffCrewDocumentMime(buffer);
+  if (!sniffed) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "El contenido del archivo no es un PDF, JPEG, PNG o WebP válido",
+    );
+  }
+  if (sniffed !== body.mimeType) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "El tipo declarado no coincide con el contenido del archivo",
+    );
+  }
+
   const written = await writeCrewDocumentFile({
     businessId: crew.businessId,
     crewMemberId: crew.id,
-    type: body.type,
-    mimeType: body.mimeType,
+    type: docType.code.toLowerCase(),
+    mimeType: sniffed,
     buffer,
   });
 
   const row = await prisma.crewMemberDocument.create({
     data: {
       crewMemberId: crew.id,
-      type: body.type,
+      documentTypeId: docType.id,
       originalName: body.fileName.trim(),
-      mimeType: body.mimeType,
+      mimeType: sniffed,
       size: written.size,
       filePath: written.relativePath,
+      sourceModule: body.sourceModule ?? "crew",
       uploadedById: actor.id,
     },
+    include: { documentType: true },
   });
 
   return toDocumentResponse(row);
@@ -185,7 +230,7 @@ export async function resolveCrewMemberDocumentFile(
   };
 }
 
-/** Soft delete: marca deletedAt y conserva el archivo en disco (recuperable). */
+/** Soft delete + intenta borrar archivo. */
 export async function deleteCrewMemberDocument(
   actor: Actor,
   crewMemberId: string,
@@ -193,21 +238,20 @@ export async function deleteCrewMemberDocument(
 ): Promise<CrewMemberDocumentResponse> {
   await loadCrewForActor(actor, crewMemberId);
 
-  const doc = await prisma.crewMemberDocument.findFirst({
-    where: {
-      id: documentId,
-      crewMemberId,
-      deletedAt: null,
-    },
+  const existing = await prisma.crewMemberDocument.findFirst({
+    where: { id: documentId, crewMemberId, deletedAt: null },
+    include: { documentType: true },
   });
-  if (!doc) {
+  if (!existing) {
     throw new AppError(404, "document_not_found", "Documento no encontrado");
   }
 
   const updated = await prisma.crewMemberDocument.update({
-    where: { id: doc.id },
+    where: { id: documentId },
     data: { deletedAt: new Date() },
+    include: { documentType: true },
   });
 
+  await unlinkCrewDocumentFile(existing.filePath);
   return toDocumentResponse(updated);
 }

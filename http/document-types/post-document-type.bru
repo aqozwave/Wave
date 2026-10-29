@@ -1,0 +1,60 @@
+meta {
+  name: Post document type
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/document-types
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "code": "XX",
+    "name": "Tipo de prueba",
+    "subtype": "general",
+    "visibility": "employee",
+    "businessId": "{{businessId}}"
+  }
+}
+
+docs {
+  Admin o superadmin + permiso maestros.document_types.
+  Superadmin: businessId obligatorio.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const businessId = bru.getEnvVar("businessId");
+  if (!token || !businessId) {
+    throw new Error("Definí accessToken y businessId en el entorno local");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body && body.id) {
+    bru.setEnvVar("documentTypeId", body.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.code: eq XX
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -205,9 +205,39 @@ model Business {
   muelles                Muelle[]
   travesias              Travesia[]
   crewMembers            CrewMember[]
+  documentTypes          DocumentType[]
 
   @@index([name])
   @@map("businesses")
+}
+
+/**
+ * Tipo de documento del expediente (maestro por empresa).
+ * Códigos alineados al sistema HR (CO, EN, VI, TI…).
+ * Unique (code, business) entre no borrados: índice parcial en migración.
+ */
+model DocumentType {
+  id            String    @id @default(uuid()) @db.Uuid
+  legacyMongoId String?   @unique @map("legacy_mongo_id")
+  /// Código corto estable (ej. CO, EN, VI).
+  code          String
+  name          String
+  /// general | finiquito | requerimiento | prevencion | maritimo | activo
+  subtype       String    @default("general")
+  /// nobody | employee | employee_supervisor | supervisor
+  visibility    String    @default("employee") @map("visibility")
+  businessId    String    @map("business_id") @db.Uuid
+  business      Business  @relation(fields: [businessId], references: [id])
+  state         Boolean   @default(true)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  documents     CrewMemberDocument[]
+
+  @@index([businessId])
+  @@index([code, businessId])
+  @@index([subtype])
+  @@map("document_types")
 }
 
 /**
@@ -254,7 +284,8 @@ model AcademicDegree {
 
 /**
  * Certificado de competencia (catálogo por empresa).
- * officerKind opcional (capitán / primer piloto).
+ * officerKind opcional (etiqueta capitán / primer piloto).
+ * requiresMuelleTravesia: exige asignar muelles y travesías al tripulante.
  * Nombre único por business entre no borradas (índice parcial en migración).
  */
 model CompetencyCertificate {
@@ -263,8 +294,10 @@ model CompetencyCertificate {
   name          String
   businessId    String       @map("business_id") @db.Uuid
   business      Business     @relation(fields: [businessId], references: [id])
-  /// Capitán / primer piloto; null = sin clasificar.
+  /// Capitán / primer piloto; null = sin clasificar (solo etiqueta).
   officerKind   OfficerKind? @map("officer_kind")
+  /// Si true, el modal de embarcado exige ≥1 muelle y ≥1 travesía.
+  requiresMuelleTravesia Boolean @default(false) @map("requires_muelle_travesia")
   state         Boolean      @default(true)
   deletedAt     DateTime?    @map("deleted_at") @db.Timestamptz
   createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
@@ -274,6 +307,7 @@ model CompetencyCertificate {
   @@index([businessId])
   @@index([name, businessId])
   @@index([officerKind])
+  @@index([requiresMuelleTravesia])
   @@map("competency_certificates")
 }
 
@@ -454,28 +488,31 @@ model CrewMemberTravesia {
 
 /**
  * Documento de tripulante (archivo en disco local).
- * Ruta relativa bajo UPLOAD_ROOT; type inicial: warning_letter.
+ * Tipo vía DocumentType; sourceModule indica quién lo cargó.
  */
 model CrewMemberDocument {
-  id             String     @id @default(uuid()) @db.Uuid
-  legacyMongoId  String?    @unique @map("legacy_mongo_id")
-  crewMemberId   String     @map("crew_member_id") @db.Uuid
-  crewMember     CrewMember @relation(fields: [crewMemberId], references: [id])
-  /// warning_letter (cartas de amonestación); extensible después.
-  type           String
-  originalName   String     @map("original_name")
-  mimeType       String     @map("mime_type")
+  id             String       @id @default(uuid()) @db.Uuid
+  legacyMongoId  String?      @unique @map("legacy_mongo_id")
+  crewMemberId   String       @map("crew_member_id") @db.Uuid
+  crewMember     CrewMember   @relation(fields: [crewMemberId], references: [id])
+  documentTypeId String       @map("document_type_id") @db.Uuid
+  documentType   DocumentType @relation(fields: [documentTypeId], references: [id])
+  originalName   String       @map("original_name")
+  mimeType       String       @map("mime_type")
   size           Int
   /// Relativa: /uploads/{businessId}/crew-members/{crewId}/…
-  filePath       String     @map("file_path")
-  uploadedById   String?    @map("uploaded_by_id") @db.Uuid
-  uploadedBy     User?      @relation(fields: [uploadedById], references: [id])
-  deletedAt      DateTime?  @map("deleted_at") @db.Timestamptz
-  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  filePath       String       @map("file_path")
+  /// crew | prevention | assets | system
+  sourceModule   String       @default("crew") @map("source_module")
+  uploadedById   String?      @map("uploaded_by_id") @db.Uuid
+  uploadedBy     User?        @relation(fields: [uploadedById], references: [id])
+  deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz
 
   @@index([crewMemberId])
-  @@index([type])
+  @@index([documentTypeId])
+  @@index([sourceModule])
   @@map("crew_member_documents")
 }
 

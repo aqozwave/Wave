@@ -11,6 +11,7 @@ import { businessesRouter } from "./modules/businesses/businesses.routes.js";
 import { competencyCertificatesRouter } from "./modules/competencyCertificates/competencyCertificates.routes.js";
 import { coursesRouter } from "./modules/courses/courses.routes.js";
 import { crewMembersRouter } from "./modules/crewMembers/crewMembers.routes.js";
+import { documentTypesRouter } from "./modules/documentTypes/documentTypes.routes.js";
 import { healthRouter } from "./modules/health/health.routes.js";
 import { locationsRouter } from "./modules/locations/locations.routes.js";
 import { muellesRouter } from "./modules/muelles/muelles.routes.js";
@@ -43,6 +44,7 @@ export function createApp() {
   app.use("/api/v1/ranks", ranksRouter);
   app.use("/api/v1/academic-degrees", academicDegreesRouter);
   app.use("/api/v1/competency-certificates", competencyCertificatesRouter);
+  app.use("/api/v1/document-types", documentTypesRouter);
   app.use("/api/v1/courses", coursesRouter);
   app.use("/api/v1/ports", portsRouter);
   app.use("/api/v1/muelles", muellesRouter);
