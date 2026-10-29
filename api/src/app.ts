@@ -28,8 +28,16 @@ export function createApp() {
   // 12 MB: fotos y documentos en JSON+base64 (crew docs hasta 10 MB).
   app.use(express.json({ limit: "12mb" }));
 
-  // Fotos de perfil: /uploads/… → disco local (proxy Vite en web).
-  app.use("/uploads", express.static(getUploadRoot()));
+  // Fotos (y demás archivos locales): /uploads/… → disco.
+  // nosniff evita que el navegador “adivine” un tipo distinto al declarado.
+  app.use(
+    "/uploads",
+    express.static(getUploadRoot(), {
+      setHeaders(res) {
+        res.setHeader("X-Content-Type-Options", "nosniff");
+      },
+    }),
+  );
 
   app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
   app.get("/api/openapi.json", (_req, res) => {

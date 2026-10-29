@@ -1,5 +1,6 @@
 import { Prisma, type User } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
+import { sniffUserPhotoMime } from "../../lib/fileSniff.js";
 import {
   ALLOWED_USER_PHOTO_MIMES,
   MAX_USER_PHOTO_BYTES,
@@ -635,11 +636,28 @@ export async function uploadUserPhoto(
     );
   }
 
+  // Magic bytes: el contenido real manda sobre el mimeType del cliente.
+  const sniffed = sniffUserPhotoMime(buffer);
+  if (!sniffed) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "El contenido del archivo no es un JPEG, PNG o WebP válido",
+    );
+  }
+  if (sniffed !== body.mimeType) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "El tipo declarado no coincide con el contenido del archivo",
+    );
+  }
+
   const previous = existing.photoProfile;
   const written = await writeUserPhotoFile({
     businessId: existing.businessId,
     userId: existing.id,
-    mimeType: body.mimeType,
+    mimeType: sniffed,
     buffer,
   });
 

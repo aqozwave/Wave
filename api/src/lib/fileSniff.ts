@@ -1,33 +1,17 @@
 /**
  * Detección de MIME por magic bytes (contenido real).
- * Solo los formatos que Wave acepta en documentos de tripulante.
- */
-
-/** MIME sniffados que coinciden con ALLOWED_CREW_DOC_MIMES. */
-export type SniffedCrewDocMime =
-  | "application/pdf"
-  | "image/jpeg"
-  | "image/png"
-  | "image/webp";
-
-/**
- * Lee los primeros bytes del buffer y devuelve el MIME conocido, o null.
  * No confía en extensión ni en el mime declarado por el cliente.
  */
-export function sniffCrewDocumentMime(
-  buffer: Buffer,
-): SniffedCrewDocMime | null {
-  if (buffer.length < 12) return null;
 
-  // PDF: "%PDF"
-  if (
-    buffer[0] === 0x25 &&
-    buffer[1] === 0x50 &&
-    buffer[2] === 0x44 &&
-    buffer[3] === 0x46
-  ) {
-    return "application/pdf";
-  }
+/** Imágenes permitidas en foto de perfil. */
+export type SniffedImageMime = "image/jpeg" | "image/png" | "image/webp";
+
+/** Documentos de tripulante: imágenes + PDF. */
+export type SniffedCrewDocMime = SniffedImageMime | "application/pdf";
+
+/** Detecta JPEG / PNG / WebP, o null. */
+export function sniffImageMime(buffer: Buffer): SniffedImageMime | null {
+  if (buffer.length < 12) return null;
 
   // JPEG: FF D8 FF
   if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
@@ -63,4 +47,34 @@ export function sniffCrewDocumentMime(
   }
 
   return null;
+}
+
+/**
+ * MIME de documento de tripulante (PDF o imagen).
+ * Usado en alta de crew documents.
+ */
+export function sniffCrewDocumentMime(
+  buffer: Buffer,
+): SniffedCrewDocMime | null {
+  if (buffer.length < 12) return null;
+
+  // PDF: "%PDF"
+  if (
+    buffer[0] === 0x25 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x44 &&
+    buffer[3] === 0x46
+  ) {
+    return "application/pdf";
+  }
+
+  return sniffImageMime(buffer);
+}
+
+/**
+ * MIME de foto de perfil (solo imagen).
+ * PDF u otros → null.
+ */
+export function sniffUserPhotoMime(buffer: Buffer): SniffedImageMime | null {
+  return sniffImageMime(buffer);
 }
