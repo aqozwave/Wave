@@ -501,7 +501,16 @@ export function Roles() {
                                 className="border-t border-[var(--color-nachipa-border-subtle)]"
                               >
                                 <td className="h-10 px-3 text-[var(--color-nachipa-title)]">
-                                  {item.label}
+                                  <span className="inline-flex flex-wrap items-baseline gap-2">
+                                    <span className="text-[13px] font-medium">
+                                      {item.label}
+                                    </span>
+                                    {item.hint ? (
+                                      <span className="text-[12px] font-normal text-[var(--color-nachipa-secondary)]">
+                                        {item.hint}
+                                      </span>
+                                    ) : null}
+                                  </span>
                                 </td>
                                 {ACTION_COLUMNS.map((col) => {
                                   const allowed = item.actions.includes(

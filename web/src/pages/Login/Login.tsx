@@ -220,7 +220,7 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-full bg-white">
+    <div className="animate-fade flex min-h-full bg-white">
       {/* 50% como Figma A1 (antes w-[720px] dejaba la foto pegada a la izquierda). */}
       <aside className="relative hidden w-1/2 shrink-0 overflow-hidden lg:block">
         <img

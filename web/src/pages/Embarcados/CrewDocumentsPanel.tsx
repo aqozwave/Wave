@@ -6,7 +6,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { Download, Eye, FileText, Plus, Upload } from "lucide-react";
+import { Download, Eye, FileText, Plus, Trash2, Upload } from "lucide-react";
 
 import { Button } from "../../components/Button/Button";
 import { Modal } from "../../components/Modal/Modal";
@@ -18,6 +18,7 @@ import {
 import { useToast } from "../../components/Toast/ToastProvider";
 import {
   createCrewMemberDocumentRequest,
+  deleteCrewMemberDocumentRequest,
   downloadCrewMemberDocumentRequest,
   fileToBase64,
   listCrewMemberDocumentsRequest,
@@ -28,6 +29,7 @@ import {
   listDocumentTypesRequest,
   type DocumentType,
 } from "../../lib/api/documentTypes";
+import { userHasPermission } from "../../lib/api/auth";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
 type Props = {
@@ -91,8 +93,10 @@ function displayTypeName(name: string): string {
 export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
-  const canUpload =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
+  /** Figma: Documentos del expediente → Ver / Crear / Desactivar. */
+  const canViewDocs = userHasPermission(user, "embarcados.docs", "read");
+  const canUpload = userHasPermission(user, "embarcados.docs", "create");
+  const canDelete = userHasPermission(user, "embarcados.docs", "deactivate");
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -101,7 +105,7 @@ export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<{
     id: string;
-    mode: "preview" | "download";
+    mode: "preview" | "download" | "delete";
   } | null>(null);
 
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -111,19 +115,33 @@ export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
 
   const load = useCallback(async () => {
     if (!accessToken || !businessId) return;
+    if (!canViewDocs) {
+      setItems([]);
+      setDocTypes([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const [docs, types] = await Promise.all([
-        listCrewMemberDocumentsRequest(accessToken, crewMemberId),
-        listDocumentTypesRequest(accessToken, 1, 200, {
+      // Documentos del expediente primero (no depender del catálogo de tipos).
+      const docs = await listCrewMemberDocumentsRequest(
+        accessToken,
+        crewMemberId,
+      );
+      setItems(docs.items);
+
+      try {
+        const types = await listDocumentTypesRequest(accessToken, 1, 200, {
           businessId,
           forUpload: true,
-        }),
-      ]);
-      setItems(docs.items);
-      setDocTypes(
-        types.items.filter((t) => t.state && t.businessId === businessId),
-      );
+        });
+        setDocTypes(
+          types.items.filter((t) => t.state && t.businessId === businessId),
+        );
+      } catch {
+        // Sin tipos subibles: el listado de docs igual se muestra.
+        setDocTypes([]);
+      }
     } catch (err) {
       showToast(
         err instanceof ApiError
@@ -135,7 +153,7 @@ export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, businessId, crewMemberId, showToast]);
+  }, [accessToken, businessId, canViewDocs, crewMemberId, showToast]);
 
   useEffect(() => {
     void load();
@@ -244,6 +262,33 @@ export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
     }
   }
 
+  /** Soft-delete del documento (permiso embarcados.docs:deactivate). */
+  async function handleDelete(doc: CrewMemberDocument) {
+    if (!accessToken || !canDelete) return;
+    const ok = window.confirm(
+      `¿Eliminar «${doc.originalName}»? Se quitará del expediente.`,
+    );
+    if (!ok) return;
+
+    setBusy({ id: doc.id, mode: "delete" });
+    try {
+      await deleteCrewMemberDocumentRequest(
+        accessToken,
+        crewMemberId,
+        doc.id,
+      );
+      showToast("Documento eliminado.", "success");
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo eliminar.",
+        "danger",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const selectClass =
     "h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-nachipa-primary)]";
 
@@ -256,7 +301,8 @@ export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
               Documentos del expediente
             </p>
             <p className="mt-0.5 text-[12px] text-[var(--color-nachipa-secondary)]">
-              Carga, vista previa y descarga. PDF, Word o imagen, máx. 10 MB.
+              Carga, vista previa, descarga y eliminación. PDF, Word o imagen,
+              máx. 10 MB.
             </p>
           </div>
           {canUpload ? (
@@ -318,6 +364,8 @@ export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
                     busy?.id === doc.id && busy.mode === "preview";
                   const isDownload =
                     busy?.id === doc.id && busy.mode === "download";
+                  const isDelete =
+                    busy?.id === doc.id && busy.mode === "delete";
                   return (
                     <tr
                       key={doc.id}
@@ -383,6 +431,26 @@ export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
                               aria-hidden
                             />
                           </button>
+                          {canDelete ? (
+                            <button
+                              type="button"
+                              title="Eliminar"
+                              aria-label={
+                                isDelete ? "Eliminando…" : "Eliminar documento"
+                              }
+                              className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)] disabled:opacity-60"
+                              disabled={busy?.id === doc.id}
+                              onClick={() => {
+                                void handleDelete(doc);
+                              }}
+                            >
+                              <Trash2
+                                className="size-4"
+                                strokeWidth={1.5}
+                                aria-hidden
+                              />
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>

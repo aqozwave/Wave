@@ -11,6 +11,12 @@ export const loginRequestSchema = z.object({
   body: loginBodySchema,
 });
 
+/** Permiso RBAC expuesto al cliente (matriz Roles / UI). */
+export const authPermissionEntrySchema = z.object({
+  resource: z.string(),
+  actions: z.array(z.string()).min(1),
+});
+
 export const authUserSchema = z
   .object({
     id: z.uuid(),
@@ -25,6 +31,11 @@ export const authUserSchema = z
     businessId: z.uuid().nullable(),
     confirmed: z.boolean(),
     state: z.boolean(),
+    /**
+     * Snapshot del Role.permissions (o todo si superadmin).
+     * La UI usa esto en vez de hardcodear internalRol.
+     */
+    permissions: z.array(authPermissionEntrySchema),
   })
   .openapi("AuthUser");
 

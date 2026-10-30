@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X, type LucideIcon } from "lucide-react";
 
 /** Props del modal centrado (Figma Modal · Overlays + D16). */
@@ -25,7 +26,8 @@ type ModalProps = {
 
 /**
  * Modal overlay + card (Figma).
- * Header con badge de ícono opcional; cuerpo scroll; footer fijo.
+ * Portal a document.body: el overlay cubre viewport completo
+ * (sidebar + topbar), aunque un ancestro tenga transform (animate-enter).
  */
 export function Modal({
   open,
@@ -50,13 +52,25 @@ export function Modal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  /** Bloquea scroll del fondo mientras el modal está abierto. */
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
   if (!open) {
     return null;
   }
 
-  return (
+  const overlay = (
     <div
-      className="animate-modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgba(15,18,23,0.45)] px-6 py-8 sm:items-center"
+      className="animate-modal-overlay fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-[rgba(15,18,23,0.45)] px-6 py-8 sm:items-center"
       role="presentation"
       onClick={onClose}
     >
@@ -117,4 +131,6 @@ export function Modal({
       </div>
     </div>
   );
+
+  return createPortal(overlay, document.body);
 }

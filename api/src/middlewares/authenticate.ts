@@ -54,6 +54,8 @@ export async function authenticate(
       businessId: user.businessId,
       confirmed: user.confirmed,
       state: user.state,
+      // Los permisos se resuelven en requirePermission / login·me; acá no hace falta.
+      permissions: [],
     };
 
     next();

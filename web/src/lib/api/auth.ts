@@ -1,3 +1,9 @@
+/** Una fila resource + actions del rol (matriz Roles). */
+export type AuthPermission = {
+  resource: string;
+  actions: string[];
+};
+
 /** Perfil público del usuario (sin passwordHash). */
 export type AuthUser = {
   id: string;
@@ -12,7 +18,24 @@ export type AuthUser = {
   businessId: string | null;
   confirmed: boolean;
   state: boolean;
+  /** Snapshot RBAC para la UI (login / me). */
+  permissions: AuthPermission[];
 };
+
+/**
+ * ¿El usuario tiene resource+action?
+ * Superadmin: siempre true (por internalRol).
+ */
+export function userHasPermission(
+  user: AuthUser | null | undefined,
+  resource: string,
+  action: string,
+): boolean {
+  if (!user) return false;
+  if (user.internalRol === "superadmin") return true;
+  const entry = user.permissions?.find((row) => row.resource === resource);
+  return Boolean(entry?.actions?.includes(action));
+}
 
 /** Respuesta de POST /login (web: sin refreshToken en body). */
 export type LoginSuccess = {

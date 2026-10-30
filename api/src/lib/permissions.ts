@@ -29,6 +29,11 @@ export const PERMISSION_RESOURCE = {
   MAESTROS_MUELLES: "maestros.muelles",
   MAESTROS_TRAVESIAS: "maestros.travesias",
   EMBARCADOS: "embarcados",
+  /**
+   * Documentos del expediente (Figma S3 · Fila Documentos del expediente).
+   * Ver=read, Crear=cargar/subir, Editar=update, Desactivar=quitar.
+   */
+  EMBARCADOS_DOCS: "embarcados.docs",
   CURSOS_CATALOG: "cursos.catalog",
   CURSOS_ASSIGNMENTS: "cursos.assignments",
   CURSOS_ASSIGNMENTS_ASSIGN: "cursos.assignments.assign",
@@ -133,6 +138,12 @@ export const PERMISSION_CATALOG: PermissionCatalogModule[] = [
         label: "Embarcados",
         actions: PERMISSION_ACTIONS,
       },
+      {
+        resource: PERMISSION_RESOURCE.EMBARCADOS_DOCS,
+        label: "Documentos del expediente",
+        hint: "Ver y subir · Prevencionista y Administrador",
+        actions: PERMISSION_ACTIONS,
+      },
     ],
   },
   {
@@ -211,10 +222,16 @@ export const ROLE_DATA_SCOPE = {
 
 export const ROLE_DATA_SCOPES = Object.values(ROLE_DATA_SCOPE);
 
-/** Claves de roles de sistema (seed). */
+/** Claves de roles de sistema (seed; Figma S3 + RR.HH. para scopes de docs). */
 export const SYSTEM_ROLE_KEY = {
   SUPERADMIN: "superadmin",
   ADMIN: "admin",
+  /** Recursos humanos; tag de documento `hr` (uploadBy/viewBy = hr). */
+  RRHH: "rrhh",
+  /** Prevención de riesgos; tag de documento `prevention`. */
+  PREVENCIONISTA: "prevencionista",
+  /** Activos / área técnica; tag de documento `assets`. */
+  AREA_TECNICA: "area_tecnica",
   USER: "user",
   COLABORADOR: "colaborador",
   CONTRATISTA: "contratista",
@@ -259,6 +276,8 @@ export const SYSTEM_ROLE_DEFS = [
       allActions(PERMISSION_RESOURCE.MAESTROS_MUELLES),
       allActions(PERMISSION_RESOURCE.MAESTROS_TRAVESIAS),
       allActions(PERMISSION_RESOURCE.EMBARCADOS),
+      /** Figma: Ver y subir · Administrador. */
+      allActions(PERMISSION_RESOURCE.EMBARCADOS_DOCS),
       allActions(PERMISSION_RESOURCE.CURSOS_CATALOG),
       allActions(PERMISSION_RESOURCE.CURSOS_ASSIGNMENTS),
       {
@@ -277,6 +296,86 @@ export const SYSTEM_ROLE_DEFS = [
     ],
   },
   {
+    key: SYSTEM_ROLE_KEY.RRHH,
+    name: "RR.HH.",
+    description:
+      "Recursos humanos: gestiona embarcados y documentos de alcance RR.HH.",
+    dataScope: ROLE_DATA_SCOPE.BUSINESS,
+    permissions: [
+      readOnly(PERMISSION_RESOURCE.DASHBOARD),
+      allActions(PERMISSION_RESOURCE.EMBARCADOS),
+      allActions(PERMISSION_RESOURCE.EMBARCADOS_DOCS),
+      allActions(PERMISSION_RESOURCE.MAESTROS_USERS),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_LOCATIONS),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_AREAS),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_RANKS),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_DEGREES),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_CERTIFICATES),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_MUELLES),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_TRAVESIAS),
+      readOnly(PERMISSION_RESOURCE.CURSOS_ASSIGNMENTS),
+      readOnly(PERMISSION_RESOURCE.CURSOS_LIBRETAS),
+    ],
+  },
+  {
+    key: SYSTEM_ROLE_KEY.PREVENCIONISTA,
+    name: "Prevencionista",
+    description:
+      "Gestiona embarcados y prevención en su empresa (alta, edición, docs).",
+    dataScope: ROLE_DATA_SCOPE.BUSINESS,
+    permissions: [
+      readOnly(PERMISSION_RESOURCE.DASHBOARD),
+      /** CRUD completo de tripulantes embarcados. */
+      allActions(PERMISSION_RESOURCE.EMBARCADOS),
+      /** Figma: Ver y subir · Prevencionista. */
+      allActions(PERMISSION_RESOURCE.EMBARCADOS_DOCS),
+      allActions(PERMISSION_RESOURCE.PREVENCION),
+      allActions(PERMISSION_RESOURCE.PREVENCION_DOCS),
+      /** Catálogos de solo lectura para selects de ficha/alta. */
+      readOnly(PERMISSION_RESOURCE.MAESTROS_LOCATIONS),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_AREAS),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_RANKS),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_CERTIFICATES),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_MUELLES),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_TRAVESIAS),
+      readOnly(PERMISSION_RESOURCE.CURSOS_ASSIGNMENTS),
+      readOnly(PERMISSION_RESOURCE.CURSOS_LIBRETAS),
+      {
+        resource: PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS,
+        actions: [PERMISSION_ACTION.READ, PERMISSION_ACTION.UPDATE],
+      },
+    ],
+  },
+  {
+    key: SYSTEM_ROLE_KEY.AREA_TECNICA,
+    name: "Área Técnica",
+    description:
+      "Activos / área técnica: consulta y edición de embarcados y docs.",
+    dataScope: ROLE_DATA_SCOPE.BUSINESS,
+    permissions: [
+      readOnly(PERMISSION_RESOURCE.DASHBOARD),
+      {
+        resource: PERMISSION_RESOURCE.EMBARCADOS,
+        actions: [PERMISSION_ACTION.READ, PERMISSION_ACTION.UPDATE],
+      },
+      {
+        resource: PERMISSION_RESOURCE.EMBARCADOS_DOCS,
+        actions: [
+          PERMISSION_ACTION.READ,
+          PERMISSION_ACTION.CREATE,
+          PERMISSION_ACTION.UPDATE,
+        ],
+      },
+      readOnly(PERMISSION_RESOURCE.MAESTROS_LOCATIONS),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_AREAS),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_RANKS),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES),
+      readOnly(PERMISSION_RESOURCE.MAESTROS_CERTIFICATES),
+    ],
+  },
+  {
     key: SYSTEM_ROLE_KEY.USER,
     name: "User (tripulante)",
     description: "Usuario de una nave: consulta acotada a su location.",
@@ -284,6 +383,8 @@ export const SYSTEM_ROLE_DEFS = [
     permissions: [
       readOnly(PERMISSION_RESOURCE.DASHBOARD),
       readOnly(PERMISSION_RESOURCE.EMBARCADOS),
+      /** Solo ver los docs que crewCanView permita en el API. */
+      readOnly(PERMISSION_RESOURCE.EMBARCADOS_DOCS),
       readOnly(PERMISSION_RESOURCE.CURSOS_ASSIGNMENTS),
       readOnly(PERMISSION_RESOURCE.CURSOS_LIBRETAS),
     ],
@@ -297,6 +398,7 @@ export const SYSTEM_ROLE_DEFS = [
     permissions: [
       readOnly(PERMISSION_RESOURCE.DASHBOARD),
       readOnly(PERMISSION_RESOURCE.EMBARCADOS),
+      readOnly(PERMISSION_RESOURCE.EMBARCADOS_DOCS),
       {
         resource: PERMISSION_RESOURCE.CURSOS_ASSIGNMENTS,
         actions: [PERMISSION_ACTION.READ, PERMISSION_ACTION.UPDATE],

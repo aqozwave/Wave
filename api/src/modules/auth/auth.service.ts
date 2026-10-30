@@ -20,6 +20,10 @@ import {
   verifyLoginChallenge,
 } from "../../lib/loginChallenge.js";
 import { hashPassword, verifyPassword } from "../../lib/password.js";
+import {
+  PERMISSION_ACTIONS,
+  PERMISSION_RESOURCES,
+} from "../../lib/permissions.js";
 import { prisma } from "../../lib/prisma.js";
 import {
   hashRefreshToken,
@@ -90,8 +94,29 @@ function getDummyPasswordHash(): Promise<string> {
   return dummyPasswordHashPromise;
 }
 
+/** Snapshot de permisos del rol (o catálogo completo si superadmin). */
+async function loadPermissionsForUser(
+  user: User,
+): Promise<AuthUser["permissions"]> {
+  if (user.internalRol === "superadmin") {
+    return PERMISSION_RESOURCES.map((resource) => ({
+      resource,
+      actions: [...PERMISSION_ACTIONS],
+    }));
+  }
+  if (!user.roleId) return [];
+
+  const role = await prisma.role.findFirst({
+    where: { id: user.roleId, deletedAt: null, state: true },
+    select: { permissions: true },
+  });
+  if (!role || !Array.isArray(role.permissions)) return [];
+
+  return role.permissions as AuthUser["permissions"];
+}
+
 /** Proyecta User de Prisma al contrato AuthUser (sin secretos). */
-function toAuthUser(user: User): AuthUser {
+async function toAuthUser(user: User): Promise<AuthUser> {
   return {
     id: user.id,
     email: user.email,
@@ -104,6 +129,7 @@ function toAuthUser(user: User): AuthUser {
     businessId: user.businessId,
     confirmed: user.confirmed,
     state: user.state,
+    permissions: await loadPermissionsForUser(user),
   };
 }
 
@@ -156,7 +182,7 @@ async function issueTokens(
   });
 
   return {
-    user: toAuthUser(user),
+    user: await toAuthUser(user),
     accessToken,
     refreshToken: signed.token,
   };
@@ -378,7 +404,7 @@ export async function getMe(userId: string): Promise<{ user: AuthUser }> {
     throw new AppError(401, "unauthorized", "Sesión inválida");
   }
 
-  return { user: toAuthUser(user) };
+  return { user: await toAuthUser(user) };
 }
 
 /** Decodifica base64 puro o data-URL. */
@@ -434,7 +460,7 @@ export async function updateMe(
     },
   });
 
-  return { user: toAuthUser(updated) };
+  return { user: await toAuthUser(updated) };
 }
 
 /**
@@ -505,7 +531,7 @@ export async function uploadMyPhoto(
     await unlinkUserPhotoFile(previous);
   }
 
-  return { user: toAuthUser(updated) };
+  return { user: await toAuthUser(updated) };
 }
 
 /** DELETE /me/photo — quita la foto del usuario autenticado. */
@@ -529,7 +555,7 @@ export async function deleteMyPhoto(
     await unlinkUserPhotoFile(previous);
   }
 
-  return { user: toAuthUser(updated) };
+  return { user: await toAuthUser(updated) };
 }
 
 /**
@@ -711,7 +737,7 @@ export async function registerUser(
   await issueAndSendConfirmation(user);
 
   return {
-    user: toAuthUser(user),
+    user: await toAuthUser(user),
     message: REGISTER_OK_MESSAGE,
   };
 }
@@ -783,7 +809,7 @@ export async function confirmEmailAccount(
 
   return {
     message: "Cuenta confirmada. Ya puedes iniciar sesión.",
-    user: toAuthUser(user),
+    user: await toAuthUser(user),
   };
 }
 
@@ -939,6 +965,6 @@ export async function resetPasswordWithToken(
 
   return {
     message: "Contraseña actualizada. Ya puedes iniciar sesión.",
-    user: toAuthUser(user),
+    user: await toAuthUser(user),
   };
 }

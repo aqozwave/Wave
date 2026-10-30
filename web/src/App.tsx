@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Navigate, Outlet, Route, Routes, useNavigate } from "react-router";
+import {
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router";
 import { AppShell } from "./components/AppShell/AppShell";
 import { PanelSkeleton } from "./components/PanelSkeleton/PanelSkeleton";
 import { useAuth } from "./lib/auth/AuthContext";
@@ -17,6 +24,19 @@ import { Embarcados } from "./pages/Embarcados/Embarcados";
 import { FichaTripulante } from "./pages/Embarcados/FichaTripulante";
 import { Ubicaciones } from "./pages/Ubicaciones/Ubicaciones";
 import { Usuarios } from "./pages/Usuarios/Usuarios";
+
+/** Pantalla mínima mientras revive la cookie (evita blanco seco). */
+function BootstrapSplash() {
+  return (
+    <div className="animate-fade flex h-full min-h-0 items-center justify-center bg-[var(--color-nachipa-bg-page)]">
+      <div
+        className="size-8 animate-shimmer rounded-full bg-[var(--color-nav-item-active-bg)]"
+        aria-hidden
+      />
+      <span className="sr-only">Cargando sesión…</span>
+    </div>
+  );
+}
 
 /**
  * Exige access token y aplica idle 1h: sin actividad → logout + /login.
@@ -38,7 +58,7 @@ function RequireAuth() {
 
   // Todavía intentando recuperar sesión desde la cookie refresh.
   if (!bootstrapped) {
-    return null;
+    return <BootstrapSplash />;
   }
 
   if (!accessToken) {
@@ -49,11 +69,12 @@ function RequireAuth() {
 }
 
 /**
- * Shell del portal: al entrar (post-login) espera /me con skeleton
- * y recién entonces monta el Panel con animación de entrada.
+ * Shell estable: el sidebar no se remonta al pasar de skeleton → contenido.
+ * El main hace fade suave al cambiar de ruta.
  */
 function ShellLayout() {
   const { hydrateSession } = useAuth();
+  const location = useLocation();
   // false hasta completar la primera hidratación (evita flash del Panel).
   const [ready, setReady] = useState(false);
 
@@ -72,19 +93,18 @@ function ShellLayout() {
     };
   }, [hydrateSession]);
 
-  if (!ready) {
-    return (
-      <AppShell>
-        <PanelSkeleton />
-      </AppShell>
-    );
-  }
-
   return (
     <AppShell>
-      <div className="animate-enter flex min-h-0 min-w-0 flex-1 flex-col">
-        <Outlet />
-      </div>
+      {!ready ? (
+        <PanelSkeleton />
+      ) : (
+        <div
+          key={location.pathname}
+          className="animate-fade flex min-h-0 min-w-0 flex-1 flex-col"
+        >
+          <Outlet />
+        </div>
+      )}
     </AppShell>
   );
 }

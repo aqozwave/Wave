@@ -174,8 +174,27 @@ export function Embarcados() {
     if (!accessToken) return;
     setLoading(true);
     try {
+      // Listado principal aparte: un 403 en catálogos no debe vaciar la tabla.
+      const crew = await listCrewMembersRequest(accessToken, {
+        page: 1,
+        limit: 100,
+        includeInactive: true,
+      });
+      setItems(crew.items);
+
+      /** Catálogo auxiliar: si falla el permiso, select vacío sin tumbar la pantalla. */
+      const loadCatalog = async <T,>(
+        promise: Promise<{ items: T[] }>,
+      ): Promise<T[]> => {
+        try {
+          const res = await promise;
+          return res.items;
+        } catch {
+          return [];
+        }
+      };
+
       const [
-        crew,
         locs,
         areaList,
         certList,
@@ -184,30 +203,23 @@ export function Embarcados() {
         muelleList,
         travesiaList,
       ] = await Promise.all([
-        // API max limit = 100 (Zod); 94 migrados caben en una página.
-        listCrewMembersRequest(accessToken, {
-          page: 1,
-          limit: 100,
-          includeInactive: true,
-        }),
-        listLocationsRequest(accessToken),
-        listAreasRequest(accessToken),
-        listCompetencyCertificatesRequest(accessToken),
-        listRanksRequest(accessToken),
+        loadCatalog(listLocationsRequest(accessToken)),
+        loadCatalog(listAreasRequest(accessToken)),
+        loadCatalog(listCompetencyCertificatesRequest(accessToken)),
+        loadCatalog(listRanksRequest(accessToken)),
         isSuperadmin
-          ? listBusinessesRequest(accessToken, 1, 100)
-          : Promise.resolve({ items: [] as Business[] }),
-        listMuellesRequest(accessToken, 1, 100),
-        listTravesiasRequest(accessToken, 1, 100),
+          ? loadCatalog(listBusinessesRequest(accessToken, 1, 100))
+          : Promise.resolve([] as Business[]),
+        loadCatalog(listMuellesRequest(accessToken, 1, 100)),
+        loadCatalog(listTravesiasRequest(accessToken, 1, 100)),
       ]);
-      setItems(crew.items);
-      setLocations(locs.items);
-      setAreas(areaList.items);
-      setCerts(certList.items);
-      setRanks(rankList.items);
-      setBusinesses(bizList.items);
-      setMuelles(muelleList.items.filter((m) => m.state));
-      setTravesias(travesiaList.items.filter((t) => t.state));
+      setLocations(locs);
+      setAreas(areaList);
+      setCerts(certList);
+      setRanks(rankList);
+      setBusinesses(bizList);
+      setMuelles(muelleList.filter((m) => m.state));
+      setTravesias(travesiaList.filter((t) => t.state));
     } catch (err) {
       showToast(
         err instanceof ApiError

@@ -86,11 +86,11 @@ body {
   font-family: var(--font-brand);
 }
 
-/* Entrada suave del contenido tras el skeleton post-login. */
+/* Entrada suave del contenido (login → panel / cambio de ruta). */
 @keyframes wave-enter {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -99,14 +99,28 @@ body {
 }
 
 .animate-enter {
-  animation: wave-enter 320ms ease-out both;
+  animation: wave-enter 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Entrada del sidebar al montar el shell (desliz + fade). */
+/* Fade de pantalla completa (bootstrap / logout → login). */
+@keyframes wave-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade {
+  animation: wave-fade 240ms ease-out both;
+}
+
+/* Entrada del sidebar al montar el shell (solo la 1ª vez). */
 @keyframes wave-sidebar-enter {
   from {
     opacity: 0;
-    transform: translateX(-12px);
+    transform: translateX(-8px);
   }
   to {
     opacity: 1;
@@ -115,7 +129,7 @@ body {
 }
 
 .animate-sidebar-enter {
-  animation: wave-sidebar-enter 360ms ease-out both;
+  animation: wave-sidebar-enter 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* Shimmer de skeletons (carga de /me y bloques del panel). */
@@ -187,6 +201,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .animate-enter,
+  .animate-fade,
   .animate-sidebar-enter,
   .animate-modal-overlay,
   .animate-modal-panel,

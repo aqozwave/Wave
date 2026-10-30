@@ -162,8 +162,23 @@ export function FichaTripulante() {
     if (!accessToken || !id) return;
     setLoading(true);
     try {
+      // Ficha primero: un 403 en catálogos no debe tumbar al tripulante.
+      const row = await getCrewMemberRequest(accessToken, id);
+      setCrew(row);
+
+      /** Catálogo auxiliar: si falla el permiso, select vacío. */
+      const loadCatalog = async <T,>(
+        promise: Promise<{ items: T[] }>,
+      ): Promise<T[]> => {
+        try {
+          const res = await promise;
+          return res.items;
+        } catch {
+          return [];
+        }
+      };
+
       const [
-        row,
         locs,
         areaList,
         certList,
@@ -172,25 +187,23 @@ export function FichaTripulante() {
         muelleList,
         travesiaList,
       ] = await Promise.all([
-        getCrewMemberRequest(accessToken, id),
-        listLocationsRequest(accessToken),
-        listAreasRequest(accessToken),
-        listCompetencyCertificatesRequest(accessToken),
-        listRanksRequest(accessToken),
+        loadCatalog(listLocationsRequest(accessToken)),
+        loadCatalog(listAreasRequest(accessToken)),
+        loadCatalog(listCompetencyCertificatesRequest(accessToken)),
+        loadCatalog(listRanksRequest(accessToken)),
         isSuperadmin
-          ? listBusinessesRequest(accessToken, 1, 100)
-          : Promise.resolve({ items: [] as Business[] }),
-        listMuellesRequest(accessToken, 1, 100),
-        listTravesiasRequest(accessToken, 1, 100),
+          ? loadCatalog(listBusinessesRequest(accessToken, 1, 100))
+          : Promise.resolve([] as Business[]),
+        loadCatalog(listMuellesRequest(accessToken, 1, 100)),
+        loadCatalog(listTravesiasRequest(accessToken, 1, 100)),
       ]);
-      setCrew(row);
-      setLocations(locs.items);
-      setAreas(areaList.items);
-      setCerts(certList.items);
-      setRanks(rankList.items);
-      setBusinesses(bizList.items);
-      setMuelles(muelleList.items.filter((m) => m.state));
-      setTravesias(travesiaList.items.filter((t) => t.state));
+      setLocations(locs);
+      setAreas(areaList);
+      setCerts(certList);
+      setRanks(rankList);
+      setBusinesses(bizList);
+      setMuelles(muelleList.filter((m) => m.state));
+      setTravesias(travesiaList.filter((t) => t.state));
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo cargar la ficha.",

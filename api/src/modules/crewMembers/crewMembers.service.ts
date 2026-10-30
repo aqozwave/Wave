@@ -97,12 +97,15 @@ function assertCrewTenantAccess(actor: Actor, businessId: string): void {
   }
 }
 
-/** Admin → su empresa; superadmin → body.businessId obligatorio. */
+/**
+ * Tenant manager (admin, prevencionista, etc.) → su empresa.
+ * Superadmin → body.businessId obligatorio.
+ */
 function resolveCreateBusinessId(
   actor: Actor,
   body: CreateCrewMemberBody,
 ): string {
-  if (actor.internalRol === "admin") {
+  if (actor.internalRol !== "superadmin") {
     if (!actor.businessId) {
       throw new AppError(
         403,

@@ -72,7 +72,10 @@ crewMembersRouter.post(
 crewMembersRouter.get(
   "/:id/documents",
   authenticate,
-  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.READ),
+  requirePermission(
+    PERMISSION_RESOURCE.EMBARCADOS_DOCS,
+    PERMISSION_ACTION.READ,
+  ),
   validate(listCrewMemberDocumentsRequestSchema),
   listCrewMemberDocumentsHandler,
 );
@@ -80,7 +83,10 @@ crewMembersRouter.get(
 crewMembersRouter.post(
   "/:id/documents",
   authenticate,
-  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.CREATE),
+  requirePermission(
+    PERMISSION_RESOURCE.EMBARCADOS_DOCS,
+    PERMISSION_ACTION.CREATE,
+  ),
   validate(createCrewMemberDocumentRequestSchema),
   createCrewMemberDocumentHandler,
 );
@@ -88,7 +94,10 @@ crewMembersRouter.post(
 crewMembersRouter.get(
   "/:id/documents/:documentId/download",
   authenticate,
-  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.READ),
+  requirePermission(
+    PERMISSION_RESOURCE.EMBARCADOS_DOCS,
+    PERMISSION_ACTION.READ,
+  ),
   validate(downloadCrewMemberDocumentRequestSchema),
   downloadCrewMemberDocumentHandler,
 );
@@ -97,7 +106,7 @@ crewMembersRouter.delete(
   "/:id/documents/:documentId",
   authenticate,
   requirePermission(
-    PERMISSION_RESOURCE.EMBARCADOS,
+    PERMISSION_RESOURCE.EMBARCADOS_DOCS,
     PERMISSION_ACTION.DEACTIVATE,
   ),
   validate(deleteCrewMemberDocumentRequestSchema),
