@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createAcademicDegreeResponseSchema,
   deleteAcademicDegreeResponseSchema,
   getAcademicDegreeResponseSchema,
@@ -41,6 +45,12 @@ export async function createAcademicDegreeHandler(
   }
   const body = req.body as CreateAcademicDegreeBody;
   const created = await createAcademicDegree(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "academicDegree",
+    resourceId: created.id,
+    targetLabel: created.name,
+  });
   res.status(201).json(createAcademicDegreeResponseSchema.parse(created));
 }
 
@@ -68,6 +78,13 @@ export async function updateAcademicDegreeHandler(
   const { id } = req.params as { id: string };
   const body = req.body as UpdateAcademicDegreeBody;
   const updated = await updateAcademicDegree(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "academicDegree",
+    resourceId: updated.id,
+    targetLabel: updated.name,
+    metadata: { fields: safeChangedFields(body) },
+  });
   res.status(200).json(updateAcademicDegreeResponseSchema.parse(updated));
 }
 
@@ -81,5 +98,11 @@ export async function deleteAcademicDegreeHandler(
   }
   const { id } = req.params as { id: string };
   const deleted = await deleteAcademicDegreeById(req.user, id);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "academicDegree",
+    resourceId: deleted.id,
+    targetLabel: deleted.name,
+  });
   res.status(200).json(deleteAcademicDegreeResponseSchema.parse(deleted));
 }

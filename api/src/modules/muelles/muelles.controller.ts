@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createMuelleResponseSchema,
   deleteMuelleResponseSchema,
   getMuelleResponseSchema,
@@ -41,6 +45,12 @@ export async function createMuelleHandler(
   }
   const body = req.body as CreateMuelleBody;
   const created = await createMuelle(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "muelle",
+    resourceId: created.id,
+    targetLabel: created.name,
+  });
   res.status(201).json(createMuelleResponseSchema.parse(created));
 }
 
@@ -68,6 +78,13 @@ export async function updateMuelleHandler(
   const { id } = req.params as { id: string };
   const body = req.body as UpdateMuelleBody;
   const updated = await updateMuelle(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "muelle",
+    resourceId: updated.id,
+    targetLabel: updated.name,
+    metadata: { fields: safeChangedFields(body) },
+  });
   res.status(200).json(updateMuelleResponseSchema.parse(updated));
 }
 
@@ -81,5 +98,11 @@ export async function deleteMuelleHandler(
   }
   const { id } = req.params as { id: string };
   const deleted = await deleteMuelleById(req.user, id);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "muelle",
+    resourceId: deleted.id,
+    targetLabel: deleted.name,
+  });
   res.status(200).json(deleteMuelleResponseSchema.parse(deleted));
 }

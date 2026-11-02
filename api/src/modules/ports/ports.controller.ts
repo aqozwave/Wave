@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createPortResponseSchema,
   deletePortResponseSchema,
   getPortResponseSchema,
@@ -41,6 +45,12 @@ export async function createPortHandler(
   }
   const body = req.body as CreatePortBody;
   const created = await createPort(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "port",
+    resourceId: created.id,
+    targetLabel: created.name,
+  });
   res.status(201).json(createPortResponseSchema.parse(created));
 }
 
@@ -68,6 +78,13 @@ export async function updatePortHandler(
   const { id } = req.params as { id: string };
   const body = req.body as UpdatePortBody;
   const updated = await updatePort(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "port",
+    resourceId: updated.id,
+    targetLabel: updated.name,
+    metadata: { fields: safeChangedFields(body) },
+  });
   res.status(200).json(updatePortResponseSchema.parse(updated));
 }
 
@@ -81,5 +98,11 @@ export async function deletePortHandler(
   }
   const { id } = req.params as { id: string };
   const deleted = await deletePortById(req.user, id);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "port",
+    resourceId: deleted.id,
+    targetLabel: deleted.name,
+  });
   res.status(200).json(deletePortResponseSchema.parse(deleted));
 }

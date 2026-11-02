@@ -21,8 +21,10 @@ export type ActivityResource =
   | "rank"
   | "academicDegree"
   | "competencyCertificate"
+  | "documentType"
   | "muelle"
   | "travesia"
+  | "port"
   | "course"
   | "role"
   | "system";

@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createTravesiaResponseSchema,
   deleteTravesiaResponseSchema,
   getTravesiaResponseSchema,
@@ -41,6 +45,12 @@ export async function createTravesiaHandler(
   }
   const body = req.body as CreateTravesiaBody;
   const created = await createTravesia(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "travesia",
+    resourceId: created.id,
+    targetLabel: created.name,
+  });
   res.status(201).json(createTravesiaResponseSchema.parse(created));
 }
 
@@ -68,6 +78,13 @@ export async function updateTravesiaHandler(
   const { id } = req.params as { id: string };
   const body = req.body as UpdateTravesiaBody;
   const updated = await updateTravesia(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "travesia",
+    resourceId: updated.id,
+    targetLabel: updated.name,
+    metadata: { fields: safeChangedFields(body) },
+  });
   res.status(200).json(updateTravesiaResponseSchema.parse(updated));
 }
 
@@ -81,5 +98,11 @@ export async function deleteTravesiaHandler(
   }
   const { id } = req.params as { id: string };
   const deleted = await deleteTravesiaById(req.user, id);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "travesia",
+    resourceId: deleted.id,
+    targetLabel: deleted.name,
+  });
   res.status(200).json(deleteTravesiaResponseSchema.parse(deleted));
 }

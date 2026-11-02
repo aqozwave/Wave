@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createDocumentTypeResponseSchema,
   deleteDocumentTypeResponseSchema,
   getDocumentTypeResponseSchema,
@@ -37,6 +41,12 @@ export async function createDocumentTypeHandler(
   if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
   const body = req.body as CreateDocumentTypeBody;
   const result = await createDocumentType(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "documentType",
+    resourceId: result.id,
+    targetLabel: result.name,
+  });
   res.status(201).json(createDocumentTypeResponseSchema.parse(result));
 }
 
@@ -62,6 +72,13 @@ export async function updateDocumentTypeHandler(
     req.params.id as string,
     body,
   );
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "documentType",
+    resourceId: result.id,
+    targetLabel: result.name,
+    metadata: { fields: safeChangedFields(body) },
+  });
   res.status(200).json(updateDocumentTypeResponseSchema.parse(result));
 }
 
@@ -72,5 +89,11 @@ export async function deleteDocumentTypeHandler(
 ): Promise<void> {
   if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
   const result = await deleteDocumentType(req.user, req.params.id as string);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "documentType",
+    resourceId: result.id,
+    targetLabel: result.name,
+  });
   res.status(200).json(deleteDocumentTypeResponseSchema.parse(result));
 }

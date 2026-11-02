@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createCompetencyCertificateResponseSchema,
   deleteCompetencyCertificateResponseSchema,
   getCompetencyCertificateResponseSchema,
@@ -46,6 +50,12 @@ export async function createCompetencyCertificateHandler(
   }
   const body = req.body as CreateCompetencyCertificateBody;
   const created = await createCompetencyCertificate(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "competencyCertificate",
+    resourceId: created.id,
+    targetLabel: created.name,
+  });
   res
     .status(201)
     .json(createCompetencyCertificateResponseSchema.parse(created));
@@ -75,6 +85,13 @@ export async function updateCompetencyCertificateHandler(
   const { id } = req.params as { id: string };
   const body = req.body as UpdateCompetencyCertificateBody;
   const updated = await updateCompetencyCertificate(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "competencyCertificate",
+    resourceId: updated.id,
+    targetLabel: updated.name,
+    metadata: { fields: safeChangedFields(body) },
+  });
   res
     .status(200)
     .json(updateCompetencyCertificateResponseSchema.parse(updated));
@@ -90,6 +107,12 @@ export async function deleteCompetencyCertificateHandler(
   }
   const { id } = req.params as { id: string };
   const deleted = await deleteCompetencyCertificateById(req.user, id);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "competencyCertificate",
+    resourceId: deleted.id,
+    targetLabel: deleted.name,
+  });
   res
     .status(200)
     .json(deleteCompetencyCertificateResponseSchema.parse(deleted));
@@ -124,6 +147,16 @@ export async function replaceCompetencyCertificateCoursesHandler(
   const { id } = req.params as { id: string };
   const body = req.body as ReplaceCompetencyCertificateCoursesBody;
   const result = await replaceCompetencyCertificateCourses(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "competencyCertificate",
+    resourceId: id,
+    targetLabel: "cursos del título",
+    metadata: {
+      courseCount: result.assignments.length,
+      sync: result.sync,
+    },
+  });
   res
     .status(200)
     .json(replaceCompetencyCertificateCoursesResponseSchema.parse(result));

@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createRankResponseSchema,
   deleteRankResponseSchema,
   getRankResponseSchema,
@@ -41,6 +45,12 @@ export async function createRankHandler(
   }
   const body = req.body as CreateRankBody;
   const created = await createRank(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "rank",
+    resourceId: created.id,
+    targetLabel: created.name,
+  });
   res.status(201).json(createRankResponseSchema.parse(created));
 }
 
@@ -68,6 +78,13 @@ export async function updateRankHandler(
   const { id } = req.params as { id: string };
   const body = req.body as UpdateRankBody;
   const updated = await updateRank(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "rank",
+    resourceId: updated.id,
+    targetLabel: updated.name,
+    metadata: { fields: safeChangedFields(body) },
+  });
   res.status(200).json(updateRankResponseSchema.parse(updated));
 }
 
@@ -81,5 +98,11 @@ export async function deleteRankHandler(
   }
   const { id } = req.params as { id: string };
   const deleted = await deleteRankById(req.user, id);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "rank",
+    resourceId: deleted.id,
+    targetLabel: deleted.name,
+  });
   res.status(200).json(deleteRankResponseSchema.parse(deleted));
 }
