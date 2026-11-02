@@ -134,16 +134,20 @@ export type CrewMemberCourseResponse = z.infer<
 >;
 
 /**
- * Filtro de la pantalla Vencimientos (portal viejo LibretasEmbarquePage tab cursos).
- * attention = expired + expiring_soon.
+ * Filtro del listado global GET /crew-member-courses.
+ * attention = expired + expiring_soon (Vencimientos).
+ * all / pending / valid = Cursos de la tripulación.
  */
 export const expiryStatusFilterSchema = z.enum([
+  "all",
+  "pending",
+  "valid",
   "expired",
   "expiring_soon",
   "attention",
 ]);
 
-/** Query GET /crew-member-courses (listado global de vencimientos). */
+/** Query GET /crew-member-courses (listado global). */
 export const listExpiringCrewMemberCoursesQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(25),
@@ -156,7 +160,7 @@ export const listExpiringCrewMemberCoursesRequestSchema = z.object({
   query: listExpiringCrewMemberCoursesQuerySchema,
 });
 
-/** Fila de vencimiento con datos del tripulante para la tabla. */
+/** Fila del listado global (vencimientos + cursos de la tripulación). */
 export const expiringCrewMemberCourseItemSchema = z
   .object({
     id: z.uuid(),
@@ -164,7 +168,9 @@ export const expiringCrewMemberCourseItemSchema = z
     courseId: z.uuid(),
     courseName: z.string(),
     status: crewCourseStatusSchema,
+    source: crewCourseSourceSchema,
     daysUntilExpiry: z.number().int().nullable(),
+    completedAt: z.string().datetime().nullable(),
     expiresAt: z.string().datetime().nullable(),
     isMandatory: z.boolean(),
     crew: z.object({

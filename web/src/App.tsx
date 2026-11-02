@@ -16,6 +16,7 @@ import { ForgotPassword } from "./pages/ForgotPassword/ForgotPassword";
 import { Login } from "./pages/Login/Login";
 import { Catalogos } from "./pages/Catalogos/Catalogos";
 import { CursosHome } from "./pages/Cursos/CursosHome";
+import { CursosTripulacion } from "./pages/Cursos/CursosTripulacion";
 import { Vencimientos } from "./pages/Cursos/Vencimientos";
 import { Empresas } from "./pages/Empresas/Empresas";
 import { Panel } from "./pages/Panel/Panel";
@@ -132,6 +133,7 @@ export function App() {
             element={<Navigate to="/embarcados" replace />}
           />
           <Route path="cursos" element={<CursosHome />} />
+          <Route path="cursos/tripulacion" element={<CursosTripulacion />} />
           <Route path="cursos/vencimientos" element={<Vencimientos />} />
           <Route path="empresas" element={<Empresas />} />
           <Route path="ubicaciones" element={<Ubicaciones />} />

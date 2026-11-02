@@ -143,17 +143,28 @@ export async function deleteCrewMemberCourseRequest(
   return body as CrewMemberCourse;
 }
 
-/** Filtro de vencimientos (API global). */
-export type ExpiryStatusFilter = "expired" | "expiring_soon" | "attention";
+/**
+ * Filtro del listado global.
+ * attention = expired + expiring_soon (Vencimientos).
+ */
+export type ExpiryStatusFilter =
+  | "all"
+  | "pending"
+  | "valid"
+  | "expired"
+  | "expiring_soon"
+  | "attention";
 
-/** Fila del listado global de cursos por vencer/vencidos. */
+/** Fila del listado global de asignaciones. */
 export type ExpiringCrewMemberCourse = {
   id: string;
   crewMemberId: string;
   courseId: string;
   courseName: string;
   status: CrewCourseStatus;
+  source: CrewCourseSource;
   daysUntilExpiry: number | null;
+  completedAt: string | null;
   expiresAt: string | null;
   isMandatory: boolean;
   crew: {
@@ -184,7 +195,7 @@ export type ListExpiringCrewMemberCoursesQuery = {
   businessId?: string;
 };
 
-/** GET /crew-member-courses — vencimientos globales. */
+/** GET /crew-member-courses — listado global (vencimientos / tripulación). */
 export async function listExpiringCrewMemberCoursesRequest(
   accessToken: string,
   query: ListExpiringCrewMemberCoursesQuery = {},

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  AlertTriangle,
   Anchor,
   Bell,
   BookOpen,
@@ -56,9 +57,14 @@ const CURSOS_LINKS: ReadonlyArray<{
     icon: Anchor,
   },
   { label: "Embarcados", to: "/embarcados", icon: Ship },
+  {
+    label: "Cursos tripulación",
+    to: "/cursos/tripulacion",
+    icon: ClipboardList,
+  },
   { label: "Notificaciones", to: "/notificaciones", icon: Bell },
   { label: "Outbox", to: "/notificaciones/outbox", icon: Inbox },
-  { label: "Vencimientos", to: "/cursos/vencimientos", icon: ClipboardList },
+  { label: "Vencimientos", to: "/cursos/vencimientos", icon: AlertTriangle },
 ];
 
 /** Subítems de Configuración (Figma Sidebar Superadmin). */

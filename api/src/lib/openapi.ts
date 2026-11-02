@@ -2629,9 +2629,9 @@ registry.registerPath({
   method: "get",
   path: "/api/v1/crew-member-courses",
   tags: ["CrewMemberCourses"],
-  summary: "Listar cursos vencidos / por vencer",
+  summary: "Listar asignaciones de cursos (global)",
   description:
-    "Listado global para Vencimientos. Permiso cursos.libretas read. status=attention|expired|expiring_soon.",
+    "Listado global para Vencimientos y Cursos de la tripulación. Permiso cursos.libretas read. status=all|pending|valid|attention|expired|expiring_soon.",
   security: [{ bearerAuth: [] }],
   request: { query: listExpiringCrewMemberCoursesQuerySchema },
   responses: {

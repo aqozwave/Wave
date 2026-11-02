@@ -34,8 +34,8 @@ export async function listCrewMemberCoursesHandler(
 }
 
 /**
- * GET /crew-member-courses — vencimientos globales (cursos).
- * Usado por la pantalla /cursos/vencimientos.
+ * GET /crew-member-courses — listado global de asignaciones.
+ * Usado por /cursos/vencimientos y /cursos/tripulacion.
  */
 export async function listExpiringCrewMemberCoursesHandler(
   req: Request,

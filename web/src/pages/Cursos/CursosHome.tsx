@@ -66,7 +66,7 @@ const HUB_GROUPS: HubGroup[] = [
         label: "Cursos de la tripulación",
         legend: "Vista masiva por tripulante (matriz).",
         icon: ClipboardList,
-        to: null,
+        to: "/cursos/tripulacion",
       },
       {
         label: "Vencimientos / libretas",

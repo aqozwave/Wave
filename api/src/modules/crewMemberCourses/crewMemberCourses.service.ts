@@ -317,8 +317,9 @@ export async function listCrewMemberCourses(
 }
 
 /**
- * Listado global de cursos vencidos / por vencer (pantalla Vencimientos).
+ * Listado global de asignaciones (Vencimientos + Cursos de la tripulación).
  * Recalcula status en memoria con warningDays de settings (courseCrewDays).
+ * status=attention|expired|expiring_soon exige expiresAt; all|pending|valid incluye sin fecha.
  */
 export async function listExpiringCrewMemberCourses(
   actor: Actor,
@@ -355,10 +356,16 @@ export async function listExpiringCrewMemberCourses(
     crewWhere.businessId = actor.businessId;
   }
 
+  // Vencimientos solo mira filas con fecha; el listado masivo incluye pending sin fecha.
+  const onlyDated =
+    query.status === "attention" ||
+    query.status === "expired" ||
+    query.status === "expiring_soon";
+
   const rows = await prisma.crewMemberCourse.findMany({
     where: {
       deletedAt: null,
-      expiresAt: { not: null },
+      ...(onlyDated ? { expiresAt: { not: null } } : {}),
       crewMember: crewWhere,
     },
     include: {
@@ -375,7 +382,7 @@ export async function listExpiringCrewMemberCourses(
         },
       },
     },
-    orderBy: [{ expiresAt: "asc" }],
+    orderBy: [{ expiresAt: "asc" }, { createdAt: "asc" }],
   });
 
   const term = query.search?.trim().toLowerCase() ?? "";
@@ -385,6 +392,8 @@ export async function listExpiringCrewMemberCourses(
     const status = resolveAssignmentStatus(row, { warningDays, now });
     if (query.status === "expired" && status !== "expired") continue;
     if (query.status === "expiring_soon" && status !== "expiring_soon") continue;
+    if (query.status === "pending" && status !== "pending") continue;
+    if (query.status === "valid" && status !== "valid") continue;
     if (
       query.status === "attention" &&
       status !== "expired" &&
@@ -408,7 +417,9 @@ export async function listExpiringCrewMemberCourses(
       courseId: row.courseId,
       courseName: row.course?.name ?? "—",
       status,
+      source: row.source,
       daysUntilExpiry: daysUntilExpiry(row.expiresAt, now),
+      completedAt: row.completedAt ? row.completedAt.toISOString() : null,
       expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
       isMandatory,
       crew: {
