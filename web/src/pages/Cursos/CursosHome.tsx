@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   Anchor,
   ArrowRight,
@@ -13,6 +14,8 @@ import { Link } from "react-router";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
+import { userHasPermission, type AuthUser } from "../../lib/api/auth";
+import { useAuth } from "../../lib/auth/AuthContext";
 
 /** Tarjeta del hub: link real o “próximamente”. */
 type HubCard = {
@@ -20,6 +23,8 @@ type HubCard = {
   legend: string;
   icon: LucideIcon;
   to: string | null;
+  /** Visibilidad según RBAC del usuario logueado. */
+  canShow: (user: AuthUser | null) => boolean;
 };
 
 /** Grupo de módulos en la home de Cursos. */
@@ -30,8 +35,9 @@ type HubGroup = {
 };
 
 /**
- * Mapa del módulo Cursos: enlaza a pantallas ya hechas
- * y marca lo que aún no tiene ruta propia.
+ * Mapa del módulo Cursos.
+ * Catálogo y Embarcados son atajos (viven en Config / Tripulación);
+ * el resto son pantallas propias. Cada tarjeta se filtra por permiso.
  */
 const HUB_GROUPS: HubGroup[] = [
   {
@@ -43,12 +49,14 @@ const HUB_GROUPS: HubGroup[] = [
         legend: "Catálogo OMI de la empresa (alta, edición, estado).",
         icon: BookOpen,
         to: "/catalogos?tab=courses",
+        canShow: (u) => userHasPermission(u, "cursos.catalog", "read"),
       },
       {
         label: "Cursos por título marítimo",
         legend: "Obligatorios al asignar un título al tripulante.",
         icon: Anchor,
         to: "/catalogos?tab=certificates",
+        canShow: (u) => userHasPermission(u, "maestros.certificates", "read"),
       },
     ],
   },
@@ -61,18 +69,21 @@ const HUB_GROUPS: HubGroup[] = [
         legend: "Ficha del tripulante → tab Cursos (asignar / editar).",
         icon: Ship,
         to: "/embarcados",
+        canShow: (u) => userHasPermission(u, "embarcados", "read"),
       },
       {
         label: "Cursos de la tripulación",
         legend: "Vista masiva por tripulante (matriz).",
         icon: ClipboardList,
         to: "/cursos/tripulacion",
+        canShow: (u) => userHasPermission(u, "cursos.assignments", "read"),
       },
       {
         label: "Vencimientos / libretas",
         legend: "Libretas y cursos vencidos o por vencer.",
         icon: GraduationCap,
         to: "/cursos/vencimientos",
+        canShow: (u) => userHasPermission(u, "cursos.libretas", "read"),
       },
     ],
   },
@@ -85,12 +96,14 @@ const HUB_GROUPS: HubGroup[] = [
         legend: "Días de aviso al tripulante y resumen admin.",
         icon: Bell,
         to: "/notificaciones",
+        canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
       },
       {
         label: "Outbox",
         legend: "Cola pending / sent / failed y reintentos.",
         icon: Inbox,
         to: "/notificaciones/outbox",
+        canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
       },
     ],
   },
@@ -98,9 +111,18 @@ const HUB_GROUPS: HubGroup[] = [
 
 /**
  * Home del módulo Cursos (shell).
- * No inventa pantallas nuevas: apunta a lo existente o marca “Próximamente”.
+ * Solo muestra tarjetas que el rol puede usar de verdad.
  */
 export function CursosHome() {
+  const { user } = useAuth();
+
+  const groups = useMemo(() => {
+    return HUB_GROUPS.map((group) => ({
+      ...group,
+      items: group.items.filter((item) => item.canShow(user)),
+    })).filter((group) => group.items.length > 0);
+  }, [user]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Topbar
@@ -112,11 +134,16 @@ export function CursosHome() {
         <PageHeader
           crumbs={[{ label: "Cursos" }, { label: "Presentación" }]}
           title="Gestión de cursos"
-          description="Formación OMI, títulos marítimos, asignaciones en ficha y avisos de vencimiento. Las pantallas operativas grandes llegan después; acá entrás a lo que ya está listo."
+          description="Formación OMI, títulos marítimos, asignaciones en ficha y avisos de vencimiento. Solo ves lo que tu rol permite."
         />
 
         <div className="flex max-w-[960px] flex-col gap-8">
-          {HUB_GROUPS.map((group) => (
+          {groups.length === 0 ? (
+            <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+              No tenés permisos de cursos en este rol.
+            </p>
+          ) : null}
+          {groups.map((group) => (
             <section key={group.title} className="flex flex-col gap-3">
               <div>
                 <h2 className="m-0 text-[15px] font-semibold text-[var(--color-nachipa-title)]">

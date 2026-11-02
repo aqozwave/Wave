@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
-  Anchor,
   Bell,
-  BookOpen,
   Building2,
   ClipboardList,
   GraduationCap,
@@ -21,6 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
+import { userHasPermission, type AuthUser } from "../../lib/api/auth";
 import { useAuth } from "../../lib/auth/AuthContext";
 import { Logo } from "../Logo/Logo";
 import { SidebarItem } from "../SidebarItem/SidebarItem";
@@ -33,53 +32,116 @@ const WIDTH_OPEN = 256;
 /** Ancho rail (Figma Menú contraído 72px). */
 const WIDTH_COLLAPSED = 72;
 
-/** Subítems de Tripulación (Figma Sidebar: solo Embarcados). */
-const CREW_LINKS: ReadonlyArray<{
+/** Ítem de menú con permiso mínimo (resource + action) o null = siempre visible. */
+type NavLink = {
   label: string;
   to: string | null;
   icon: LucideIcon;
-}> = [{ label: "Embarcados", to: "/embarcados", icon: Ship }];
+  /** Si falta, el ítem no se muestra (salvo superadmin vía userHasPermission). */
+  canShow: (user: AuthUser | null) => boolean;
+};
+
+/** Subítems de Tripulación (Figma: solo Embarcados). */
+const CREW_LINKS: ReadonlyArray<NavLink> = [
+  {
+    label: "Embarcados",
+    to: "/embarcados",
+    icon: Ship,
+    canShow: (u) => userHasPermission(u, "embarcados", "read"),
+  },
+];
 
 /**
- * Subítems de Cursos (shell).
- * Enlaces a pantallas existentes; null = aún no hay pantalla propia.
+ * Subítems de Cursos: solo pantallas propias del módulo.
+ * Catálogos y Embarcados viven en Configuración / Tripulación (sin duplicar).
  */
-const CURSOS_LINKS: ReadonlyArray<{
-  label: string;
-  to: string | null;
-  icon: LucideIcon;
-}> = [
-  { label: "Presentación", to: "/cursos", icon: GraduationCap },
-  { label: "Gestión de cursos", to: "/catalogos?tab=courses", icon: BookOpen },
+const CURSOS_LINKS: ReadonlyArray<NavLink> = [
   {
-    label: "Por título marítimo",
-    to: "/catalogos?tab=certificates",
-    icon: Anchor,
+    label: "Presentación",
+    to: "/cursos",
+    icon: GraduationCap,
+    canShow: (u) => canSeeCursosModule(u),
   },
-  { label: "Embarcados", to: "/embarcados", icon: Ship },
   {
     label: "Cursos tripulación",
     to: "/cursos/tripulacion",
     icon: ClipboardList,
+    canShow: (u) => userHasPermission(u, "cursos.assignments", "read"),
   },
-  { label: "Notificaciones", to: "/notificaciones", icon: Bell },
-  { label: "Outbox", to: "/notificaciones/outbox", icon: Inbox },
-  { label: "Vencimientos", to: "/cursos/vencimientos", icon: AlertTriangle },
+  {
+    label: "Vencimientos",
+    to: "/cursos/vencimientos",
+    icon: AlertTriangle,
+    canShow: (u) => userHasPermission(u, "cursos.libretas", "read"),
+  },
+  {
+    label: "Notificaciones",
+    to: "/notificaciones",
+    icon: Bell,
+    canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
+  },
+  {
+    label: "Outbox",
+    to: "/notificaciones/outbox",
+    icon: Inbox,
+    canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
+  },
 ];
 
-/** Subítems de Configuración (Figma Sidebar Superadmin). */
-const CONFIG_LINKS: ReadonlyArray<{
-  label: string;
-  to: string | null;
-  icon: LucideIcon;
-}> = [
-  { label: "Resumen", to: null, icon: LayoutGrid },
-  { label: "Empresas", to: "/empresas", icon: Building2 },
-  /** Lugares de trabajo (naves, oficinas, etc.). */
-  { label: "Flota y operación", to: "/ubicaciones", icon: MapPin },
-  { label: "Catálogos maestros", to: "/catalogos", icon: ClipboardList },
-  { label: "Usuarios", to: "/usuarios", icon: Users },
-  { label: "Notificaciones", to: "/notificaciones", icon: Bell },
+/** ¿Puede abrir el módulo Cursos (alguno de sus recursos)? */
+function canSeeCursosModule(user: AuthUser | null): boolean {
+  return (
+    userHasPermission(user, "cursos.assignments", "read") ||
+    userHasPermission(user, "cursos.libretas", "read") ||
+    userHasPermission(user, "cursos.notifications", "read") ||
+    userHasPermission(user, "cursos.catalog", "read")
+  );
+}
+
+/** ¿Puede ver Catálogos maestros (tabs de maestros o catálogo OMI)? */
+function canSeeCatalogos(user: AuthUser | null): boolean {
+  return (
+    userHasPermission(user, "cursos.catalog", "read") ||
+    userHasPermission(user, "maestros.ranks", "read") ||
+    userHasPermission(user, "maestros.degrees", "read") ||
+    userHasPermission(user, "maestros.certificates", "read") ||
+    userHasPermission(user, "maestros.document_types", "read")
+  );
+}
+
+/** Subítems de Configuración (sin Notificaciones: viven bajo Cursos). */
+const CONFIG_LINKS: ReadonlyArray<NavLink> = [
+  {
+    label: "Resumen",
+    to: null,
+    icon: LayoutGrid,
+    canShow: () => false,
+  },
+  {
+    label: "Empresas",
+    to: "/empresas",
+    icon: Building2,
+    canShow: (u) =>
+      u?.internalRol === "superadmin" || u?.internalRol === "admin",
+  },
+  {
+    label: "Flota y operación",
+    to: "/ubicaciones",
+    icon: MapPin,
+    canShow: (u) => userHasPermission(u, "maestros.locations", "read"),
+  },
+  {
+    label: "Catálogos maestros",
+    to: "/catalogos",
+    icon: ClipboardList,
+    canShow: (u) => canSeeCatalogos(u),
+  },
+  {
+    label: "Usuarios",
+    to: "/usuarios",
+    icon: Users,
+    canShow: (u) => userHasPermission(u, "maestros.users", "read"),
+  },
 ];
 
 /** Iniciales a partir de nombre y apellido. */
@@ -130,27 +192,28 @@ export function Sidebar() {
     location.pathname.startsWith("/empresas") ||
     location.pathname.startsWith("/ubicaciones") ||
     location.pathname.startsWith("/catalogos") ||
-    location.pathname.startsWith("/usuarios") ||
-    location.pathname.startsWith("/notificaciones");
+    location.pathname.startsWith("/usuarios");
   /** Rutas bajo Tripulación (lista + ficha). */
   const onCrewSection = location.pathname.startsWith("/embarcados");
-  /**
-   * Grupo Cursos activo: home /cursos o deep-links del hub
-   * (catálogos con tab courses/certificates, notificaciones).
-   */
+  /** Grupo Cursos: /cursos/* y avisos (no catálogos). */
   const onCursosSection =
     location.pathname.startsWith("/cursos") ||
-    (location.pathname.startsWith("/catalogos") &&
-      (location.search.includes("tab=courses") ||
-        location.search.includes("tab=certificates"))) ||
     location.pathname.startsWith("/notificaciones");
-  /** Rutas bajo Sistema (Figma). */
+  /** Rutas bajo Sistema (solo superadmin). */
   const onSystemSection = location.pathname.startsWith("/roles");
   const onPanel = location.pathname === "/";
   const [crewOpen, setCrewOpen] = useState(onCrewSection);
   const [cursosOpen, setCursosOpen] = useState(onCursosSection);
   const [configOpen, setConfigOpen] = useState(onConfigSection);
   const [systemOpen, setSystemOpen] = useState(onSystemSection);
+
+  const visibleCrewLinks = CREW_LINKS.filter((item) => item.canShow(user));
+  const visibleCursosLinks = CURSOS_LINKS.filter((item) => item.canShow(user));
+  const visibleConfigLinks = CONFIG_LINKS.filter((item) => item.canShow(user));
+  const showCrewGroup = visibleCrewLinks.length > 0;
+  const showCursosGroup = visibleCursosLinks.length > 0;
+  const showConfigGroup = visibleConfigLinks.length > 0;
+  const showSystemGroup = user?.internalRol === "superadmin";
 
   useEffect(() => {
     setCollapsed(readCollapsed());
@@ -235,35 +298,43 @@ export function Sidebar() {
               collapsed
             />
             <div className="h-1.5" aria-hidden />
-            <SidebarItem
-              label="Tripulación"
-              icon={Users}
-              to="/embarcados"
-              active={onCrewSection}
-              collapsed
-            />
-            <SidebarItem
-              label="Cursos"
-              icon={GraduationCap}
-              to="/cursos"
-              active={onCursosSection}
-              collapsed
-            />
+            {showCrewGroup ? (
+              <SidebarItem
+                label="Tripulación"
+                icon={Users}
+                to="/embarcados"
+                active={onCrewSection}
+                collapsed
+              />
+            ) : null}
+            {showCursosGroup ? (
+              <SidebarItem
+                label="Cursos"
+                icon={GraduationCap}
+                to="/cursos"
+                active={onCursosSection}
+                collapsed
+              />
+            ) : null}
             <SidebarItem label="Prevención" icon={HardHat} collapsed />
-            <SidebarItem
-              label="Configuración"
-              icon={Settings}
-              to="/empresas"
-              active={onConfigSection}
-              collapsed
-            />
-            <SidebarItem
-              label="Sistema"
-              icon={ShieldCheck}
-              to="/roles"
-              active={onSystemSection}
-              collapsed
-            />
+            {showConfigGroup ? (
+              <SidebarItem
+                label="Configuración"
+                icon={Settings}
+                to={visibleConfigLinks[0]?.to ?? "/empresas"}
+                active={onConfigSection}
+                collapsed
+              />
+            ) : null}
+            {showSystemGroup ? (
+              <SidebarItem
+                label="Sistema"
+                icon={ShieldCheck}
+                to="/roles"
+                active={onSystemSection}
+                collapsed
+              />
+            ) : null}
           </nav>
 
           <div className="flex justify-center border-t border-[var(--color-nav-border)] p-3">
@@ -309,6 +380,7 @@ export function Sidebar() {
             <div className="h-1.5" aria-hidden />
 
             {/* Grupo Tripulación (Figma): Embarcados. */}
+            {showCrewGroup ? (
             <div className="flex w-full flex-col">
               <button
                 type="button"
@@ -348,7 +420,7 @@ export function Sidebar() {
               </button>
               {crewOpen ? (
                 <div className="animate-submenu-enter mb-1 ml-[18px] flex flex-col gap-0.5 border-l border-[var(--color-nav-border)] pl-1.5">
-                  {CREW_LINKS.map((item) => {
+                  {visibleCrewLinks.map((item) => {
                     const Icon = item.icon;
                     const active =
                       item.to !== null &&
@@ -401,8 +473,10 @@ export function Sidebar() {
                 </div>
               ) : null}
             </div>
+            ) : null}
 
-            {/* Grupo Cursos: hub + atajos a pantallas existentes. */}
+            {/* Grupo Cursos: solo pantallas propias del módulo. */}
+            {showCursosGroup ? (
             <div className="flex w-full flex-col">
               <button
                 type="button"
@@ -442,7 +516,7 @@ export function Sidebar() {
               </button>
               {cursosOpen ? (
                 <div className="animate-submenu-enter mb-1 ml-[18px] flex flex-col gap-0.5 border-l border-[var(--color-nav-border)] pl-1.5">
-                  {CURSOS_LINKS.map((item) => {
+                  {visibleCursosLinks.map((item) => {
                     const Icon = item.icon;
                     const active = isCursosNavActive(
                       item.to,
@@ -497,10 +571,12 @@ export function Sidebar() {
                 </div>
               ) : null}
             </div>
+            ) : null}
 
             <SidebarItem label="Prevención" icon={HardHat} expandable />
 
             {/* Grupo Configuración (Figma): Empresas es subítem. */}
+            {showConfigGroup ? (
             <div className="flex w-full flex-col">
               <button
                 type="button"
@@ -540,7 +616,7 @@ export function Sidebar() {
               </button>
               {configOpen ? (
                 <div className="animate-submenu-enter mb-1 ml-[18px] flex flex-col gap-0.5 border-l border-[var(--color-nav-border)] pl-1.5">
-                  {CONFIG_LINKS.map((item) => {
+                  {visibleConfigLinks.map((item) => {
                     const Icon = item.icon;
                     const active =
                       item.to !== null &&
@@ -593,8 +669,10 @@ export function Sidebar() {
                 </div>
               ) : null}
             </div>
+            ) : null}
 
-            {/* Grupo Sistema (Figma): Roles y permisos. */}
+            {/* Grupo Sistema (Figma): Roles y permisos — solo superadmin. */}
+            {showSystemGroup ? (
             <div className="flex w-full flex-col">
               <button
                 type="button"
@@ -675,6 +753,7 @@ export function Sidebar() {
                 </div>
               ) : null}
             </div>
+            ) : null}
           </nav>
 
           <div className="border-t border-[var(--color-nav-border)] p-3">
