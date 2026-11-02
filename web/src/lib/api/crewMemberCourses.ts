@@ -142,3 +142,64 @@ export async function deleteCrewMemberCourseRequest(
   if (!res.ok) throw toApiError(res, body);
   return body as CrewMemberCourse;
 }
+
+/** Filtro de vencimientos (API global). */
+export type ExpiryStatusFilter = "expired" | "expiring_soon" | "attention";
+
+/** Fila del listado global de cursos por vencer/vencidos. */
+export type ExpiringCrewMemberCourse = {
+  id: string;
+  crewMemberId: string;
+  courseId: string;
+  courseName: string;
+  status: CrewCourseStatus;
+  daysUntilExpiry: number | null;
+  expiresAt: string | null;
+  isMandatory: boolean;
+  crew: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    run: string;
+    email: string;
+    businessId: string;
+  };
+};
+
+/** Respuesta paginada del listado global. */
+export type ListExpiringCrewMemberCoursesResult = {
+  items: ExpiringCrewMemberCourse[];
+  total: number;
+  page: number;
+  limit: number;
+  warningDays: number;
+};
+
+/** Query del listado global. */
+export type ListExpiringCrewMemberCoursesQuery = {
+  page?: number;
+  limit?: number;
+  status?: ExpiryStatusFilter;
+  search?: string;
+  businessId?: string;
+};
+
+/** GET /crew-member-courses — vencimientos globales. */
+export async function listExpiringCrewMemberCoursesRequest(
+  accessToken: string,
+  query: ListExpiringCrewMemberCoursesQuery = {},
+): Promise<ListExpiringCrewMemberCoursesResult> {
+  const params = new URLSearchParams();
+  params.set("page", String(query.page ?? 1));
+  params.set("limit", String(query.limit ?? 25));
+  params.set("status", query.status ?? "attention");
+  if (query.search?.trim()) params.set("search", query.search.trim());
+  if (query.businessId) params.set("businessId", query.businessId);
+
+  const res = await fetch(`/api/v1/crew-member-courses?${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ListExpiringCrewMemberCoursesResult;
+}

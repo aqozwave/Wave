@@ -165,6 +165,8 @@ import {
   deleteCrewMemberCourseResponseSchema,
   getCrewMemberCourseResponseSchema,
   listCrewMemberCoursesResponseSchema,
+  listExpiringCrewMemberCoursesQuerySchema,
+  listExpiringCrewMemberCoursesResponseSchema,
   updateCrewMemberCourseBodySchema,
   updateCrewMemberCourseResponseSchema,
 } from "../modules/crewMemberCourses/crewMemberCourses.schemas.js";
@@ -2620,6 +2622,27 @@ registry.registerPath({
       },
     },
     404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/crew-member-courses",
+  tags: ["CrewMemberCourses"],
+  summary: "Listar cursos vencidos / por vencer",
+  description:
+    "Listado global para Vencimientos. Permiso cursos.libretas read. status=attention|expired|expiring_soon.",
+  security: [{ bearerAuth: [] }],
+  request: { query: listExpiringCrewMemberCoursesQuerySchema },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": {
+          schema: listExpiringCrewMemberCoursesResponseSchema,
+        },
+      },
+    },
   },
 });
 

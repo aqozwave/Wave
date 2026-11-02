@@ -58,7 +58,7 @@ const CURSOS_LINKS: ReadonlyArray<{
   { label: "Embarcados", to: "/embarcados", icon: Ship },
   { label: "Notificaciones", to: "/notificaciones", icon: Bell },
   { label: "Outbox", to: "/notificaciones/outbox", icon: Inbox },
-  { label: "Vencimientos", to: null, icon: ClipboardList },
+  { label: "Vencimientos", to: "/cursos/vencimientos", icon: ClipboardList },
 ];
 
 /** Subítems de Configuración (Figma Sidebar Superadmin). */

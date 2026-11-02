@@ -7,9 +7,15 @@ import {
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
+import {
+  getExpiryNotificationSettings,
+  getMaxWarningDays,
+} from "../notificationSettings/notificationSettings.service.js";
 import type {
   CreateCrewMemberCourseBody,
   CrewMemberCourseResponse,
+  ExpiringCrewMemberCourseItem,
+  ListExpiringCrewMemberCoursesQuery,
   UpdateCrewMemberCourseBody,
 } from "./crewMemberCourses.schemas.js";
 
@@ -308,6 +314,121 @@ export async function listCrewMemberCourses(
     items.push(await toAssignmentResponse(row, crew.competencyCertificateId));
   }
   return { items, total: items.length };
+}
+
+/**
+ * Listado global de cursos vencidos / por vencer (pantalla Vencimientos).
+ * Recalcula status en memoria con warningDays de settings (courseCrewDays).
+ */
+export async function listExpiringCrewMemberCourses(
+  actor: Actor,
+  query: ListExpiringCrewMemberCoursesQuery,
+): Promise<{
+  items: ExpiringCrewMemberCourseItem[];
+  total: number;
+  page: number;
+  limit: number;
+  warningDays: number;
+}> {
+  const settings = await getExpiryNotificationSettings();
+  const warningDays =
+    getMaxWarningDays(settings, "courseCrewDays") ||
+    getCourseExpiryWarningDays();
+  const now = new Date();
+
+  const crewWhere: {
+    deletedAt: null;
+    state: boolean;
+    businessId?: string;
+  } = { deletedAt: null, state: true };
+
+  if (actor.internalRol === "superadmin") {
+    if (query.businessId) crewWhere.businessId = query.businessId;
+  } else {
+    if (!actor.businessId) {
+      throw new AppError(
+        403,
+        "forbidden",
+        "Tu usuario no tiene una empresa asignada",
+      );
+    }
+    crewWhere.businessId = actor.businessId;
+  }
+
+  const rows = await prisma.crewMemberCourse.findMany({
+    where: {
+      deletedAt: null,
+      expiresAt: { not: null },
+      crewMember: crewWhere,
+    },
+    include: {
+      course: true,
+      crewMember: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          run: true,
+          email: true,
+          businessId: true,
+          competencyCertificateId: true,
+        },
+      },
+    },
+    orderBy: [{ expiresAt: "asc" }],
+  });
+
+  const term = query.search?.trim().toLowerCase() ?? "";
+  const matched: ExpiringCrewMemberCourseItem[] = [];
+
+  for (const row of rows) {
+    const status = resolveAssignmentStatus(row, { warningDays, now });
+    if (query.status === "expired" && status !== "expired") continue;
+    if (query.status === "expiring_soon" && status !== "expiring_soon") continue;
+    if (
+      query.status === "attention" &&
+      status !== "expired" &&
+      status !== "expiring_soon"
+    ) {
+      continue;
+    }
+
+    const crew = row.crewMember;
+    if (term) {
+      const hay = `${crew.firstName} ${crew.lastName} ${crew.run} ${crew.email} ${row.course?.name ?? ""}`.toLowerCase();
+      if (!hay.includes(term)) continue;
+    }
+
+    // Listado masivo: flag del catálogo (sin N+1 al join del título).
+    const isMandatory = row.course?.isMandatory !== false;
+
+    matched.push({
+      id: row.id,
+      crewMemberId: row.crewMemberId,
+      courseId: row.courseId,
+      courseName: row.course?.name ?? "—",
+      status,
+      daysUntilExpiry: daysUntilExpiry(row.expiresAt, now),
+      expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+      isMandatory,
+      crew: {
+        id: crew.id,
+        firstName: crew.firstName,
+        lastName: crew.lastName,
+        run: crew.run,
+        email: crew.email,
+        businessId: crew.businessId,
+      },
+    });
+  }
+
+  const page = query.page;
+  const limit = query.limit;
+  const total = matched.length;
+  const start = (page - 1) * limit;
+  const items = matched.slice(start, start + limit);
+
+  return { items, total, page, limit, warningDays };
 }
 
 /** Detalle de una asignación del tripulante. */

@@ -10,6 +10,7 @@ import { authRouter } from "./modules/auth/auth.routes.js";
 import { businessesRouter } from "./modules/businesses/businesses.routes.js";
 import { competencyCertificatesRouter } from "./modules/competencyCertificates/competencyCertificates.routes.js";
 import { coursesRouter } from "./modules/courses/courses.routes.js";
+import { crewMemberCoursesGlobalRouter } from "./modules/crewMemberCourses/crewMemberCourses.global.routes.js";
 import { crewMembersRouter } from "./modules/crewMembers/crewMembers.routes.js";
 import { documentTypesRouter } from "./modules/documentTypes/documentTypes.routes.js";
 import { healthRouter } from "./modules/health/health.routes.js";
@@ -62,6 +63,7 @@ export function createApp() {
   app.use("/api/v1/roles", rolesRouter);
   app.use("/api/v1/users", usersRouter);
   app.use("/api/v1/crew-members", crewMembersRouter);
+  app.use("/api/v1/crew-member-courses", crewMemberCoursesGlobalRouter);
   app.use("/api/v1/notification-settings", notificationSettingsRouter);
   app.use("/api/v1/notification-outbox", notificationOutboxRouter);
   app.use(notFoundHandler);

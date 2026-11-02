@@ -72,7 +72,7 @@ const HUB_GROUPS: HubGroup[] = [
         label: "Vencimientos / libretas",
         legend: "Libretas y cursos vencidos o por vencer.",
         icon: GraduationCap,
-        to: null,
+        to: "/cursos/vencimientos",
       },
     ],
   },

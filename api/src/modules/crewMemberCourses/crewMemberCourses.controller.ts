@@ -5,8 +5,10 @@ import {
   deleteCrewMemberCourseResponseSchema,
   getCrewMemberCourseResponseSchema,
   listCrewMemberCoursesResponseSchema,
+  listExpiringCrewMemberCoursesResponseSchema,
   updateCrewMemberCourseResponseSchema,
   type CreateCrewMemberCourseBody,
+  type ListExpiringCrewMemberCoursesQuery,
   type UpdateCrewMemberCourseBody,
 } from "./crewMemberCourses.schemas.js";
 import {
@@ -14,6 +16,7 @@ import {
   deleteCrewMemberCourse,
   getCrewMemberCourseById,
   listCrewMemberCourses,
+  listExpiringCrewMemberCourses,
   updateCrewMemberCourse,
 } from "./crewMemberCourses.service.js";
 
@@ -28,6 +31,24 @@ export async function listCrewMemberCoursesHandler(
   const { id } = req.params as { id: string };
   const result = await listCrewMemberCourses(req.user, id);
   res.status(200).json(listCrewMemberCoursesResponseSchema.parse(result));
+}
+
+/**
+ * GET /crew-member-courses — vencimientos globales (cursos).
+ * Usado por la pantalla /cursos/vencimientos.
+ */
+export async function listExpiringCrewMemberCoursesHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+  const query = req.query as unknown as ListExpiringCrewMemberCoursesQuery;
+  const result = await listExpiringCrewMemberCourses(req.user, query);
+  res
+    .status(200)
+    .json(listExpiringCrewMemberCoursesResponseSchema.parse(result));
 }
 
 /** GET /crew-members/:id/courses/:assignmentId — detalle. */
