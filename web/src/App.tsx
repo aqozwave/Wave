@@ -15,6 +15,7 @@ import { ConfirmEmail } from "./pages/ConfirmEmail/ConfirmEmail";
 import { ForgotPassword } from "./pages/ForgotPassword/ForgotPassword";
 import { Login } from "./pages/Login/Login";
 import { Catalogos } from "./pages/Catalogos/Catalogos";
+import { CursosHome } from "./pages/Cursos/CursosHome";
 import { Empresas } from "./pages/Empresas/Empresas";
 import { Panel } from "./pages/Panel/Panel";
 import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmation";
@@ -129,6 +130,7 @@ export function App() {
             path="tripulantes"
             element={<Navigate to="/embarcados" replace />}
           />
+          <Route path="cursos" element={<CursosHome />} />
           <Route path="empresas" element={<Empresas />} />
           <Route path="ubicaciones" element={<Ubicaciones />} />
           <Route path="catalogos" element={<Catalogos />} />

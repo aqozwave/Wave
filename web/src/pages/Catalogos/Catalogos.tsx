@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ClipboardList, Plus } from "lucide-react";
+import { useSearchParams } from "react-router";
 import { Button } from "../../components/Button/Button";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { Topbar } from "../../components/Topbar/Topbar";
@@ -25,15 +26,47 @@ type CatalogTab =
   | "courses"
   | "documentTypes";
 
+/** Tabs válidos para deep-link ?tab= (hub Cursos). */
+const CATALOG_TABS = new Set<CatalogTab>([
+  "ranks",
+  "degrees",
+  "certificates",
+  "courses",
+  "documentTypes",
+]);
+
+/** Interpreta ?tab= del query; default ranks. */
+function tabFromSearch(raw: string | null): CatalogTab {
+  if (raw && CATALOG_TABS.has(raw as CatalogTab)) {
+    return raw as CatalogTab;
+  }
+  return "ranks";
+}
+
 /**
  * Pantalla Catálogos maestros.
  * Rangos, títulos, cursos y tipos de documento del expediente.
+ * Soporta ?tab=courses|certificates|… desde el hub de Cursos.
  */
 export function Catalogos() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const canManage =
     user?.internalRol === "admin" || user?.internalRol === "superadmin";
-  const [tab, setTab] = useState<CatalogTab>("ranks");
+  const [tab, setTab] = useState<CatalogTab>(() =>
+    tabFromSearch(searchParams.get("tab")),
+  );
+
+  /** Sincroniza tab si cambia la URL (link desde /cursos). */
+  useEffect(() => {
+    setTab(tabFromSearch(searchParams.get("tab")));
+  }, [searchParams]);
+
+  /** Cambia tab y refleja en la URL (sin perder historial inútil). */
+  function selectTab(next: CatalogTab) {
+    setTab(next);
+    setSearchParams(next === "ranks" ? {} : { tab: next }, { replace: true });
+  }
   const ranksPanelRef = useRef<RanksPanelHandle>(null);
   const degreesPanelRef = useRef<DegreesPanelHandle>(null);
   const certificatesPanelRef = useRef<CertificatesPanelHandle>(null);
@@ -113,7 +146,7 @@ export function Catalogos() {
                 type="button"
                 role="tab"
                 aria-selected={active}
-                onClick={() => setTab(t.id)}
+                onClick={() => selectTab(t.id)}
                 className={[
                   "inline-flex h-9 items-center rounded-[var(--radius-md)] px-3.5 text-[13px] font-medium",
                   active

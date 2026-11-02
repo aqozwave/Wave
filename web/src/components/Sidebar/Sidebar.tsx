@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import {
+  Anchor,
   Bell,
+  BookOpen,
   Building2,
   ClipboardList,
   GraduationCap,
   HardHat,
+  Inbox,
   LayoutDashboard,
   LayoutGrid,
   MapPin,
@@ -36,6 +39,28 @@ const CREW_LINKS: ReadonlyArray<{
   icon: LucideIcon;
 }> = [{ label: "Embarcados", to: "/embarcados", icon: Ship }];
 
+/**
+ * Subítems de Cursos (shell).
+ * Enlaces a pantallas existentes; null = aún no hay pantalla propia.
+ */
+const CURSOS_LINKS: ReadonlyArray<{
+  label: string;
+  to: string | null;
+  icon: LucideIcon;
+}> = [
+  { label: "Presentación", to: "/cursos", icon: GraduationCap },
+  { label: "Gestión de cursos", to: "/catalogos?tab=courses", icon: BookOpen },
+  {
+    label: "Por título marítimo",
+    to: "/catalogos?tab=certificates",
+    icon: Anchor,
+  },
+  { label: "Embarcados", to: "/embarcados", icon: Ship },
+  { label: "Notificaciones", to: "/notificaciones", icon: Bell },
+  { label: "Outbox", to: "/notificaciones/outbox", icon: Inbox },
+  { label: "Vencimientos", to: null, icon: ClipboardList },
+];
+
 /** Subítems de Configuración (Figma Sidebar Superadmin). */
 const CONFIG_LINKS: ReadonlyArray<{
   label: string;
@@ -56,6 +81,24 @@ function initialsOf(firstName: string, lastName: string): string {
   const a = firstName.trim().charAt(0);
   const b = lastName.trim().charAt(0);
   return `${a}${b}`.toUpperCase() || "?";
+}
+
+/**
+ * ¿El subítem de Cursos coincide con la URL actual?
+ * Soporta rutas con query (?tab=courses).
+ */
+function isCursosNavActive(
+  to: string | null,
+  pathname: string,
+  search: string,
+): boolean {
+  if (!to) return false;
+  if (to.includes("?")) {
+    const [path, query] = to.split("?");
+    return pathname === path && search.includes(query);
+  }
+  if (to === "/cursos") return pathname === "/cursos";
+  return pathname === to || pathname.startsWith(`${to}/`);
 }
 
 /** Lee el estado persistido del rail. */
@@ -85,10 +128,21 @@ export function Sidebar() {
     location.pathname.startsWith("/notificaciones");
   /** Rutas bajo Tripulación (lista + ficha). */
   const onCrewSection = location.pathname.startsWith("/embarcados");
+  /**
+   * Grupo Cursos activo: home /cursos o deep-links del hub
+   * (catálogos con tab courses/certificates, notificaciones).
+   */
+  const onCursosSection =
+    location.pathname.startsWith("/cursos") ||
+    (location.pathname.startsWith("/catalogos") &&
+      (location.search.includes("tab=courses") ||
+        location.search.includes("tab=certificates"))) ||
+    location.pathname.startsWith("/notificaciones");
   /** Rutas bajo Sistema (Figma). */
   const onSystemSection = location.pathname.startsWith("/roles");
   const onPanel = location.pathname === "/";
   const [crewOpen, setCrewOpen] = useState(onCrewSection);
+  const [cursosOpen, setCursosOpen] = useState(onCursosSection);
   const [configOpen, setConfigOpen] = useState(onConfigSection);
   const [systemOpen, setSystemOpen] = useState(onSystemSection);
 
@@ -102,6 +156,12 @@ export function Sidebar() {
       setCrewOpen(true);
     }
   }, [onCrewSection]);
+
+  useEffect(() => {
+    if (onCursosSection) {
+      setCursosOpen(true);
+    }
+  }, [onCursosSection]);
 
   useEffect(() => {
     if (onConfigSection) {
@@ -179,7 +239,8 @@ export function Sidebar() {
             <SidebarItem
               label="Cursos"
               icon={GraduationCap}
-              count={6}
+              to="/cursos"
+              active={onCursosSection}
               collapsed
             />
             <SidebarItem label="Prevención" icon={HardHat} collapsed />
@@ -335,12 +396,102 @@ export function Sidebar() {
               ) : null}
             </div>
 
-            <SidebarItem
-              label="Cursos"
-              icon={GraduationCap}
-              count={6}
-              expandable
-            />
+            {/* Grupo Cursos: hub + atajos a pantallas existentes. */}
+            <div className="flex w-full flex-col">
+              <button
+                type="button"
+                onClick={() => setCursosOpen((v) => !v)}
+                className={[
+                  "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
+                  onCursosSection || cursosOpen
+                    ? "font-medium text-[var(--color-nav-item-active-fg)]"
+                    : "font-normal text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
+                ].join(" ")}
+                aria-expanded={cursosOpen}
+              >
+                <GraduationCap
+                  size={18}
+                  strokeWidth={1.5}
+                  className="text-[var(--color-nav-icon)]"
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1 truncate">Cursos</span>
+                <span
+                  className={[
+                    "inline-flex size-3.5 shrink-0 text-[var(--color-nav-icon)] transition-transform",
+                    cursosOpen ? "rotate-90" : "",
+                  ].join(" ")}
+                  aria-hidden
+                >
+                  <svg viewBox="0 0 14 14" className="size-3.5" fill="none">
+                    <path
+                      d="M5 3.5 8.5 7 5 10.5"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+              </button>
+              {cursosOpen ? (
+                <div className="animate-submenu-enter mb-1 ml-[18px] flex flex-col gap-0.5 border-l border-[var(--color-nav-border)] pl-1.5">
+                  {CURSOS_LINKS.map((item) => {
+                    const Icon = item.icon;
+                    const active = isCursosNavActive(
+                      item.to,
+                      location.pathname,
+                      location.search,
+                    );
+                    const rowClass = [
+                      "relative flex h-8 items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px]",
+                      active
+                        ? "bg-[var(--color-nav-item-active-bg)] font-medium text-[var(--color-nav-item-active-fg)]"
+                        : "text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
+                    ].join(" ");
+                    const content = (
+                      <>
+                        {active ? (
+                          <span
+                            className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--color-nachipa-primary)]"
+                            aria-hidden
+                          />
+                        ) : null}
+                        <Icon
+                          size={14}
+                          strokeWidth={1.5}
+                          className="shrink-0 text-[var(--color-nav-icon)]"
+                          aria-hidden
+                        />
+                        <span className="min-w-0 truncate">{item.label}</span>
+                      </>
+                    );
+                    if (item.to) {
+                      return (
+                        <Link
+                          key={item.label}
+                          to={item.to}
+                          aria-current={active ? "page" : undefined}
+                          className={rowClass}
+                        >
+                          {content}
+                        </Link>
+                      );
+                    }
+                    return (
+                      <span
+                        key={item.label}
+                        className={`${rowClass} cursor-default text-[var(--color-nachipa-muted)]`}
+                        title="Próximamente"
+                      >
+                        {content}
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+
             <SidebarItem label="Prevención" icon={HardHat} expandable />
 
             {/* Grupo Configuración (Figma): Empresas es subítem. */}
