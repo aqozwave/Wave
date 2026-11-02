@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createAreaResponseSchema,
   deleteAreaResponseSchema,
   getAreaResponseSchema,
@@ -41,6 +45,12 @@ export async function createAreaHandler(
   }
   const body = req.body as CreateAreaBody;
   const created = await createArea(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "area",
+    resourceId: created.id,
+    targetLabel: created.name,
+  });
   res.status(201).json(createAreaResponseSchema.parse(created));
 }
 
@@ -68,6 +78,13 @@ export async function updateAreaHandler(
   const { id } = req.params as { id: string };
   const body = req.body as UpdateAreaBody;
   const updated = await updateArea(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "area",
+    resourceId: updated.id,
+    targetLabel: updated.name,
+    metadata: { fields: safeChangedFields(body) },
+  });
   res.status(200).json(updateAreaResponseSchema.parse(updated));
 }
 
@@ -81,5 +98,11 @@ export async function deleteAreaHandler(
   }
   const { id } = req.params as { id: string };
   const deleted = await deleteAreaById(req.user, id);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "area",
+    resourceId: deleted.id,
+    targetLabel: deleted.name,
+  });
   res.status(200).json(deleteAreaResponseSchema.parse(deleted));
 }

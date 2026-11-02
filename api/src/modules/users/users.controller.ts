@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createUserResponseSchema,
   deleteUserPhotoResponseSchema,
   deleteUserResponseSchema,
@@ -48,6 +52,12 @@ export async function createUserHandler(
   }
   const body = req.body as CreateUserBody;
   const created = await createUser(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "user",
+    resourceId: created.id,
+    targetLabel: created.email,
+  });
   res.status(201).json(createUserResponseSchema.parse(created));
 }
 
@@ -75,6 +85,13 @@ export async function updateUserHandler(
   const { id } = req.params as { id: string };
   const body = req.body as UpdateUserBody;
   const updated = await updateUser(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "user",
+    resourceId: updated.id,
+    targetLabel: updated.email,
+    metadata: { fields: safeChangedFields(body) },
+  });
   res.status(200).json(updateUserResponseSchema.parse(updated));
 }
 
@@ -88,6 +105,12 @@ export async function deleteUserHandler(
   }
   const { id } = req.params as { id: string };
   const deleted = await deleteUserById(req.user, id);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "user",
+    resourceId: deleted.id,
+    targetLabel: deleted.email,
+  });
   res.status(200).json(deleteUserResponseSchema.parse(deleted));
 }
 

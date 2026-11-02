@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createCourseResponseSchema,
   deleteCourseResponseSchema,
   getCourseResponseSchema,
@@ -41,6 +45,12 @@ export async function createCourseHandler(
   }
   const body = req.body as CreateCourseBody;
   const created = await createCourse(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "course",
+    resourceId: created.id,
+    targetLabel: created.name,
+  });
   res.status(201).json(createCourseResponseSchema.parse(created));
 }
 
@@ -68,6 +78,13 @@ export async function updateCourseHandler(
   const { id } = req.params as { id: string };
   const body = req.body as UpdateCourseBody;
   const updated = await updateCourse(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "course",
+    resourceId: updated.id,
+    targetLabel: updated.name,
+    metadata: { fields: safeChangedFields(body) },
+  });
   res.status(200).json(updateCourseResponseSchema.parse(updated));
 }
 
@@ -81,5 +98,11 @@ export async function deleteCourseHandler(
   }
   const { id } = req.params as { id: string };
   const deleted = await deleteCourseById(req.user, id);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "course",
+    resourceId: deleted.id,
+    targetLabel: deleted.name,
+  });
   res.status(200).json(deleteCourseResponseSchema.parse(deleted));
 }

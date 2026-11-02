@@ -1,5 +1,9 @@
 import type { Request, Response } from "express";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createRoleResponseSchema,
   deleteRoleResponseSchema,
   getRoleResponseSchema,
@@ -55,6 +59,12 @@ export async function createRoleHandler(
 ): Promise<void> {
   const body = req.body as CreateRoleBody;
   const created = await createRole(body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "role",
+    resourceId: created.id,
+    targetLabel: created.name,
+  });
   res.status(201).json(createRoleResponseSchema.parse(created));
 }
 
@@ -66,6 +76,13 @@ export async function updateRoleHandler(
   const { id } = req.params as { id: string };
   const body = req.body as UpdateRoleBody;
   const updated = await updateRole(id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "role",
+    resourceId: updated.id,
+    targetLabel: updated.name,
+    metadata: { fields: safeChangedFields(body) },
+  });
   res.status(200).json(updateRoleResponseSchema.parse(updated));
 }
 
@@ -76,5 +93,11 @@ export async function deleteRoleHandler(
 ): Promise<void> {
   const { id } = req.params as { id: string };
   const deleted = await deleteRoleById(id);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "role",
+    resourceId: deleted.id,
+    targetLabel: deleted.name,
+  });
   res.status(200).json(deleteRoleResponseSchema.parse(deleted));
 }

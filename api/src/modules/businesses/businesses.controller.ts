@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createBusinessResponseSchema,
   deleteBusinessResponseSchema,
   getBusinessResponseSchema,
@@ -45,6 +49,12 @@ export async function createBusinessHandler(
 ): Promise<void> {
   const body = req.body as CreateBusinessBody;
   const created = await createBusiness(body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "business",
+    resourceId: created.id,
+    targetLabel: created.name,
+  });
   const out = createBusinessResponseSchema.parse(created);
   res.status(201).json(out);
 }
@@ -80,6 +90,13 @@ export async function updateBusinessHandler(
   const { id } = req.params as { id: string };
   const body = req.body as UpdateBusinessBody;
   const updated = await updateBusiness(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "business",
+    resourceId: updated.id,
+    targetLabel: updated.name,
+    metadata: { fields: safeChangedFields(body) },
+  });
   const out = updateBusinessResponseSchema.parse(updated);
   res.status(200).json(out);
 }
@@ -93,6 +110,12 @@ export async function deleteBusinessHandler(
 ): Promise<void> {
   const { id } = req.params as { id: string };
   const deleted = await deleteBusinessById(id);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "business",
+    resourceId: deleted.id,
+    targetLabel: deleted.name,
+  });
   const out = deleteBusinessResponseSchema.parse(deleted);
   res.status(200).json(out);
 }

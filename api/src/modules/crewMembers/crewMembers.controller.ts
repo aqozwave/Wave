@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createCrewMemberResponseSchema,
   deleteCrewMemberResponseSchema,
   getCrewMemberResponseSchema,
@@ -17,6 +21,15 @@ import {
   listCrewMembers,
   updateCrewMember,
 } from "./crewMembers.service.js";
+
+/** Etiqueta legible del tripulante para auditoría. */
+function crewLabel(row: {
+  firstName: string;
+  lastName: string;
+  run: string;
+}): string {
+  return `${row.firstName} ${row.lastName}`.trim() || row.run;
+}
 
 /** GET /crew-members — listado paginado scoped. */
 export async function listCrewMembersHandler(
@@ -41,6 +54,12 @@ export async function createCrewMemberHandler(
   }
   const body = req.body as CreateCrewMemberBody;
   const created = await createCrewMember(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "crewMember",
+    resourceId: created.id,
+    targetLabel: crewLabel(created),
+  });
   res.status(201).json(createCrewMemberResponseSchema.parse(created));
 }
 
@@ -68,6 +87,13 @@ export async function updateCrewMemberHandler(
   const { id } = req.params as { id: string };
   const body = req.body as UpdateCrewMemberBody;
   const updated = await updateCrewMember(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "crewMember",
+    resourceId: updated.id,
+    targetLabel: crewLabel(updated),
+    metadata: { fields: safeChangedFields(body) },
+  });
   res.status(200).json(updateCrewMemberResponseSchema.parse(updated));
 }
 
@@ -81,5 +107,11 @@ export async function deleteCrewMemberHandler(
   }
   const { id } = req.params as { id: string };
   const deleted = await deleteCrewMemberById(req.user, id);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "crewMember",
+    resourceId: deleted.id,
+    targetLabel: crewLabel(deleted),
+  });
   res.status(200).json(deleteCrewMemberResponseSchema.parse(deleted));
 }

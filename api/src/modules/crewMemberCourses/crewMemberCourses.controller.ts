@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createCrewMemberCourseResponseSchema,
   deleteCrewMemberCourseResponseSchema,
   getCrewMemberCourseResponseSchema,
@@ -78,6 +82,13 @@ export async function createCrewMemberCourseHandler(
   const { id } = req.params as { id: string };
   const body = req.body as CreateCrewMemberCourseBody;
   const created = await createCrewMemberCourse(req.user, id, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "crewMemberCourse",
+    resourceId: created.id,
+    targetLabel: created.course?.name ?? created.courseId,
+    metadata: { crewMemberId: id },
+  });
   res.status(201).json(createCrewMemberCourseResponseSchema.parse(created));
 }
 
@@ -95,6 +106,16 @@ export async function updateCrewMemberCourseHandler(
   };
   const body = req.body as UpdateCrewMemberCourseBody;
   const updated = await updateCrewMemberCourse(req.user, id, assignmentId, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "crewMemberCourse",
+    resourceId: updated.id,
+    targetLabel: updated.course?.name ?? updated.courseId,
+    metadata: {
+      crewMemberId: id,
+      fields: safeChangedFields(body),
+    },
+  });
   res.status(200).json(updateCrewMemberCourseResponseSchema.parse(updated));
 }
 
@@ -111,5 +132,12 @@ export async function deleteCrewMemberCourseHandler(
     assignmentId: string;
   };
   const deleted = await deleteCrewMemberCourse(req.user, id, assignmentId);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "crewMemberCourse",
+    resourceId: deleted.id,
+    targetLabel: deleted.course?.name ?? deleted.courseId,
+    metadata: { crewMemberId: id },
+  });
   res.status(200).json(deleteCrewMemberCourseResponseSchema.parse(deleted));
 }

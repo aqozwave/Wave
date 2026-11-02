@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
+  auditWrite,
+  safeChangedFields,
+} from "../activityLogs/activityLogs.service.js";
+import {
   createLocationResponseSchema,
   deleteLocationResponseSchema,
   getLocationResponseSchema,
@@ -48,6 +52,12 @@ export async function createLocationHandler(
 
   const body = req.body as CreateLocationBody;
   const created = await createLocation(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "location",
+    resourceId: created.id,
+    targetLabel: created.name,
+  });
   const out = createLocationResponseSchema.parse(created);
   res.status(201).json(out);
 }
@@ -83,6 +93,13 @@ export async function updateLocationHandler(
   const { id } = req.params as { id: string };
   const body = req.body as UpdateLocationBody;
   const updated = await updateLocation(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "location",
+    resourceId: updated.id,
+    targetLabel: updated.name,
+    metadata: { fields: safeChangedFields(body) },
+  });
   const out = updateLocationResponseSchema.parse(updated);
   res.status(200).json(out);
 }
@@ -100,6 +117,12 @@ export async function deleteLocationHandler(
 
   const { id } = req.params as { id: string };
   const deleted = await deleteLocationById(req.user, id);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "location",
+    resourceId: deleted.id,
+    targetLabel: deleted.name,
+  });
   const out = deleteLocationResponseSchema.parse(deleted);
   res.status(200).json(out);
 }

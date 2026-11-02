@@ -43,6 +43,8 @@ const RESOURCE_OPTIONS: Array<{ value: "" | ActivityResource; label: string }> =
     { value: "location", label: "Lugar de trabajo" },
     { value: "crewMember", label: "Embarcado" },
     { value: "crewMemberCourse", label: "Curso tripulante" },
+    { value: "area", label: "Área" },
+    { value: "course", label: "Curso OMI" },
     { value: "role", label: "Rol" },
     { value: "system", label: "Sistema" },
   ];

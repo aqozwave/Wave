@@ -60,6 +60,45 @@ function readUserAgent(req: Request | undefined): string | null {
 }
 
 /**
+ * Campos del body que cambiaron (sin password ni undefined).
+ * Útil en metadata de UPDATE.
+ */
+export function safeChangedFields(body: unknown): string[] {
+  if (!body || typeof body !== "object") return [];
+  return Object.keys(body as Record<string, unknown>).filter(
+    (key) =>
+      key !== "password" &&
+      (body as Record<string, unknown>)[key] !== undefined,
+  );
+}
+
+/**
+ * Atajo para mutaciones autenticadas (CREATE/UPDATE/DELETE).
+ * Toma el actor de req.user.
+ */
+export function auditWrite(
+  req: Request,
+  input: {
+    action: "CREATE" | "UPDATE" | "DELETE";
+    resource: ActivityResource;
+    resourceId?: string | null;
+    targetLabel?: string | null;
+    metadata?: Prisma.InputJsonValue | null;
+  },
+): void {
+  recordActivity({
+    req,
+    actor: actorFromProfile(req.user ?? null),
+    action: input.action,
+    resource: input.resource,
+    resourceId: input.resourceId ?? null,
+    targetLabel: input.targetLabel ?? null,
+    success: true,
+    metadata: input.metadata ?? null,
+  });
+}
+
+/**
  * Persiste un evento de auditoría sin bloquear la petición.
  * Si el insert falla, solo loguea en consola (no rompe el flujo).
  */
