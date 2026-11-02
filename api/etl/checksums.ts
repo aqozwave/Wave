@@ -116,11 +116,10 @@ const INVENTORY: InventoryRow[] = [
   {
     key: "user",
     order: 55,
-    status: "missing",
+    status: "ready",
     mongoCollection: "users",
     prismaModel: "user",
-    npmScript: null,
-    note: "ETL pendiente (Sección 12)",
+    npmScript: "etl:user",
   },
   {
     key: "documentType",

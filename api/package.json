@@ -22,6 +22,7 @@
     "etl:muelle": "tsx --env-file=.env etl/muelle.ts",
     "etl:travesia": "tsx --env-file=.env etl/travesia.ts",
     "etl:role": "tsx --env-file=.env etl/role.ts",
+    "etl:user": "tsx --env-file=.env etl/user.ts",
     "etl:crew-member": "tsx --env-file=.env etl/crewMember.ts",
     "etl:crew-member-muelle": "tsx --env-file=.env etl/crewMemberMuelle.ts",
     "etl:crew-member-travesia": "tsx --env-file=.env etl/crewMemberTravesia.ts",
