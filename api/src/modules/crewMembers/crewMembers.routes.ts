@@ -20,6 +20,20 @@ import {
   listCrewMemberTravesiasRequestSchema,
 } from "../crewMemberAssignments/crewMemberAssignments.schemas.js";
 import {
+  createCrewMemberCourseHandler,
+  deleteCrewMemberCourseHandler,
+  getCrewMemberCourseHandler,
+  listCrewMemberCoursesHandler,
+  updateCrewMemberCourseHandler,
+} from "../crewMemberCourses/crewMemberCourses.controller.js";
+import {
+  createCrewMemberCourseRequestSchema,
+  deleteCrewMemberCourseRequestSchema,
+  getCrewMemberCourseRequestSchema,
+  listCrewMemberCoursesRequestSchema,
+  updateCrewMemberCourseRequestSchema,
+} from "../crewMemberCourses/crewMemberCourses.schemas.js";
+import {
   createCrewMemberDocumentHandler,
   deleteCrewMemberDocumentHandler,
   downloadCrewMemberDocumentHandler,
@@ -49,7 +63,7 @@ import {
 /**
  * Rutas de tripulantes bajo /api/v1/crew-members.
  * RBAC: embarcados.*; superadmin bypass.
- * Documentos anidados: /:id/documents.
+ * Anidados: /:id/documents, /:id/courses, muelles, travesías.
  */
 export const crewMembersRouter = Router();
 
@@ -111,6 +125,61 @@ crewMembersRouter.delete(
   ),
   validate(deleteCrewMemberDocumentRequestSchema),
   deleteCrewMemberDocumentHandler,
+);
+
+crewMembersRouter.get(
+  "/:id/courses",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.CURSOS_ASSIGNMENTS,
+    PERMISSION_ACTION.READ,
+  ),
+  validate(listCrewMemberCoursesRequestSchema),
+  listCrewMemberCoursesHandler,
+);
+
+crewMembersRouter.post(
+  "/:id/courses",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.CURSOS_ASSIGNMENTS,
+    PERMISSION_ACTION.CREATE,
+  ),
+  validate(createCrewMemberCourseRequestSchema),
+  createCrewMemberCourseHandler,
+);
+
+crewMembersRouter.get(
+  "/:id/courses/:assignmentId",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.CURSOS_ASSIGNMENTS,
+    PERMISSION_ACTION.READ,
+  ),
+  validate(getCrewMemberCourseRequestSchema),
+  getCrewMemberCourseHandler,
+);
+
+crewMembersRouter.patch(
+  "/:id/courses/:assignmentId",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.CURSOS_ASSIGNMENTS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(updateCrewMemberCourseRequestSchema),
+  updateCrewMemberCourseHandler,
+);
+
+crewMembersRouter.delete(
+  "/:id/courses/:assignmentId",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.CURSOS_ASSIGNMENTS,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
+  validate(deleteCrewMemberCourseRequestSchema),
+  deleteCrewMemberCourseHandler,
 );
 
 crewMembersRouter.get(

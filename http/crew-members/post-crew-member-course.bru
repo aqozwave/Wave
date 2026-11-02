@@ -1,0 +1,56 @@
+meta {
+  name: Post crew member course
+  type: http
+  seq: 21
+}
+
+post {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/courses
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "courseId": "{{courseId}}"
+  }
+}
+
+docs {
+  Alta manual (source=manual). Variables: accessToken, crewMemberId, courseId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const crewMemberId = bru.getEnvVar("crewMemberId");
+  const courseId = bru.getEnvVar("courseId");
+  if (!token) throw new Error("Sin accessToken");
+  if (!crewMemberId) throw new Error("Sin crewMemberId");
+  if (!courseId) throw new Error("Sin courseId");
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body && body.id) {
+    bru.setEnvVar("crewCourseAssignmentId", body.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.source: eq manual
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

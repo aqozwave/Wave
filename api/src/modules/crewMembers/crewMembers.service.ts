@@ -2,6 +2,10 @@ import { Prisma, type CrewMember } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
+import {
+  assignCertificateCoursesToCrewMember,
+  reconcileCrewMemberCertificateCourses,
+} from "../crewMemberCourses/crewMemberCourses.service.js";
 import type {
   CreateCrewMemberBody,
   CrewMemberResponse,
@@ -394,6 +398,13 @@ export async function createCrewMember(
         state: body.state ?? true,
       },
     });
+    // Auto A: si nace con título, carga cursos del título como pending.
+    if (competencyCertificateId) {
+      await assignCertificateCoursesToCrewMember(
+        row.id,
+        competencyCertificateId,
+      );
+    }
     return toCrewMemberResponse(row);
   } catch (err) {
     mapUniqueViolation(err);
@@ -510,11 +521,19 @@ export async function updateCrewMember(
         : { connect: { id: body.userId } };
   }
 
+  const certificateChanged =
+    body.competencyCertificateId !== undefined &&
+    (existing.competencyCertificateId ?? null) !== (nextCertId ?? null);
+
   try {
     const updated = await prisma.crewMember.update({
       where: { id },
       data,
     });
+    // Auto A: al cambiar título, quita gestionados del anterior y crea del nuevo.
+    if (certificateChanged) {
+      await reconcileCrewMemberCertificateCourses(updated.id, nextCertId);
+    }
     return toCrewMemberResponse(updated);
   } catch (err) {
     mapUniqueViolation(err);

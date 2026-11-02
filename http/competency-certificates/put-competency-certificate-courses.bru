@@ -1,0 +1,56 @@
+meta {
+  name: Put competency certificate courses
+  type: http
+  seq: 7
+}
+
+put {
+  url: {{baseUrl}}/api/v1/competency-certificates/{{competencyCertificateId}}/courses
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "assignments": [
+      {
+        "courseId": "{{courseId}}",
+        "isMandatory": true
+      }
+    ]
+  }
+}
+
+docs {
+  Reemplaza el set de cursos del título. Synca altas a tripulantes con ese título.
+  Variables: accessToken, competencyCertificateId, courseId (misma empresa).
+  Alternativa body: { "courseIds": ["…"] } (todos mandatory).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const certId = bru.getEnvVar("competencyCertificateId");
+  const courseId = bru.getEnvVar("courseId");
+  if (!token) throw new Error("Sin accessToken");
+  if (!certId) throw new Error("Sin competencyCertificateId");
+  if (!courseId) throw new Error("Sin courseId — corré Get courses y setea uno");
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+  res.body.sync: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -117,3 +117,104 @@ export type CompetencyCertificateResponse = z.infer<
 export type UpdateCompetencyCertificateBody = z.infer<
   typeof updateCompetencyCertificateBodySchema
 >;
+
+/**
+ * Curso resumido embebido en el vínculo título↔curso
+ * (para pintar nombre sin otro round-trip).
+ */
+export const certificateCourseEmbedSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  whereTaught: z.string(),
+  description: z.string().nullable(),
+  isMandatory: z.boolean(),
+  state: z.boolean(),
+});
+
+/** Una fila del join título marítimo ↔ curso. */
+export const competencyCertificateCourseItemSchema = z
+  .object({
+    id: z.uuid(),
+    competencyCertificateId: z.uuid(),
+    courseId: z.uuid(),
+    isMandatory: z.boolean(),
+    course: certificateCourseEmbedSchema.nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi("CompetencyCertificateCourseItem");
+
+/** GET /competency-certificates/:id/courses */
+export const listCompetencyCertificateCoursesResponseSchema = z
+  .object({
+    items: z.array(competencyCertificateCourseItemSchema),
+    /** Forma corta para el editor de títulos (portal viejo). */
+    assignments: z.array(
+      z.object({
+        courseId: z.uuid(),
+        isMandatory: z.boolean(),
+      }),
+    ),
+  })
+  .openapi("ListCompetencyCertificateCoursesResponse");
+
+export const listCompetencyCertificateCoursesRequestSchema = z.object({
+  params: competencyCertificateIdParamsSchema,
+});
+
+/**
+ * Un ítem del body de replace: curso + si es obligatorio en ese título.
+ */
+export const replaceCertificateCourseAssignmentSchema = z.object({
+  courseId: z.uuid(),
+  isMandatory: z.boolean().default(true),
+});
+
+/**
+ * Body PUT: reemplaza el set completo de cursos del título.
+ * Acepta `assignments` (con flag) o `courseIds` (todos mandatory=true).
+ */
+export const replaceCompetencyCertificateCoursesBodySchema = z
+  .object({
+    assignments: z.array(replaceCertificateCourseAssignmentSchema).optional(),
+    courseIds: z.array(z.uuid()).optional(),
+  })
+  .refine(
+    (body) =>
+      Array.isArray(body.assignments) || Array.isArray(body.courseIds),
+    { message: "Debe enviar assignments o courseIds" },
+  );
+
+export const replaceCompetencyCertificateCoursesRequestSchema = z.object({
+  params: competencyCertificateIdParamsSchema,
+  body: replaceCompetencyCertificateCoursesBodySchema,
+});
+
+/**
+ * Respuesta del replace: listado actualizado + resumen del sync
+ * a tripulantes que ya tienen ese título (auto A).
+ */
+export const replaceCompetencyCertificateCoursesResponseSchema = z
+  .object({
+    items: z.array(competencyCertificateCourseItemSchema),
+    assignments: z.array(
+      z.object({
+        courseId: z.uuid(),
+        isMandatory: z.boolean(),
+      }),
+    ),
+    sync: z.object({
+      crewMembersTotal: z.number().int().nonnegative(),
+      crewMembersUpdated: z.number().int().nonnegative(),
+      assignmentsCreated: z.number().int().nonnegative(),
+      assignmentsSkipped: z.number().int().nonnegative(),
+    }),
+  })
+  .openapi("ReplaceCompetencyCertificateCoursesResponse");
+
+export type ReplaceCompetencyCertificateCoursesBody = z.infer<
+  typeof replaceCompetencyCertificateCoursesBodySchema
+>;
+export type CompetencyCertificateCourseItem = z.infer<
+  typeof competencyCertificateCourseItemSchema
+>;

@@ -1,0 +1,38 @@
+meta {
+  name: Delete crew member course
+  type: http
+  seq: 23
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/courses/{{crewCourseAssignmentId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Soft delete de la asignación. Variables: crewMemberId, crewCourseAssignmentId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const crewMemberId = bru.getEnvVar("crewMemberId");
+  const assignmentId = bru.getEnvVar("crewCourseAssignmentId");
+  if (!token) throw new Error("Sin accessToken");
+  if (!crewMemberId) throw new Error("Sin crewMemberId");
+  if (!assignmentId) throw new Error("Sin crewCourseAssignmentId");
+}
+
+assert {
+  res.status: eq 200
+  res.body.deletedAt: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

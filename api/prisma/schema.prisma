@@ -40,6 +40,27 @@ enum OfficerKind {
 }
 
 /**
+ * Estado de una asignación de curso al tripulante (portal viejo CREW_COURSE_STATUS).
+ * Se recalcula con expiresAt + DAYS_TO_NOTIFY; pending si no hay completedAt.
+ */
+enum CrewCourseStatus {
+  pending
+  valid
+  expiring_soon
+  expired
+}
+
+/**
+ * Origen de la asignación (portal viejo CREW_COURSE_SOURCE).
+ * rank = legacy (ya no se auto-crea); certificate = por título; manual = a mano.
+ */
+enum CrewCourseSource {
+  rank
+  certificate
+  manual
+}
+
+/**
  * Puerto del catálogo por empresa (maestro de muelles).
  * Nombre único por business entre no borrados (índice parcial en migración).
  */
@@ -333,6 +354,8 @@ model CompetencyCertificate {
   createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz
   crewMembers   CrewMember[]
+  /// Cursos vinculados a este título marítimo (obligatorios / opcionales).
+  courses       CompetencyCertificateCourse[]
 
   @@index([businessId])
   @@index([name, businessId])
@@ -360,6 +383,10 @@ model Course {
   deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  /// Títulos marítimos que incluyen este curso.
+  certificateLinks CompetencyCertificateCourse[]
+  /// Asignaciones a tripulantes.
+  crewAssignments  CrewMemberCourse[]
 
   @@index([businessId])
   @@index([name, whereTaught, businessId])
@@ -464,6 +491,8 @@ model CrewMember {
   documents                  CrewMemberDocument[]
   muelleAssignments          CrewMemberMuelle[]
   travesiaAssignments        CrewMemberTravesia[]
+  /// Cursos asignados a este tripulante (ficha).
+  courseAssignments          CrewMemberCourse[]
 
   @@index([businessId])
   @@index([locationId])
@@ -474,6 +503,66 @@ model CrewMember {
   @@index([run, businessId])
   @@index([email, businessId])
   @@map("crew_members")
+}
+
+/**
+ * Curso vinculado a un título marítimo (catálogo N:M).
+ * isMandatory del join gana sobre el del Course al auto-asignar (S8).
+ * Único por par entre no borrados (índice parcial en migración).
+ */
+model CompetencyCertificateCourse {
+  id                       String                @id @default(uuid()) @db.Uuid
+  legacyMongoId            String?               @unique @map("legacy_mongo_id")
+  competencyCertificateId  String                @map("competency_certificate_id") @db.Uuid
+  competencyCertificate    CompetencyCertificate @relation(fields: [competencyCertificateId], references: [id])
+  courseId                 String                @map("course_id") @db.Uuid
+  course                   Course                @relation(fields: [courseId], references: [id])
+  /// Si true, al asignar título al tripulante el curso se crea como obligatorio.
+  isMandatory              Boolean               @default(true) @map("is_mandatory")
+  deletedAt                DateTime?             @map("deleted_at") @db.Timestamptz
+  createdAt                DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime              @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([competencyCertificateId])
+  @@index([courseId])
+  @@map("competency_certificate_courses")
+}
+
+/**
+ * Asignación de un curso del catálogo a un tripulante.
+ * Única por (crewMember, course) entre no borradas (índice parcial en migración).
+ * Campos de mail listos para el job de S9; status se recalcula en API.
+ */
+model CrewMemberCourse {
+  id                     String           @id @default(uuid()) @db.Uuid
+  legacyMongoId          String?          @unique @map("legacy_mongo_id")
+  crewMemberId           String           @map("crew_member_id") @db.Uuid
+  crewMember             CrewMember       @relation(fields: [crewMemberId], references: [id])
+  courseId               String           @map("course_id") @db.Uuid
+  course                 Course           @relation(fields: [courseId], references: [id])
+  /// Fecha en que completó / aprobó el curso; null = aún pendiente.
+  completedAt            DateTime?        @map("completed_at") @db.Timestamptz
+  /// Vencimiento del curso; null = sin caducidad conocida.
+  expiresAt              DateTime?        @map("expires_at") @db.Timestamptz
+  /// Estado persistido; la API lo recalcula al leer/escribir.
+  status                 CrewCourseStatus @default(pending)
+  /// De dónde salió la fila (auto por título vs alta manual).
+  source                 CrewCourseSource @default(manual)
+  /// Último mail de “por vencer” enviado (S9).
+  lastExpiringEmailAt    DateTime?        @map("last_expiring_email_at") @db.Timestamptz
+  /// Último mail de “vencido” enviado (S9).
+  lastExpiredEmailAt     DateTime?        @map("last_expired_email_at") @db.Timestamptz
+  /// Días-antes ya notificados (hitos del job; portal viejo).
+  expiringMilestonesSent Int[]            @default([]) @map("expiring_milestones_sent")
+  deletedAt              DateTime?        @map("deleted_at") @db.Timestamptz
+  createdAt              DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([crewMemberId])
+  @@index([courseId])
+  @@index([expiresAt])
+  @@index([status])
+  @@map("crew_member_courses")
 }
 
 /**

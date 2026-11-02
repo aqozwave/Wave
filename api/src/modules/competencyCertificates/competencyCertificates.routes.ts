@@ -8,14 +8,18 @@ import {
   createCompetencyCertificateHandler,
   deleteCompetencyCertificateHandler,
   getCompetencyCertificateHandler,
+  listCompetencyCertificateCoursesHandler,
   listCompetencyCertificatesHandler,
+  replaceCompetencyCertificateCoursesHandler,
   updateCompetencyCertificateHandler,
 } from "./competencyCertificates.controller.js";
 import {
   createCompetencyCertificateRequestSchema,
   deleteCompetencyCertificateRequestSchema,
   getCompetencyCertificateRequestSchema,
+  listCompetencyCertificateCoursesRequestSchema,
   listCompetencyCertificatesRequestSchema,
+  replaceCompetencyCertificateCoursesRequestSchema,
   updateCompetencyCertificateRequestSchema,
 } from "./competencyCertificates.schemas.js";
 
@@ -48,6 +52,33 @@ competencyCertificatesRouter.post(
   ),
   validate(createCompetencyCertificateRequestSchema),
   createCompetencyCertificateHandler,
+);
+
+/**
+ * Cursos del título: rutas anidadas antes de PATCH/DELETE del :id
+ * (mismo param; path más específico).
+ */
+competencyCertificatesRouter.get(
+  "/:id/courses",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_CERTIFICATES,
+    PERMISSION_ACTION.READ,
+  ),
+  validate(listCompetencyCertificateCoursesRequestSchema),
+  listCompetencyCertificateCoursesHandler,
+);
+
+competencyCertificatesRouter.put(
+  "/:id/courses",
+  authenticate,
+  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_CERTIFICATES,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(replaceCompetencyCertificateCoursesRequestSchema),
+  replaceCompetencyCertificateCoursesHandler,
 );
 
 competencyCertificatesRouter.get(

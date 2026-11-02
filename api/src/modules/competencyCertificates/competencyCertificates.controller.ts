@@ -4,17 +4,22 @@ import {
   createCompetencyCertificateResponseSchema,
   deleteCompetencyCertificateResponseSchema,
   getCompetencyCertificateResponseSchema,
+  listCompetencyCertificateCoursesResponseSchema,
   listCompetencyCertificatesResponseSchema,
+  replaceCompetencyCertificateCoursesResponseSchema,
   updateCompetencyCertificateResponseSchema,
   type CreateCompetencyCertificateBody,
   type ListCompetencyCertificatesQuery,
+  type ReplaceCompetencyCertificateCoursesBody,
   type UpdateCompetencyCertificateBody,
 } from "./competencyCertificates.schemas.js";
 import {
   createCompetencyCertificate,
   deleteCompetencyCertificateById,
   getCompetencyCertificateById,
+  listCompetencyCertificateCourses,
   listCompetencyCertificates,
+  replaceCompetencyCertificateCourses,
   updateCompetencyCertificate,
 } from "./competencyCertificates.service.js";
 
@@ -88,4 +93,38 @@ export async function deleteCompetencyCertificateHandler(
   res
     .status(200)
     .json(deleteCompetencyCertificateResponseSchema.parse(deleted));
+}
+
+/** GET /competency-certificates/:id/courses — cursos del título. */
+export async function listCompetencyCertificateCoursesHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+  const { id } = req.params as { id: string };
+  const result = await listCompetencyCertificateCourses(req.user, id);
+  res
+    .status(200)
+    .json(listCompetencyCertificateCoursesResponseSchema.parse(result));
+}
+
+/**
+ * PUT /competency-certificates/:id/courses — reemplaza el set de cursos
+ * y synca altas a tripulantes con ese título.
+ */
+export async function replaceCompetencyCertificateCoursesHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+  const { id } = req.params as { id: string };
+  const body = req.body as ReplaceCompetencyCertificateCoursesBody;
+  const result = await replaceCompetencyCertificateCourses(req.user, id, body);
+  res
+    .status(200)
+    .json(replaceCompetencyCertificateCoursesResponseSchema.parse(result));
 }

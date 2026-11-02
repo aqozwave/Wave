@@ -118,3 +118,86 @@ export async function deleteCompetencyCertificateRequest(
   if (!res.ok) throw toApiError(res, body);
   return body as CompetencyCertificate;
 }
+
+/** Curso embebido en el join título↔curso. */
+export type CertificateCourseEmbed = {
+  id: string;
+  name: string;
+  whereTaught: string;
+  description: string | null;
+  isMandatory: boolean;
+  state: boolean;
+};
+
+/** Fila del join. */
+export type CompetencyCertificateCourseItem = {
+  id: string;
+  competencyCertificateId: string;
+  courseId: string;
+  isMandatory: boolean;
+  course: CertificateCourseEmbed | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Asignación corta (editor). */
+export type CertificateCourseAssignment = {
+  courseId: string;
+  isMandatory: boolean;
+};
+
+/** GET /competency-certificates/:id/courses */
+export type ListCompetencyCertificateCoursesResult = {
+  items: CompetencyCertificateCourseItem[];
+  assignments: CertificateCourseAssignment[];
+};
+
+/** PUT replace: set completo. */
+export type ReplaceCompetencyCertificateCoursesBody = {
+  assignments?: CertificateCourseAssignment[];
+  courseIds?: string[];
+};
+
+/** Respuesta PUT con sync a tripulantes. */
+export type ReplaceCompetencyCertificateCoursesResult =
+  ListCompetencyCertificateCoursesResult & {
+    sync: {
+      crewMembersTotal: number;
+      crewMembersUpdated: number;
+      assignmentsCreated: number;
+      assignmentsSkipped: number;
+    };
+  };
+
+/** GET cursos vinculados al título. */
+export async function listCompetencyCertificateCoursesRequest(
+  accessToken: string,
+  certificateId: string,
+): Promise<ListCompetencyCertificateCoursesResult> {
+  const res = await fetch(
+    `/api/v1/competency-certificates/${certificateId}/courses`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ListCompetencyCertificateCoursesResult;
+}
+
+/** PUT reemplaza cursos del título (+ sync a embarcados con ese título). */
+export async function replaceCompetencyCertificateCoursesRequest(
+  accessToken: string,
+  certificateId: string,
+  data: ReplaceCompetencyCertificateCoursesBody,
+): Promise<ReplaceCompetencyCertificateCoursesResult> {
+  const res = await fetch(
+    `/api/v1/competency-certificates/${certificateId}/courses`,
+    {
+      method: "PUT",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(data),
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ReplaceCompetencyCertificateCoursesResult;
+}

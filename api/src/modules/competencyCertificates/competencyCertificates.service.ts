@@ -2,10 +2,13 @@ import { Prisma } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
+import { syncCertificateCoursesToExistingCrewMembers } from "../crewMemberCourses/crewMemberCourses.service.js";
 import type {
+  CompetencyCertificateCourseItem,
   CompetencyCertificateResponse,
   CreateCompetencyCertificateBody,
   ListCompetencyCertificatesQuery,
+  ReplaceCompetencyCertificateCoursesBody,
   UpdateCompetencyCertificateBody,
 } from "./competencyCertificates.schemas.js";
 
@@ -315,4 +318,203 @@ export async function deleteCompetencyCertificateById(
     },
   });
   return toCertificateResponse(updated);
+}
+
+/** Curso embebido en el ítem del join (null si el curso fue soft-deleted). */
+type CourseEmbedRow = {
+  id: string;
+  name: string;
+  whereTaught: string;
+  description: string | null;
+  isMandatory: boolean;
+  state: boolean;
+  deletedAt: Date | null;
+};
+
+/** Serializa fila del join + curso embebido al contrato Zod. */
+function toCertificateCourseItem(row: {
+  id: string;
+  competencyCertificateId: string;
+  courseId: string;
+  isMandatory: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  course: CourseEmbedRow | null;
+}): CompetencyCertificateCourseItem {
+  const course =
+    row.course && row.course.deletedAt === null
+      ? {
+          id: row.course.id,
+          name: row.course.name,
+          whereTaught: row.course.whereTaught,
+          description: row.course.description,
+          isMandatory: row.course.isMandatory,
+          state: row.course.state,
+        }
+      : null;
+
+  return {
+    id: row.id,
+    competencyCertificateId: row.competencyCertificateId,
+    courseId: row.courseId,
+    isMandatory: row.isMandatory,
+    course,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Normaliza body de replace: assignments gana; si no, courseIds → mandatory true.
+ * Dedup por courseId (queda la primera aparición).
+ */
+function normalizeReplaceAssignments(
+  body: ReplaceCompetencyCertificateCoursesBody,
+): Array<{ courseId: string; isMandatory: boolean }> {
+  if (Array.isArray(body.assignments)) {
+    const seen = new Set<string>();
+    const out: Array<{ courseId: string; isMandatory: boolean }> = [];
+    for (const item of body.assignments) {
+      if (seen.has(item.courseId)) continue;
+      seen.add(item.courseId);
+      out.push({
+        courseId: item.courseId,
+        isMandatory: item.isMandatory !== false,
+      });
+    }
+    return out;
+  }
+
+  const seen = new Set<string>();
+  const out: Array<{ courseId: string; isMandatory: boolean }> = [];
+  for (const courseId of body.courseIds ?? []) {
+    if (seen.has(courseId)) continue;
+    seen.add(courseId);
+    out.push({ courseId, isMandatory: true });
+  }
+  return out;
+}
+
+/** Forma corta assignments para la respuesta. */
+function toAssignmentsShort(items: CompetencyCertificateCourseItem[]) {
+  return items.map((item) => ({
+    courseId: item.courseId,
+    isMandatory: item.isMandatory,
+  }));
+}
+
+/**
+ * Lista cursos vinculados a un título marítimo (tenant-aware).
+ * Orden: createdAt asc (estable para el editor).
+ */
+export async function listCompetencyCertificateCourses(
+  actor: Actor,
+  certificateId: string,
+): Promise<{
+  items: CompetencyCertificateCourseItem[];
+  assignments: Array<{ courseId: string; isMandatory: boolean }>;
+}> {
+  // Reusa getById: 404 + tenant check del título.
+  await getCompetencyCertificateById(actor, certificateId);
+
+  const rows = await prisma.competencyCertificateCourse.findMany({
+    where: { competencyCertificateId: certificateId, deletedAt: null },
+    orderBy: { createdAt: "asc" },
+    include: { course: true },
+  });
+
+  const items = rows.map(toCertificateCourseItem);
+  return { items, assignments: toAssignmentsShort(items) };
+}
+
+/**
+ * Reemplaza el set de cursos del título (soft-delete los que salen,
+ * revive/crea los que entran). Valida que cada curso exista y sea
+ * de la misma empresa. Luego sync a tripulantes con ese título (auto A).
+ */
+export async function replaceCompetencyCertificateCourses(
+  actor: Actor,
+  certificateId: string,
+  body: ReplaceCompetencyCertificateCoursesBody,
+): Promise<{
+  items: CompetencyCertificateCourseItem[];
+  assignments: Array<{ courseId: string; isMandatory: boolean }>;
+  sync: {
+    crewMembersTotal: number;
+    crewMembersUpdated: number;
+    assignmentsCreated: number;
+    assignmentsSkipped: number;
+  };
+}> {
+  const certificate = await getCompetencyCertificateById(actor, certificateId);
+  const desired = normalizeReplaceAssignments(body);
+  const desiredIds = desired.map((d) => d.courseId);
+  const desiredMap = new Map(
+    desired.map((d) => [d.courseId, d.isMandatory] as const),
+  );
+
+  if (desiredIds.length > 0) {
+    const courses = await prisma.course.findMany({
+      where: { id: { in: desiredIds }, deletedAt: null },
+      select: { id: true, businessId: true, state: true },
+    });
+    if (courses.length !== desiredIds.length) {
+      throw new AppError(
+        400,
+        "course_not_found",
+        "Uno o más cursos no existen o están eliminados",
+      );
+    }
+    const foreign = courses.find((c) => c.businessId !== certificate.businessId);
+    if (foreign) {
+      throw new AppError(
+        400,
+        "course_business_mismatch",
+        "Uno o más cursos no pertenecen a la misma empresa del título marítimo",
+      );
+    }
+  }
+
+  const now = new Date();
+  // Incluye soft-deleted para poder revivir sin chocar el índice parcial.
+  const existingRows = await prisma.competencyCertificateCourse.findMany({
+    where: { competencyCertificateId: certificateId },
+  });
+
+  await prisma.$transaction(async (tx) => {
+    for (const row of existingRows) {
+      if (!desiredMap.has(row.courseId) && row.deletedAt === null) {
+        await tx.competencyCertificateCourse.update({
+          where: { id: row.id },
+          data: { deletedAt: now },
+        });
+      }
+    }
+
+    for (const courseId of desiredIds) {
+      const isMandatory = desiredMap.get(courseId) !== false;
+      const existing = existingRows.find((r) => r.courseId === courseId);
+      if (existing) {
+        await tx.competencyCertificateCourse.update({
+          where: { id: existing.id },
+          data: {
+            deletedAt: null,
+            isMandatory,
+          },
+        });
+        continue;
+      }
+      await tx.competencyCertificateCourse.create({
+        data: {
+          competencyCertificateId: certificateId,
+          courseId,
+          isMandatory,
+        },
+      });
+    }
+  });
+
+  const listed = await listCompetencyCertificateCourses(actor, certificateId);
+  const sync = await syncCertificateCoursesToExistingCrewMembers(certificateId);
+  return { ...listed, sync };
 }

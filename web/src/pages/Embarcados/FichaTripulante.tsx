@@ -5,14 +5,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import {
-  CalendarClock,
-  ClipboardList,
-  FileText,
-  Pencil,
-  Plus,
-  TriangleAlert,
-} from "lucide-react";
+import { FileText, Pencil, Plus } from "lucide-react";
 import { Link, useParams } from "react-router";
 
 import { Button } from "../../components/Button/Button";
@@ -22,6 +15,7 @@ import { Topbar } from "../../components/Topbar/Topbar";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { listAreasRequest, type Area } from "../../lib/api/areas";
+import { userHasPermission } from "../../lib/api/auth";
 import {
   listBusinessesRequest,
   type Business,
@@ -53,6 +47,7 @@ import {
 } from "../../lib/boardingBook";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { isRutValid, normalizeRut } from "../../lib/rut";
+import { CrewCoursesPanel } from "./CrewCoursesPanel";
 import { CrewDocumentsPanel } from "./CrewDocumentsPanel";
 import { OfficerAssignmentsPanel } from "./OfficerAssignmentsPanel";
 
@@ -121,7 +116,7 @@ function initialsOf(row: CrewMember): string {
 
 /**
  * Ficha del tripulante (Figma D3).
- * Cursos / cumplimiento: shell visual hasta Sección 8.
+ * Tab Cursos: asignaciones reales + auto al cambiar título.
  * Tab Datos personales: datos reales del API.
  */
 export function FichaTripulante() {
@@ -129,10 +124,17 @@ export function FichaTripulante() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const isSuperadmin = user?.internalRol === "superadmin";
+  const canAssignCourse = userHasPermission(
+    user,
+    "cursos.assignments",
+    "create",
+  );
 
   const [crew, setCrew] = useState<CrewMember | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<FichaTab>("cursos");
+  const [courseTotal, setCourseTotal] = useState(0);
+  const [assignCourseOpen, setAssignCourseOpen] = useState(false);
   const [locations, setLocations] = useState<Location[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [certs, setCerts] = useState<CompetencyCertificate[]>([]);
@@ -533,7 +535,7 @@ export function FichaTripulante() {
   }
 
   const tabs: { id: FichaTab; label: string }[] = [
-    { id: "cursos", label: "Cursos (0)" },
+    { id: "cursos", label: `Cursos (${courseTotal})` },
     { id: "capacitaciones", label: "Capacitaciones" },
     { id: "libreta", label: "Libreta de embarque" },
     { id: "datos", label: "Datos personales" },
@@ -616,20 +618,20 @@ export function FichaTripulante() {
                     <Pencil className="size-4" strokeWidth={1.5} aria-hidden />
                     Editar datos
                   </button>
-                  <Button
-                    type="button"
-                    size="medium"
-                    className="!w-auto"
-                    onClick={() =>
-                      showToast(
-                        "Asignar curso llega en la sección de cursos (S8).",
-                        "info",
-                      )
-                    }
-                  >
-                    <Plus className="size-4" strokeWidth={1.5} aria-hidden />
-                    Asignar curso
-                  </Button>
+                  {canAssignCourse ? (
+                    <Button
+                      type="button"
+                      size="medium"
+                      className="!w-auto"
+                      onClick={() => {
+                        setTab("cursos");
+                        setAssignCourseOpen(true);
+                      }}
+                    >
+                      <Plus className="size-4" strokeWidth={1.5} aria-hidden />
+                      Asignar curso
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -656,56 +658,15 @@ export function FichaTripulante() {
               })}
             </div>
 
-            {tab === "cursos" ? (
-              <>
-                {/* Resumen cumplimiento (placeholder S8). */}
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-                  <div className="rounded-2xl border border-[var(--color-tremor-border)] bg-white p-5 lg:col-span-1">
-                    <p className="text-[13px] font-semibold text-[var(--color-nachipa-title)]">
-                      Cumplimiento
-                    </p>
-                    <p className="mt-3 text-[28px] font-semibold tabular-nums text-[var(--color-nachipa-title)]">
-                      —
-                    </p>
-                    <p className="mt-1 text-[12px] text-[var(--color-nachipa-secondary)]">
-                      Cursos del título: disponible en Sección 8
-                    </p>
-                  </div>
-                  <SummaryCard
-                    icon={CalendarClock}
-                    title="Por vencer"
-                    value="0"
-                    footer="Sin datos de cursos aún"
-                    footerTone="muted"
-                  />
-                  <SummaryCard
-                    icon={TriangleAlert}
-                    title="Vencidos"
-                    value="0"
-                    footer="Todo al día"
-                    footerTone="ok"
-                  />
-                  <SummaryCard
-                    icon={ClipboardList}
-                    title="Faltan"
-                    value="0"
-                    footer="Sin requisitos cargados"
-                    footerTone="muted"
-                  />
-                </div>
-
-                <div className="rounded-2xl border border-[var(--color-tremor-border)] bg-white">
-                  <div className="border-b border-[var(--color-tremor-border)] px-4 py-3">
-                    <p className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                      Cursos
-                    </p>
-                  </div>
-                  <div className="px-4 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]">
-                    Todavía no migranos cursos por tripulante. La tabla y el
-                    cumplimiento se conectan en la Sección 8.
-                  </div>
-                </div>
-              </>
+            {tab === "cursos" && id ? (
+              <CrewCoursesPanel
+                crewMemberId={id}
+                businessId={crew.businessId}
+                reloadKey={`${crew.competencyCertificateId ?? ""}:${crew.updatedAt}`}
+                assignOpen={assignCourseOpen}
+                onAssignOpenChange={setAssignCourseOpen}
+                onTotalChange={setCourseTotal}
+              />
             ) : null}
 
             {tab === "datos" ? (
@@ -1063,51 +1024,6 @@ function Field({
       <dd className="mt-1 text-[13px] text-[var(--color-nachipa-title)]">
         {value}
       </dd>
-    </div>
-  );
-}
-
-/** Tarjeta KPI resumen de la ficha. */
-function SummaryCard({
-  icon: Icon,
-  title,
-  value,
-  footer,
-  footerTone,
-}: {
-  icon: typeof CalendarClock;
-  title: string;
-  value: string;
-  footer: string;
-  footerTone: "ok" | "muted";
-}) {
-  return (
-    <div className="rounded-2xl border border-[var(--color-tremor-border)] bg-white p-5">
-      <div className="flex items-center gap-2">
-        <span className="flex size-7 items-center justify-center rounded-lg bg-[var(--color-nachipa-bg-page)]">
-          <Icon
-            className="size-3.5 text-[var(--color-icon-default)]"
-            strokeWidth={1.5}
-            aria-hidden
-          />
-        </span>
-        <span className="text-[12px] font-medium text-[var(--color-nachipa-secondary)]">
-          {title}
-        </span>
-      </div>
-      <p className="mt-3 text-[28px] font-semibold tabular-nums text-[var(--color-nachipa-title)]">
-        {value}
-      </p>
-      <p
-        className={[
-          "mt-2 text-[12px]",
-          footerTone === "ok"
-            ? "text-[var(--color-status-success-fg)]"
-            : "text-[var(--color-nachipa-secondary)]",
-        ].join(" ")}
-      >
-        {footer}
-      </p>
     </div>
   );
 }

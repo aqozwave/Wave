@@ -31,11 +31,15 @@ import {
 import {
   createCompetencyCertificateRequest,
   deleteCompetencyCertificateRequest,
+  listCompetencyCertificateCoursesRequest,
   listCompetencyCertificatesRequest,
+  replaceCompetencyCertificateCoursesRequest,
   updateCompetencyCertificateRequest,
+  type CertificateCourseAssignment,
   type CompetencyCertificate,
   type OfficerKind,
 } from "../../lib/api/competencyCertificates";
+import { listCoursesRequest, type Course } from "../../lib/api/courses";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { downloadXls } from "../../lib/exportXls";
 
@@ -63,6 +67,8 @@ type FormState = {
   /** Exige asignar muelles y travesías al tripulante. */
   requiresMuelleTravesia: boolean;
   state: boolean;
+  /** Cursos del título (editor N:M). */
+  courseAssignments: CertificateCourseAssignment[];
 };
 
 const EMPTY_FORM: FormState = {
@@ -71,6 +77,7 @@ const EMPTY_FORM: FormState = {
   officerKind: "",
   requiresMuelleTravesia: false,
   state: true,
+  courseAssignments: [],
 };
 
 /** Capitaliza nombre en minúsculas. */
@@ -91,7 +98,7 @@ function officerKindLabel(value: OfficerKind | null): string {
 
 /**
  * Panel Títulos marítimos dentro de Catálogos maestros.
- * Incluye oficial de nave (capitán / primer piloto).
+ * Incluye oficial de nave + cursos vinculados al título (S8).
  */
 export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
   function CertificatesPanel(_props, ref) {
@@ -103,6 +110,9 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
 
     const [items, setItems] = useState<CompetencyCertificate[]>([]);
     const [businesses, setBusinesses] = useState<Business[]>([]);
+    /** Catálogo de cursos de la empresa del form (para el checklist). */
+    const [courseCatalog, setCourseCatalog] = useState<Course[]>([]);
+    const [coursesLoading, setCoursesLoading] = useState(false);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
     const [modalOpen, setModalOpen] = useState(false);
@@ -161,15 +171,52 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
     const { page, setPage, pageSize, setPageSize, pageCount, pageItems, total } =
       useClientTablePagination(filtered);
 
+    /** Empresa efectiva del form (admin = la suya). */
+    const formBusinessId = useMemo(() => {
+      if (isSuperadmin) return form.businessId;
+      return form.businessId || user?.businessId || "";
+    }, [form.businessId, isSuperadmin, user?.businessId]);
+
+    /** Carga catálogo de cursos de la empresa del título. */
+    const loadCourseCatalog = useCallback(
+      async (businessId: string) => {
+        if (!accessToken || !businessId) {
+          setCourseCatalog([]);
+          return;
+        }
+        setCoursesLoading(true);
+        try {
+          const res = await listCoursesRequest(accessToken, 1, 100, {
+            businessId,
+          });
+          setCourseCatalog(
+            res.items.filter((c) => c.state && c.businessId === businessId),
+          );
+        } catch {
+          setCourseCatalog([]);
+        } finally {
+          setCoursesLoading(false);
+        }
+      },
+      [accessToken],
+    );
+
     function openCreate() {
       setEditing(null);
-      setForm(EMPTY_FORM);
+      const initialBiz = isSuperadmin ? "" : user?.businessId || "";
+      setForm({ ...EMPTY_FORM, businessId: initialBiz });
+      setCourseCatalog([]);
       setModalOpen(true);
+      if (initialBiz) void loadCourseCatalog(initialBiz);
     }
 
-    useImperativeHandle(ref, () => ({ openCreate }), []);
+    useImperativeHandle(ref, () => ({ openCreate }), [
+      isSuperadmin,
+      loadCourseCatalog,
+      user?.businessId,
+    ]);
 
-    function openEdit(row: CompetencyCertificate) {
+    async function openEdit(row: CompetencyCertificate) {
       setEditing(row);
       setMenuId(null);
       setForm({
@@ -178,18 +225,86 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
         officerKind: row.officerKind ?? "",
         requiresMuelleTravesia: row.requiresMuelleTravesia,
         state: row.state,
+        courseAssignments: [],
       });
       setModalOpen(true);
+      void loadCourseCatalog(row.businessId);
+      if (!accessToken) return;
+      try {
+        const linked = await listCompetencyCertificateCoursesRequest(
+          accessToken,
+          row.id,
+        );
+        setForm((prev) => ({
+          ...prev,
+          courseAssignments: linked.assignments.map((a) => ({
+            courseId: a.courseId,
+            isMandatory: a.isMandatory !== false,
+          })),
+        }));
+      } catch (err) {
+        showToast(
+          err instanceof ApiError
+            ? err.message
+            : "No se pudieron cargar los cursos del título.",
+          "danger",
+        );
+      }
     }
 
     function closeModal() {
       setModalOpen(false);
       setEditing(null);
       setForm(EMPTY_FORM);
+      setCourseCatalog([]);
     }
 
     function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
-      setForm((prev) => ({ ...prev, [key]: value }));
+      setForm((prev) => {
+        const next = { ...prev, [key]: value };
+        // Al cambiar empresa (alta superadmin), limpia cursos elegidos.
+        if (key === "businessId") {
+          next.courseAssignments = [];
+        }
+        return next;
+      });
+      if (key === "businessId" && typeof value === "string" && value) {
+        void loadCourseCatalog(value);
+      }
+    }
+
+    /** Marca / desmarca un curso del título. */
+    function toggleCourse(courseId: string) {
+      setForm((prev) => {
+        const exists = prev.courseAssignments.some(
+          (a) => a.courseId === courseId,
+        );
+        if (exists) {
+          return {
+            ...prev,
+            courseAssignments: prev.courseAssignments.filter(
+              (a) => a.courseId !== courseId,
+            ),
+          };
+        }
+        return {
+          ...prev,
+          courseAssignments: [
+            ...prev.courseAssignments,
+            { courseId, isMandatory: true },
+          ],
+        };
+      });
+    }
+
+    /** Cambia el flag obligatorio de un curso ya seleccionado. */
+    function setCourseMandatory(courseId: string, isMandatory: boolean) {
+      setForm((prev) => ({
+        ...prev,
+        courseAssignments: prev.courseAssignments.map((a) =>
+          a.courseId === courseId ? { ...a, isMandatory } : a,
+        ),
+      }));
     }
 
     async function onSubmit(event: FormEvent) {
@@ -222,17 +337,46 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
           body.businessId = form.businessId;
         }
 
+        let certificateId = editing?.id ?? null;
         if (editing) {
           await updateCompetencyCertificateRequest(
             accessToken,
             editing.id,
             body,
           );
-          showToast("Título marítimo actualizado.", "success");
         } else {
-          await createCompetencyCertificateRequest(accessToken, body);
-          showToast("Título marítimo creado.", "success");
+          const created = await createCompetencyCertificateRequest(
+            accessToken,
+            body,
+          );
+          certificateId = created.id;
         }
+
+        // Siempre reemplaza el set (también vacío = quitar todos).
+        if (certificateId) {
+          const syncResult = await replaceCompetencyCertificateCoursesRequest(
+            accessToken,
+            certificateId,
+            { assignments: form.courseAssignments },
+          );
+          const created = syncResult.sync.assignmentsCreated;
+          if (created > 0) {
+            showToast(
+              editing
+                ? `Título actualizado. ${created} curso(s) agregados a embarcados.`
+                : `Título creado. ${created} curso(s) agregados a embarcados.`,
+              "success",
+            );
+          } else {
+            showToast(
+              editing
+                ? "Título marítimo actualizado."
+                : "Título marítimo creado.",
+              "success",
+            );
+          }
+        }
+
         closeModal();
         await load();
       } catch (err) {
@@ -459,9 +603,9 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
           open={modalOpen}
           icon={Award}
           title={editing ? "Editar título marítimo" : "Nuevo título marítimo"}
-          subtitle="El check de muelles/travesías aplica a cualquier título. Solo admin con permiso puede guardar."
+          subtitle="Muelles/travesías y cursos del título. Al guardar, se syncan altas a embarcados con este título."
           onClose={closeModal}
-          maxWidthClass="w-full max-w-[520px] sm:w-[520px]"
+          maxWidthClass="w-full max-w-[640px] sm:w-[640px]"
           footer={
             <div className="flex justify-end gap-3">
               <button
@@ -579,6 +723,82 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
                 onChange={(next) => setField("state", next)}
                 aria-label="Título marítimo activo"
               />
+            </div>
+
+            {/* Cursos del título: checklist + obligatorio. */}
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-tremor-border)]">
+              <div className="border-b border-[var(--color-tremor-border)] px-3.5 py-3">
+                <p className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Cursos del título
+                </p>
+                <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                  Se asignan solos al embarcado cuando tiene este título
+                  {form.courseAssignments.length > 0
+                    ? ` · ${form.courseAssignments.length} seleccionados`
+                    : ""}
+                </p>
+              </div>
+              <div className="max-h-56 overflow-y-auto px-2 py-2">
+                {!formBusinessId ? (
+                  <p className="px-2 py-4 text-center text-[12px] text-[var(--color-nachipa-secondary)]">
+                    Elegí la empresa para listar cursos.
+                  </p>
+                ) : coursesLoading ? (
+                  <p className="px-2 py-4 text-center text-[12px] text-[var(--color-nachipa-secondary)]">
+                    Cargando cursos…
+                  </p>
+                ) : courseCatalog.length === 0 ? (
+                  <p className="px-2 py-4 text-center text-[12px] text-[var(--color-nachipa-secondary)]">
+                    No hay cursos activos en esta empresa.
+                  </p>
+                ) : (
+                  <ul className="flex flex-col gap-1">
+                    {courseCatalog.map((course) => {
+                      const selected = form.courseAssignments.find(
+                        (a) => a.courseId === course.id,
+                      );
+                      return (
+                        <li
+                          key={course.id}
+                          className="flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 hover:bg-[var(--color-nachipa-bg-page,#f9fafc)]"
+                        >
+                          <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-[13px] text-[var(--color-nachipa-title)]">
+                            <input
+                              type="checkbox"
+                              className="size-4 rounded border-[var(--color-tremor-border)]"
+                              checked={Boolean(selected)}
+                              onChange={() => toggleCourse(course.id)}
+                            />
+                            <span className="min-w-0 truncate">
+                              {displayName(course.name)}
+                              <span className="text-[var(--color-nachipa-secondary)]">
+                                {" "}
+                                · {displayName(course.whereTaught)}
+                              </span>
+                            </span>
+                          </label>
+                          {selected ? (
+                            <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[12px] text-[var(--color-nachipa-secondary)]">
+                              <input
+                                type="checkbox"
+                                className="size-3.5 rounded border-[var(--color-tremor-border)]"
+                                checked={selected.isMandatory}
+                                onChange={(e) =>
+                                  setCourseMandatory(
+                                    course.id,
+                                    e.target.checked,
+                                  )
+                                }
+                              />
+                              Obligatorio
+                            </label>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             </div>
           </form>
         </Modal>

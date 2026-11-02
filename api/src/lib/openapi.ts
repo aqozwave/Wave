@@ -74,8 +74,11 @@ import {
   createCompetencyCertificateResponseSchema,
   deleteCompetencyCertificateResponseSchema,
   getCompetencyCertificateResponseSchema,
+  listCompetencyCertificateCoursesResponseSchema,
   listCompetencyCertificatesResponseSchema,
   officerKindSchema,
+  replaceCompetencyCertificateCoursesBodySchema,
+  replaceCompetencyCertificateCoursesResponseSchema,
   updateCompetencyCertificateBodySchema,
   updateCompetencyCertificateResponseSchema,
 } from "../modules/competencyCertificates/competencyCertificates.schemas.js";
@@ -156,6 +159,15 @@ import {
   updateCrewMemberBodySchema,
   updateCrewMemberResponseSchema,
 } from "../modules/crewMembers/crewMembers.schemas.js";
+import {
+  createCrewMemberCourseBodySchema,
+  createCrewMemberCourseResponseSchema,
+  deleteCrewMemberCourseResponseSchema,
+  getCrewMemberCourseResponseSchema,
+  listCrewMemberCoursesResponseSchema,
+  updateCrewMemberCourseBodySchema,
+  updateCrewMemberCourseResponseSchema,
+} from "../modules/crewMemberCourses/crewMemberCourses.schemas.js";
 import {
   createCrewMemberDocumentBodySchema,
   createCrewMemberDocumentResponseSchema,
@@ -1452,6 +1464,65 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/v1/competency-certificates/{id}/courses",
+  tags: ["CompetencyCertificates"],
+  summary: "Listar cursos del título marítimo",
+  description:
+    "Join CompetencyCertificateCourse. Lectura con maestros.certificates read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Cursos vinculados",
+      content: {
+        "application/json": {
+          schema: listCompetencyCertificateCoursesResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "Título no encontrado o sin acceso" },
+  },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/v1/competency-certificates/{id}/courses",
+  tags: ["CompetencyCertificates"],
+  summary: "Reemplazar cursos del título marítimo",
+  description:
+    "Set completo (assignments o courseIds). Synca altas pending a tripulantes con ese título. Requiere update + tenant manager.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: replaceCompetencyCertificateCoursesBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Set actualizado + sync",
+      content: {
+        "application/json": {
+          schema: replaceCompetencyCertificateCoursesResponseSchema,
+        },
+      },
+    },
+    400: { description: "Curso inexistente o de otra empresa" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Título no encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/v1/document-types",
   tags: ["DocumentTypes"],
   summary: "Listar tipos de documento",
@@ -2535,6 +2606,120 @@ registry.registerPath({
       description: "Soft-deleted",
       content: {
         "application/json": { schema: deleteCrewMemberResponseSchema },
+      },
+    },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/crew-members/{id}/courses",
+  tags: ["CrewMemberCourses"],
+  summary: "Listar cursos del tripulante",
+  description:
+    "Asignaciones de la ficha. Status recalculado. Permiso cursos.assignments read.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Listado",
+      content: {
+        "application/json": { schema: listCrewMemberCoursesResponseSchema },
+      },
+    },
+    404: { description: "Tripulante no encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/crew-members/{id}/courses",
+  tags: ["CrewMemberCourses"],
+  summary: "Asignar curso manual al tripulante",
+  description: "source=manual. Curso de la misma empresa. Permiso create.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createCrewMemberCourseBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": { schema: createCrewMemberCourseResponseSchema },
+      },
+    },
+    400: { description: "Curso inactivo o de otra empresa" },
+    404: { description: "Tripulante o curso no encontrado" },
+    409: { description: "Ya asignado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/crew-members/{id}/courses/{assignmentId}",
+  tags: ["CrewMemberCourses"],
+  summary: "Obtener asignación de curso",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), assignmentId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Asignación",
+      content: {
+        "application/json": { schema: getCrewMemberCourseResponseSchema },
+      },
+    },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/crew-members/{id}/courses/{assignmentId}",
+  tags: ["CrewMemberCourses"],
+  summary: "Actualizar fechas/estado de la asignación",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), assignmentId: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateCrewMemberCourseBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizado",
+      content: {
+        "application/json": { schema: updateCrewMemberCourseResponseSchema },
+      },
+    },
+    400: { description: "Obligatorio del título no puede quedar pending" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/crew-members/{id}/courses/{assignmentId}",
+  tags: ["CrewMemberCourses"],
+  summary: "Quitar asignación (soft)",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), assignmentId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteCrewMemberCourseResponseSchema },
       },
     },
     404: { description: "No encontrado" },

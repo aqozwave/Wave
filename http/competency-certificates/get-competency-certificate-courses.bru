@@ -1,0 +1,38 @@
+meta {
+  name: Get competency certificate courses
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/v1/competency-certificates/{{competencyCertificateId}}/courses
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Lista cursos vinculados al título marítimo.
+  Variables: accessToken, competencyCertificateId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("competencyCertificateId");
+  if (!token) throw new Error("Sin accessToken");
+  if (!id) throw new Error("Sin competencyCertificateId");
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+  res.body.assignments: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
