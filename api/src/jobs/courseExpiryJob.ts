@@ -1,3 +1,4 @@
+import { processBoardingBookExpiryNotifications } from "../modules/notificationOutbox/boardingBookExpiryNotification.service.js";
 import { processCourseExpiryNotifications } from "../modules/notificationOutbox/courseExpiryNotification.service.js";
 import { processOutbox } from "../modules/notificationOutbox/notificationOutboxWorker.service.js";
 
@@ -99,6 +100,7 @@ export function startCourseExpiryNotificationJob(): void {
   async function tick(): Promise<void> {
     try {
       await processCourseExpiryNotifications();
+      await processBoardingBookExpiryNotifications();
       // Tras generar, vacía un lote (con override si está configurado).
       await processOutbox();
     } catch (error) {

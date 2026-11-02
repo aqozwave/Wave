@@ -7,6 +7,7 @@ import {
   listNotificationOutboxHandler,
   processOutboxHandler,
   retryNotificationOutboxHandler,
+  runBoardingBookExpiryHandler,
   runCourseExpiryHandler,
 } from "./notificationOutbox.controller.js";
 import {
@@ -41,6 +42,16 @@ notificationOutboxRouter.post(
     PERMISSION_ACTION.UPDATE,
   ),
   runCourseExpiryHandler,
+);
+
+notificationOutboxRouter.post(
+  "/run-boarding-book-expiry",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  runBoardingBookExpiryHandler,
 );
 
 notificationOutboxRouter.post(

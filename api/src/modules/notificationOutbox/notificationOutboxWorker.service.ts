@@ -2,6 +2,10 @@ import type { NotificationOutbox, Prisma } from "@prisma/client";
 import { getDateOnlyKey } from "../../lib/dateOnly.js";
 import { prisma } from "../../lib/prisma.js";
 import {
+  sendAdminBoardingBookExpiryDigest,
+  sendBoardingBookExpiringSoonEmail,
+} from "../../emails/sendBoardingBookExpiryEmails.js";
+import {
   sendAdminCourseExpiryDigest,
   sendCourseExpiredEmail,
   sendCourseExpiringSoonEmail,
@@ -80,6 +84,32 @@ async function validateCourseRow(row: NotificationOutbox): Promise<boolean> {
   return payloadKey === currentKey;
 }
 
+/**
+ * Libreta por vencer: tripulante activo + misma fecha de vigencia.
+ * Si cambió boardingBookValidUntil o se borró, se cancela.
+ */
+async function validateBoardingBookExpiringRow(
+  row: NotificationOutbox,
+): Promise<boolean> {
+  if (!row.crewMemberId) return false;
+  const payload = asPayload(row.payload);
+  const crew = await prisma.crewMember.findFirst({
+    where: {
+      id: row.crewMemberId,
+      deletedAt: null,
+      state: true,
+    },
+    select: { boardingBookValidUntil: true },
+  });
+  if (!crew) return false;
+
+  const payloadKey =
+    typeof payload.validUntilKey === "number" ? payload.validUntilKey : null;
+  const currentKey = getDateOnlyKey(crew.boardingBookValidUntil);
+  if (payloadKey == null || currentKey == null) return false;
+  return payloadKey === currentKey;
+}
+
 /** Decide si la fila sigue vigente antes de gastar un envío Resend. */
 async function validateOutboxRow(row: NotificationOutbox): Promise<boolean> {
   switch (row.type) {
@@ -87,11 +117,10 @@ async function validateOutboxRow(row: NotificationOutbox): Promise<boolean> {
     case "course_expired":
       return validateCourseRow(row);
     case "course_admin_digest":
+    case "boarding_book_admin_digest":
       return validateAdminDigestRow(row);
     case "boarding_book_expiring":
-    case "boarding_book_admin_digest":
-      // Generador de libreta aún no está; no enviar basura.
-      return false;
+      return validateBoardingBookExpiringRow(row);
     default:
       return false;
   }
@@ -143,6 +172,33 @@ async function dispatchOutboxEmail(
           courseName: typeof r.courseName === "string" ? r.courseName : "",
           expiresAt: typeof r.expiresAt === "string" ? r.expiresAt : null,
           kind: typeof r.kind === "string" ? r.kind : "expiring",
+        })),
+      });
+      return { resendId: result.resendId, deliveredTo: recipient.to };
+    }
+    case "boarding_book_expiring": {
+      const result = await sendBoardingBookExpiringSoonEmail({
+        to: recipient.to,
+        logicalTo: recipient.logicalTo,
+        overridden: recipient.overridden,
+        crewName: String(payload.crewName ?? ""),
+        validUntil:
+          typeof payload.validUntil === "string" ? payload.validUntil : null,
+      });
+      return { resendId: result.resendId, deliveredTo: recipient.to };
+    }
+    case "boarding_book_admin_digest": {
+      const rows = Array.isArray(payload.rows)
+        ? (payload.rows as Array<Record<string, unknown>>)
+        : [];
+      const result = await sendAdminBoardingBookExpiryDigest({
+        to: recipient.to,
+        logicalTo: recipient.logicalTo,
+        overridden: recipient.overridden,
+        rows: rows.map((r) => ({
+          crewName: typeof r.crewName === "string" ? r.crewName : "",
+          crewRun: typeof r.crewRun === "string" ? r.crewRun : "",
+          validUntil: typeof r.validUntil === "string" ? r.validUntil : null,
         })),
       });
       return { resendId: result.resendId, deliveredTo: recipient.to };

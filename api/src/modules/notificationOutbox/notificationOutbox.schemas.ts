@@ -109,6 +109,20 @@ export const processCourseExpiryResponseSchema = z
   })
   .openapi("ProcessCourseExpiryResponse");
 
+/**
+ * Resultado del generador manual de avisos de libreta de embarque.
+ * No implica envío: solo filas encoladas / métricas.
+ */
+export const processBoardingBookExpiryResponseSchema = z
+  .object({
+    expiringRows: z.number().int(),
+    expiringEmails: z.number().int(),
+    adminEmails: z.number().int(),
+    skippedCrewWithoutEmail: z.number().int(),
+    warningDays: z.number().int(),
+  })
+  .openapi("ProcessBoardingBookExpiryResponse");
+
 /** Query opcional del worker manual. */
 export const processOutboxQuerySchema = z.object({
   /** Cuántas filas procesar en esta corrida (prueba: 1–3). */

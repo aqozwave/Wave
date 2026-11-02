@@ -1,8 +1,10 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
+import { processBoardingBookExpiryNotifications } from "./boardingBookExpiryNotification.service.js";
 import { processCourseExpiryNotifications } from "./courseExpiryNotification.service.js";
 import {
   listNotificationOutboxResponseSchema,
+  processBoardingBookExpiryResponseSchema,
   processCourseExpiryResponseSchema,
   processOutboxResponseSchema,
   retryNotificationOutboxResponseSchema,
@@ -37,6 +39,19 @@ export async function runCourseExpiryHandler(
   if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
   const result = await processCourseExpiryNotifications();
   res.status(200).json(processCourseExpiryResponseSchema.parse(result));
+}
+
+/**
+ * POST /notification-outbox/run-boarding-book-expiry
+ * Dispara el generador de libreta a mano. Solo encola; no envía.
+ */
+export async function runBoardingBookExpiryHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await processBoardingBookExpiryNotifications();
+  res.status(200).json(processBoardingBookExpiryResponseSchema.parse(result));
 }
 
 /**

@@ -216,6 +216,7 @@ import {
   listNotificationOutboxQuerySchema,
   listNotificationOutboxResponseSchema,
   notificationOutboxItemSchema,
+  processBoardingBookExpiryResponseSchema,
   processCourseExpiryResponseSchema,
   processOutboxResponseSchema,
 } from "../modules/notificationOutbox/notificationOutbox.schemas.js";
@@ -3138,6 +3139,26 @@ registry.registerPath({
       description: "Métricas del ciclo",
       content: {
         "application/json": { schema: processCourseExpiryResponseSchema },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/notification-outbox/run-boarding-book-expiry",
+  tags: ["NotificationOutbox"],
+  summary: "Correr generador de avisos de libreta (solo encola)",
+  description:
+    "Hitos boardingBookCrewDays / boardingBookAdminDays. No envía; deja pending en outbox.",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Métricas del ciclo",
+      content: {
+        "application/json": {
+          schema: processBoardingBookExpiryResponseSchema,
+        },
       },
     },
   },

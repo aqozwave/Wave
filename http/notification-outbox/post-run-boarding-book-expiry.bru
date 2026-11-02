@@ -1,0 +1,38 @@
+meta {
+  name: Post run boarding book expiry
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/notification-outbox/run-boarding-book-expiry
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Genera filas pending en el outbox (libreta por vencer + digest admin).
+  No envía correos. Después: Get notification outbox / Post process outbox.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.warningDays: isDefined
+  res.body.expiringEmails: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
