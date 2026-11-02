@@ -636,26 +636,34 @@ export function FichaTripulante() {
               </div>
             </div>
 
-            {/* Tabs */}
-            <div className="flex flex-wrap gap-2">
-              {tabs.map((t) => {
-                const active = tab === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setTab(t.id)}
-                    className={[
-                      "inline-flex h-9 items-center rounded-full px-3.5 text-[13px]",
-                      active
-                        ? "bg-[var(--color-status-info-bg,#e0f2fe)] font-medium text-[var(--color-nachipa-primary)]"
-                        : "bg-white font-normal text-[var(--color-nachipa-secondary)] ring-1 ring-[var(--color-tremor-border)] hover:bg-[var(--color-nachipa-bg-page)]",
-                    ].join(" ")}
-                  >
-                    {t.label}
-                  </button>
-                );
-              })}
+            {/* Tabs + volver arriba a la derecha. */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap gap-2">
+                {tabs.map((t) => {
+                  const active = tab === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setTab(t.id)}
+                      className={[
+                        "inline-flex h-9 items-center rounded-full px-3.5 text-[13px]",
+                        active
+                          ? "bg-[var(--color-status-info-bg,#e0f2fe)] font-medium text-[var(--color-nachipa-primary)]"
+                          : "bg-white font-normal text-[var(--color-nachipa-secondary)] ring-1 ring-[var(--color-tremor-border)] hover:bg-[var(--color-nachipa-bg-page)]",
+                      ].join(" ")}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <Link
+                to="/embarcados"
+                className="shrink-0 text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+              >
+                ← Volver a Embarcados
+              </Link>
             </div>
 
             {tab === "cursos" && id ? (
@@ -728,13 +736,6 @@ export function FichaTripulante() {
             {tab === "historial" ? (
               <PlaceholderCard text="Bitácora / historial: Figma D31 — pendiente." />
             ) : null}
-
-            <Link
-              to="/embarcados"
-              className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
-            >
-              ← Volver a Embarcados
-            </Link>
           </>
         )}
       </div>

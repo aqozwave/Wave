@@ -11,6 +11,10 @@ import {
 import { Button } from "../../components/Button/Button";
 import { Modal } from "../../components/Modal/Modal";
 import { StatusChip, type StatusChipTone } from "../../components/StatusChip/StatusChip";
+import {
+  TablePagination,
+  useClientTablePagination,
+} from "../../components/TablePagination/TablePagination";
 import { TextField } from "../../components/TextField/TextField";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { userHasPermission } from "../../lib/api/auth";
@@ -128,6 +132,10 @@ export function CrewCoursesPanel({
   const [editExpiresAt, setEditExpiresAt] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  /** Paginación cliente; 5 por página por defecto (ficha). */
+  const { page, setPage, pageSize, setPageSize, pageCount, pageItems } =
+    useClientTablePagination(items, 5);
 
   const load = useCallback(async () => {
     if (!accessToken || !businessId) return;
@@ -399,101 +407,111 @@ export function CrewCoursesPanel({
             se cargan solos los del título; también podés asignar a mano.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse text-left">
-              <thead>
-                <tr className="bg-[var(--color-nachipa-bg-page,#f9fafc)] text-[11px] font-medium uppercase tracking-wide text-[var(--color-nachipa-secondary)]">
-                  <th className="px-4 py-2.5">Curso</th>
-                  <th className="px-4 py-2.5">Estado</th>
-                  <th className="px-4 py-2.5">Realizado</th>
-                  <th className="px-4 py-2.5">Vence</th>
-                  <th className="px-4 py-2.5">Origen</th>
-                  <th className="px-4 py-2.5 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((row) => {
-                  const ui = statusUi(row.status);
-                  const courseName = row.course
-                    ? displayName(row.course.name)
-                    : "Curso eliminado";
-                  return (
-                    <tr
-                      key={row.id}
-                      className="border-t border-[var(--color-tremor-border)] text-[13px]"
-                    >
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-[var(--color-nachipa-title)]">
-                          {courseName}
-                        </p>
-                        <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
-                          {row.course
-                            ? displayName(row.course.whereTaught)
-                            : "—"}
-                          {row.isMandatory ? " · Obligatorio" : ""}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusChip tone={ui.tone}>{ui.label}</StatusChip>
-                        {row.daysUntilExpiry != null &&
-                        row.status !== "pending" ? (
-                          <p className="mt-1 text-[11px] tabular-nums text-[var(--color-nachipa-secondary)]">
-                            {row.daysUntilExpiry < 0
-                              ? `Venció hace ${Math.abs(row.daysUntilExpiry)} d`
-                              : `Vence en ${row.daysUntilExpiry} d`}
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] border-collapse text-left">
+                <thead>
+                  <tr className="bg-[var(--color-nachipa-bg-page,#f9fafc)] text-[11px] font-medium uppercase tracking-wide text-[var(--color-nachipa-secondary)]">
+                    <th className="px-4 py-2.5">Curso</th>
+                    <th className="px-4 py-2.5">Estado</th>
+                    <th className="px-4 py-2.5">Realizado</th>
+                    <th className="px-4 py-2.5">Vence</th>
+                    <th className="px-4 py-2.5">Origen</th>
+                    <th className="px-4 py-2.5 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageItems.map((row) => {
+                    const ui = statusUi(row.status);
+                    const courseName = row.course
+                      ? displayName(row.course.name)
+                      : "Curso eliminado";
+                    return (
+                      <tr
+                        key={row.id}
+                        className="border-t border-[var(--color-tremor-border)] text-[13px]"
+                      >
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-[var(--color-nachipa-title)]">
+                            {courseName}
                           </p>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3 tabular-nums text-[var(--color-nachipa-body)]">
-                        {formatDate(row.completedAt)}
-                      </td>
-                      <td className="px-4 py-3 tabular-nums text-[var(--color-nachipa-body)]">
-                        {formatDate(row.expiresAt)}
-                      </td>
-                      <td className="px-4 py-3 text-[var(--color-nachipa-secondary)]">
-                        {sourceLabel(row.source)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          {canUpdate ? (
-                            <button
-                              type="button"
-                              className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                              title="Editar fechas"
-                              onClick={() => openEdit(row)}
-                            >
-                              <Pencil
-                                className="size-3.5"
-                                strokeWidth={1.5}
-                                aria-hidden
-                              />
-                            </button>
+                          <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                            {row.course
+                              ? displayName(row.course.whereTaught)
+                              : "—"}
+                            {row.isMandatory ? " · Obligatorio" : ""}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusChip tone={ui.tone}>{ui.label}</StatusChip>
+                          {row.daysUntilExpiry != null &&
+                          row.status !== "pending" ? (
+                            <p className="mt-1 text-[11px] tabular-nums text-[var(--color-nachipa-secondary)]">
+                              {row.daysUntilExpiry < 0
+                                ? `Venció hace ${Math.abs(row.daysUntilExpiry)} d`
+                                : `Vence en ${row.daysUntilExpiry} d`}
+                            </p>
                           ) : null}
-                          {canDelete ? (
-                            <button
-                              type="button"
-                              className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)] disabled:opacity-60"
-                              title="Quitar curso"
-                              disabled={deletingId === row.id}
-                              onClick={() => {
-                                void onDelete(row);
-                              }}
-                            >
-                              <Trash2
-                                className="size-3.5"
-                                strokeWidth={1.5}
-                                aria-hidden
-                              />
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td className="px-4 py-3 tabular-nums text-[var(--color-nachipa-body)]">
+                          {formatDate(row.completedAt)}
+                        </td>
+                        <td className="px-4 py-3 tabular-nums text-[var(--color-nachipa-body)]">
+                          {formatDate(row.expiresAt)}
+                        </td>
+                        <td className="px-4 py-3 text-[var(--color-nachipa-secondary)]">
+                          {sourceLabel(row.source)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            {canUpdate ? (
+                              <button
+                                type="button"
+                                className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                title="Editar fechas"
+                                onClick={() => openEdit(row)}
+                              >
+                                <Pencil
+                                  className="size-3.5"
+                                  strokeWidth={1.5}
+                                  aria-hidden
+                                />
+                              </button>
+                            ) : null}
+                            {canDelete ? (
+                              <button
+                                type="button"
+                                className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)] disabled:opacity-60"
+                                title="Quitar curso"
+                                disabled={deletingId === row.id}
+                                onClick={() => {
+                                  void onDelete(row);
+                                }}
+                              >
+                                <Trash2
+                                  className="size-3.5"
+                                  strokeWidth={1.5}
+                                  aria-hidden
+                                />
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <TablePagination
+              totalLabel={`${items.length} ${items.length === 1 ? "curso" : "cursos"}`}
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          </>
         )}
       </div>
 

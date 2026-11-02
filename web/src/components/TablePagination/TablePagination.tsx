@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-/** Tamaños de página del pie Figma. */
-export const TABLE_PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
+/** Tamaños de página del pie Figma (5 para paneles compactos tipo ficha). */
+export const TABLE_PAGE_SIZE_OPTIONS = [5, 10, 25, 50] as const;
 
 type Props = {
   /** Texto a la izquierda (ej. «18 áreas» o «Total empresas: 2»). */
