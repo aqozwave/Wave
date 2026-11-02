@@ -280,7 +280,7 @@ con cierre "En una frase" y Glosario del paso.
 | 8 | Cursos de tripulantes | Hecha — asignaciones ficha + auto por título + ETL + verificación vencimientos/tenant OK (2026-11-02) |
 | 9 | Notificaciones | Hecha — outbox + settings + generador cursos + worker Resend (override prueba) + jobs off + UI; verificación OK (2026-11-02) |
 | 10 | Auditoría y sistema | Hecha — ActivityLog + auditWrite en CRUDs, SystemAnnouncement + campanita; verificación OK (2026-11-02) |
-| 11 | Dashboard / KPIs | Pendiente (Panel shell existe; KPIs reales no) |
+| 11 | Dashboard / KPIs | En curso — GET /summary + Panel KPIs/upcoming vivos; charts por nave/curso aún mock |
 | 12 | Corte a producción | Pendiente |
 
 Un paso a la vez, con mi confirmación antes de avanzar. **Ninguna sección se marca hecha sin su verificación cumplida.**
@@ -293,4 +293,4 @@ Un paso a la vez, con mi confirmación antes de avanzar. **Ninguna sección se m
 4. ~~Roles de sistema `rrhh` / `area_tecnica` / `prevencionista`~~ **Hecho** (seed + mapeo de tags de docs).
 5. ~~Sección 9~~ **Hecha** (2026-11-02) — falta generador de libreta de embarque.
 6. ~~Sección 10~~ **Hecha** (2026-11-02) — falta ETL de activity/announcements + UI admin para publicar avisos.
-7. **Sección 11** — Dashboard / KPIs reales (siguiente slice).
+7. **Sección 11** — Dashboard / KPIs: summary hecho; falta breakdown charts/naves + cierre formal.
