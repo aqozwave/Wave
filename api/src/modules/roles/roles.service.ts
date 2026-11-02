@@ -1,8 +1,10 @@
 import { Prisma, type RoleDataScope } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
 import {
+  PERMISSION_ACTION,
   PERMISSION_ACTIONS,
   PERMISSION_CATALOG,
+  PERMISSION_RESOURCE,
   PERMISSION_RESOURCES,
   ROLE_DATA_SCOPES,
   SYSTEM_ROLE_KEYS,
@@ -319,4 +321,65 @@ export async function actorHasPermission(
     : [];
   const entry = permissions.find((row) => row.resource === resource);
   return Boolean(entry?.actions?.includes(action));
+}
+
+/** Destinatario de digests diarios de vencimiento (cursos / libreta). */
+export type ExpiryDigestRecipient = {
+  id: string;
+  email: string;
+  businessId: string | null;
+  /** Superadmin o dataScope=all: ve filas de todas las empresas. */
+  seesAllBusinesses: boolean;
+};
+
+/**
+ * Usuarios activos cuyo rol tiene `cursos.notifications.digest` + read.
+ * No usa el bypass de internalRol=superadmin: el permiso debe estar en el rol
+ * (el rol sistema superadmin lo incluye vía seed).
+ */
+export async function listExpiryDigestRecipients(): Promise<
+  ExpiryDigestRecipient[]
+> {
+  const resource = PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS_DIGEST;
+  const action = PERMISSION_ACTION.READ;
+
+  const users = await prisma.user.findMany({
+    where: { deletedAt: null, state: true },
+    select: {
+      id: true,
+      email: true,
+      businessId: true,
+      internalRol: true,
+      role: {
+        select: {
+          permissions: true,
+          dataScope: true,
+          state: true,
+          deletedAt: true,
+        },
+      },
+    },
+  });
+
+  const out: ExpiryDigestRecipient[] = [];
+  for (const user of users) {
+    const email = user.email?.trim().toLowerCase();
+    if (!email) continue;
+    if (!user.role || user.role.deletedAt || !user.role.state) continue;
+
+    const permissions = Array.isArray(user.role.permissions)
+      ? (user.role.permissions as PermissionEntry[])
+      : [];
+    const entry = permissions.find((row) => row.resource === resource);
+    if (!entry?.actions?.includes(action)) continue;
+
+    out.push({
+      id: user.id,
+      email,
+      businessId: user.businessId,
+      seesAllBusinesses:
+        user.internalRol === "superadmin" || user.role.dataScope === "all",
+    });
+  }
+  return out;
 }

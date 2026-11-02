@@ -39,6 +39,11 @@ export const PERMISSION_RESOURCE = {
   CURSOS_ASSIGNMENTS_ASSIGN: "cursos.assignments.assign",
   CURSOS_LIBRETAS: "cursos.libretas",
   CURSOS_NOTIFICATIONS: "cursos.notifications",
+  /**
+   * Quién recibe los digests diarios de vencimiento (cursos + libreta).
+   * Independiente de poder ver/gestionar el outbox en la UI.
+   */
+  CURSOS_NOTIFICATIONS_DIGEST: "cursos.notifications.digest",
   PREVENCION: "prevencion",
   PREVENCION_DOCS: "prevencion.docs",
   ROLES: "roles",
@@ -179,6 +184,12 @@ export const PERMISSION_CATALOG: PermissionCatalogModule[] = [
         label: "Notificaciones de vencimiento",
         actions: [PERMISSION_ACTION.READ, PERMISSION_ACTION.UPDATE],
       },
+      {
+        resource: PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS_DIGEST,
+        label: "Recibir resumen de vencimientos por correo",
+        hint: "Digests diarios a admin (cursos y libreta). Configurá por rol.",
+        actions: [PERMISSION_ACTION.READ],
+      },
     ],
   },
   {
@@ -292,6 +303,7 @@ export const SYSTEM_ROLE_DEFS = [
         resource: PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS,
         actions: [PERMISSION_ACTION.READ, PERMISSION_ACTION.UPDATE],
       },
+      readOnly(PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS_DIGEST),
       readOnly(PERMISSION_RESOURCE.PREVENCION),
     ],
   },
@@ -316,6 +328,8 @@ export const SYSTEM_ROLE_DEFS = [
       readOnly(PERMISSION_RESOURCE.MAESTROS_TRAVESIAS),
       readOnly(PERMISSION_RESOURCE.CURSOS_ASSIGNMENTS),
       readOnly(PERMISSION_RESOURCE.CURSOS_LIBRETAS),
+      /** RR.HH. suele necesitar el resumen diario de vigencias. */
+      readOnly(PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS_DIGEST),
     ],
   },
   {

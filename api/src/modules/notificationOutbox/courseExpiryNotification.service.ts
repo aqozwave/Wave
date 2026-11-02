@@ -10,6 +10,7 @@ import {
   getExpiryNotificationSettings,
   getMaxWarningDays,
 } from "../notificationSettings/notificationSettings.service.js";
+import { listExpiryDigestRecipients } from "../roles/roles.service.js";
 import { enqueueNotification } from "./notificationOutbox.service.js";
 
 /** Cursor diario: evita más de un digest admin por día calendario. */
@@ -308,31 +309,16 @@ export async function processCourseExpiryNotifications(options?: {
 
   if (digestRows.length && !(await wasAdminDigestSentToday(now))) {
     const todayKey = getDateOnlyKey(now);
-    const admins = await prisma.user.findMany({
-      where: {
-        internalRol: { in: ["admin", "superadmin"] },
-        deletedAt: null,
-        state: true,
-      },
-      select: {
-        id: true,
-        email: true,
-        internalRol: true,
-        businessId: true,
-      },
-    });
+    // Destinatarios por permiso cursos.notifications.digest (Roles UI).
+    const recipients = await listExpiryDigestRecipients();
 
     let digestTargets = 0;
     let digestOk = 0;
 
-    for (const admin of admins) {
-      const adminEmail = admin.email?.trim();
-      if (!adminEmail) continue;
-
-      const rows =
-        admin.internalRol === "superadmin"
-          ? digestRows
-          : digestRows.filter((row) => row.businessId === admin.businessId);
+    for (const recipient of recipients) {
+      const rows = recipient.seesAllBusinesses
+        ? digestRows
+        : digestRows.filter((row) => row.businessId === recipient.businessId);
 
       if (!rows.length) continue;
 
@@ -341,14 +327,15 @@ export async function processCourseExpiryNotifications(options?: {
       try {
         const { inserted } = await enqueueNotification({
           type: "course_admin_digest",
-          dedupeKey: `course_admin_digest:${admin.id}:${todayKey}`,
-          to: adminEmail.toLowerCase(),
+          dedupeKey: `course_admin_digest:${recipient.id}:${todayKey}`,
+          to: recipient.email,
           payload: {
             digestDateKey: todayKey,
             rows,
           },
-          businessId:
-            admin.internalRol === "superadmin" ? null : admin.businessId,
+          businessId: recipient.seesAllBusinesses
+            ? null
+            : recipient.businessId,
           crewMemberId: null,
         });
 
@@ -356,7 +343,7 @@ export async function processCourseExpiryNotifications(options?: {
         if (inserted) adminEmails += 1;
       } catch (error) {
         console.error("Error encolando resumen admin de cursos", {
-          adminEmail,
+          adminEmail: recipient.email,
           error: error instanceof Error ? error.message : String(error),
         });
       }
