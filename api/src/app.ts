@@ -5,6 +5,7 @@ import { buildOpenApiDocument } from "./lib/openapi.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { notFoundHandler } from "./middlewares/notFound.js";
 import { academicDegreesRouter } from "./modules/academicDegrees/academicDegrees.routes.js";
+import { activityLogsRouter } from "./modules/activityLogs/activityLogs.routes.js";
 import { areasRouter } from "./modules/areas/areas.routes.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { businessesRouter } from "./modules/businesses/businesses.routes.js";
@@ -61,6 +62,7 @@ export function createApp() {
   app.use("/api/v1/muelles", muellesRouter);
   app.use("/api/v1/travesias", travesiasRouter);
   app.use("/api/v1/roles", rolesRouter);
+  app.use("/api/v1/activity-logs", activityLogsRouter);
   app.use("/api/v1/users", usersRouter);
   app.use("/api/v1/crew-members", crewMembersRouter);
   app.use("/api/v1/crew-member-courses", crewMemberCoursesGlobalRouter);

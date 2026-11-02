@@ -160,6 +160,10 @@ import {
   updateCrewMemberResponseSchema,
 } from "../modules/crewMembers/crewMembers.schemas.js";
 import {
+  listActivityLogsQuerySchema,
+  listActivityLogsResponseSchema,
+} from "../modules/activityLogs/activityLogs.schemas.js";
+import {
   createCrewMemberCourseBodySchema,
   createCrewMemberCourseResponseSchema,
   deleteCrewMemberCourseResponseSchema,
@@ -2175,6 +2179,26 @@ registry.registerPath({
     401: { description: "Sin token" },
     403: { description: "No admin/superadmin" },
     404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/activity-logs",
+  tags: ["ActivityLogs"],
+  summary: "Listar registro de actividad",
+  description: "Solo superadmin. Filtros action/resource/success.",
+  security: [{ bearerAuth: [] }],
+  request: { query: listActivityLogsQuerySchema },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listActivityLogsResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No superadmin" },
   },
 });
 

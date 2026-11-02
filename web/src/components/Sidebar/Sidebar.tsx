@@ -200,7 +200,9 @@ export function Sidebar() {
     location.pathname.startsWith("/cursos") ||
     location.pathname.startsWith("/notificaciones");
   /** Rutas bajo Sistema (solo superadmin). */
-  const onSystemSection = location.pathname.startsWith("/roles");
+  const onSystemSection =
+    location.pathname.startsWith("/roles") ||
+    location.pathname.startsWith("/sistema");
   const onPanel = location.pathname === "/";
   const [crewOpen, setCrewOpen] = useState(onCrewSection);
   const [cursosOpen, setCursosOpen] = useState(onCursosSection);
@@ -714,15 +716,19 @@ export function Sidebar() {
                 <div className="animate-submenu-enter mb-1 ml-[18px] flex flex-col gap-0.5 border-l border-[var(--color-nav-border)] pl-1.5">
                   <Link
                     to="/roles"
-                    aria-current={onSystemSection ? "page" : undefined}
+                    aria-current={
+                      location.pathname.startsWith("/roles")
+                        ? "page"
+                        : undefined
+                    }
                     className={[
                       "relative flex h-8 items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px]",
-                      onSystemSection
+                      location.pathname.startsWith("/roles")
                         ? "bg-[var(--color-nav-item-active-bg)] font-medium text-[var(--color-nav-item-active-fg)]"
                         : "text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
                     ].join(" ")}
                   >
-                    {onSystemSection ? (
+                    {location.pathname.startsWith("/roles") ? (
                       <span
                         className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--color-nachipa-primary)]"
                         aria-hidden
@@ -736,10 +742,26 @@ export function Sidebar() {
                     />
                     <span className="min-w-0 truncate">Roles y permisos</span>
                   </Link>
-                  <span
-                    className="relative flex h-8 cursor-default items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px] text-[var(--color-nachipa-muted)]"
-                    title="Próximamente"
+                  <Link
+                    to="/sistema/actividad"
+                    aria-current={
+                      location.pathname.startsWith("/sistema/actividad")
+                        ? "page"
+                        : undefined
+                    }
+                    className={[
+                      "relative flex h-8 items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px]",
+                      location.pathname.startsWith("/sistema/actividad")
+                        ? "bg-[var(--color-nav-item-active-bg)] font-medium text-[var(--color-nav-item-active-fg)]"
+                        : "text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
+                    ].join(" ")}
                   >
+                    {location.pathname.startsWith("/sistema/actividad") ? (
+                      <span
+                        className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--color-nachipa-primary)]"
+                        aria-hidden
+                      />
+                    ) : null}
                     <ClipboardList
                       size={14}
                       strokeWidth={1.5}
@@ -749,7 +771,7 @@ export function Sidebar() {
                     <span className="min-w-0 truncate">
                       Registro de actividad
                     </span>
-                  </span>
+                  </Link>
                 </div>
               ) : null}
             </div>

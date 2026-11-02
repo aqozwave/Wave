@@ -85,6 +85,41 @@ enum NotificationOutboxStatus {
 }
 
 /**
+ * Acción de auditoría (portal viejo ACTIVITY_ACTION).
+ * LOGIN/LOGOUT/REGISTER = auth; CREATE/UPDATE/DELETE = CRUD de dominio.
+ */
+enum ActivityAction {
+  LOGIN
+  LOGOUT
+  REGISTER
+  CREATE
+  UPDATE
+  DELETE
+}
+
+/**
+ * Recurso auditado (portal viejo ACTIVITY_RESOURCE).
+ * Se amplía cuando un módulo empieza a llamar a recordActivity.
+ */
+enum ActivityResource {
+  auth
+  user
+  business
+  location
+  crewMember
+  crewMemberCourse
+  area
+  rank
+  academicDegree
+  competencyCertificate
+  muelle
+  travesia
+  course
+  role
+  system
+}
+
+/**
  * Puerto del catálogo por empresa (maestro de muelles).
  * Nombre único por business entre no borrados (índice parcial en migración).
  */
@@ -217,6 +252,8 @@ model User {
   crewMember      CrewMember?
   /// Documentos de tripulante subidos por este usuario.
   uploadedCrewDocuments CrewMemberDocument[]
+  /// Filas de auditoría donde este usuario es el actor.
+  activityLogs ActivityLog[]
 
   @@index([email])
   @@index([username])
@@ -748,4 +785,36 @@ model NotificationOutbox {
   @@index([crewMemberId, status])
   @@index([businessId, status, createdAt])
   @@map("notification_outbox")
+}
+
+/**
+ * Registro de actividad (auditoría).
+ * Se escribe en fire-and-forget desde controllers; listado solo superadmin.
+ */
+model ActivityLog {
+  id             String           @id @default(uuid()) @db.Uuid
+  legacyMongoId  String?          @unique @map("legacy_mongo_id")
+  action         ActivityAction
+  resource       ActivityResource
+  /// Id del recurso tocado (uuid u otro); null en LOGIN/LOGOUT sin target.
+  resourceId     String?          @map("resource_id")
+  actorId        String?          @map("actor_id") @db.Uuid
+  actor          User?            @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  /// Snapshot del actor al momento del evento (sigue legible si borran el user).
+  actorUsername  String?          @map("actor_username")
+  actorEmail     String?          @map("actor_email")
+  actorRole      String?          @map("actor_role")
+  /// Etiqueta humana del target (ej. email, nombre de empresa).
+  targetLabel    String?          @map("target_label")
+  success        Boolean          @default(true)
+  errorMessage   String?          @map("error_message")
+  ip             String?
+  userAgent      String?          @map("user_agent")
+  metadata       Json?
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([resource, action, createdAt])
+  @@map("activity_logs")
 }

@@ -23,6 +23,7 @@ import { Panel } from "./pages/Panel/Panel";
 import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmation";
 import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
 import { Roles } from "./pages/Roles/Roles";
+import { ActivityLogs } from "./pages/Sistema/ActivityLogs";
 import { Embarcados } from "./pages/Embarcados/Embarcados";
 import { FichaTripulante } from "./pages/Embarcados/FichaTripulante";
 import { NotificacionesVencimiento } from "./pages/Notificaciones/NotificacionesVencimiento";
@@ -145,6 +146,7 @@ export function App() {
             element={<OutboxNotificaciones />}
           />
           <Route path="roles" element={<Roles />} />
+          <Route path="sistema/actividad" element={<ActivityLogs />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
