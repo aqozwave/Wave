@@ -1,0 +1,32 @@
+meta {
+  name: Post read-all system announcements
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/system-announcements/read-all
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.unreadCount: eq 0
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

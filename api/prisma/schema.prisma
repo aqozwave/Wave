@@ -85,6 +85,15 @@ enum NotificationOutboxStatus {
 }
 
 /**
+ * Tipo de aviso de sistema (portal viejo SYSTEM_ANNOUNCEMENT_KIND).
+ */
+enum SystemAnnouncementKind {
+  version
+  maintenance
+  config
+}
+
+/**
  * Acción de auditoría (portal viejo ACTIVITY_ACTION).
  * LOGIN/LOGOUT/REGISTER = auth; CREATE/UPDATE/DELETE = CRUD de dominio.
  */
@@ -256,6 +265,10 @@ model User {
   uploadedCrewDocuments CrewMemberDocument[]
   /// Filas de auditoría donde este usuario es el actor.
   activityLogs ActivityLog[]
+  /// Avisos de sistema marcados como leídos.
+  announcementReads UserAnnouncementRead[]
+  /// Avisos publicados por este usuario (si aplica).
+  announcementsCreated SystemAnnouncement[] @relation("AnnouncementCreatedBy")
 
   @@index([email])
   @@index([username])
@@ -819,4 +832,45 @@ model ActivityLog {
   @@index([actorId, createdAt])
   @@index([resource, action, createdAt])
   @@map("activity_logs")
+}
+
+/**
+ * Aviso de sistema (campanita del topbar).
+ * Portal viejo SystemAnnouncement: version / maintenance / config.
+ */
+model SystemAnnouncement {
+  id            String                 @id @default(uuid()) @db.Uuid
+  legacyMongoId String?                @unique @map("legacy_mongo_id")
+  /// Idempotencia de avisos de versión (ej. version:2.0.0).
+  dedupeKey     String?                @unique @map("dedupe_key")
+  kind          SystemAnnouncementKind
+  title         String
+  body          String
+  metadata      Json?
+  publishedAt   DateTime               @default(now()) @map("published_at") @db.Timestamptz
+  expiresAt     DateTime?              @map("expires_at") @db.Timestamptz
+  createdById   String?                @map("created_by_id") @db.Uuid
+  createdBy     User?                  @relation("AnnouncementCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  deletedAt     DateTime?              @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+  reads         UserAnnouncementRead[]
+
+  @@index([deletedAt, publishedAt])
+  @@map("system_announcements")
+}
+
+/**
+ * Lectura de un aviso por usuario (reemplaza seenSystemAnnouncementIds del portal viejo).
+ */
+model UserAnnouncementRead {
+  userId         String             @map("user_id") @db.Uuid
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  announcementId String             @map("announcement_id") @db.Uuid
+  announcement   SystemAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  readAt         DateTime           @default(now()) @map("read_at") @db.Timestamptz
+
+  @@id([userId, announcementId])
+  @@index([userId])
+  @@map("user_announcement_reads")
 }

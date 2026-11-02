@@ -22,6 +22,7 @@ import { notificationSettingsRouter } from "./modules/notificationSettings/notif
 import { portsRouter } from "./modules/ports/ports.routes.js";
 import { ranksRouter } from "./modules/ranks/ranks.routes.js";
 import { rolesRouter } from "./modules/roles/roles.routes.js";
+import { systemAnnouncementsRouter } from "./modules/systemAnnouncements/systemAnnouncements.routes.js";
 import { travesiasRouter } from "./modules/travesias/travesias.routes.js";
 import { usersRouter } from "./modules/users/users.routes.js";
 
@@ -63,6 +64,7 @@ export function createApp() {
   app.use("/api/v1/travesias", travesiasRouter);
   app.use("/api/v1/roles", rolesRouter);
   app.use("/api/v1/activity-logs", activityLogsRouter);
+  app.use("/api/v1/system-announcements", systemAnnouncementsRouter);
   app.use("/api/v1/users", usersRouter);
   app.use("/api/v1/crew-members", crewMembersRouter);
   app.use("/api/v1/crew-member-courses", crewMemberCoursesGlobalRouter);

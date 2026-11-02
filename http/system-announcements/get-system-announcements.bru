@@ -1,0 +1,37 @@
+meta {
+  name: Get system announcements
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/system-announcements?limit=20
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Campanita: avisos activos + unreadCount. Upsert del catálogo de versión al listar.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+  res.body.unreadCount: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

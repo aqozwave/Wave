@@ -1,12 +1,16 @@
-import { Bell, CircleHelp, LayoutDashboard, Search } from "lucide-react";
+import { CircleHelp, LayoutDashboard, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { SystemAnnouncementsBell } from "../SystemAnnouncementsBell/SystemAnnouncementsBell";
 
 type TopbarProps = {
   /** Texto del breadcrumb (estilo neutro del Figma Topbar). */
   breadcrumb: string;
   breadcrumbIcon?: LucideIcon;
-  /** Dot rojo en notificaciones, como en el diseño. */
+  /**
+   * @deprecated La campanita ahora usa unreadCount real de avisos de sistema.
+   * Se ignora; se deja por compatibilidad de llamadas existentes.
+   */
   hasNotifications?: boolean;
   actions?: ReactNode;
 };
@@ -18,7 +22,6 @@ type TopbarProps = {
 export function Topbar({
   breadcrumb,
   breadcrumbIcon: BreadcrumbIcon = LayoutDashboard,
-  hasNotifications = true,
   actions,
 }: TopbarProps) {
   return (
@@ -57,19 +60,7 @@ export function Topbar({
         <CircleHelp size={16} strokeWidth={1.5} aria-hidden />
       </button>
 
-      <button
-        type="button"
-        className="relative flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] text-[var(--color-icon-default)]"
-        aria-label="Notificaciones"
-      >
-        <Bell size={16} strokeWidth={1.5} aria-hidden />
-        {hasNotifications ? (
-          <span
-            aria-hidden
-            className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-[var(--color-status-danger-fg)]"
-          />
-        ) : null}
-      </button>
+      <SystemAnnouncementsBell />
 
       {actions}
     </header>

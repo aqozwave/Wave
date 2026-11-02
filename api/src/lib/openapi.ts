@@ -164,6 +164,10 @@ import {
   listActivityLogsResponseSchema,
 } from "../modules/activityLogs/activityLogs.schemas.js";
 import {
+  listSystemAnnouncementsQuerySchema,
+  listSystemAnnouncementsResponseSchema,
+} from "../modules/systemAnnouncements/systemAnnouncements.schemas.js";
+import {
   createCrewMemberCourseBodySchema,
   createCrewMemberCourseResponseSchema,
   deleteCrewMemberCourseResponseSchema,
@@ -2199,6 +2203,58 @@ registry.registerPath({
     },
     401: { description: "Sin token" },
     403: { description: "No superadmin" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/system-announcements",
+  tags: ["SystemAnnouncements"],
+  summary: "Listar avisos del sistema",
+  description: "Campanita: avisos activos + unreadCount para el usuario.",
+  security: [{ bearerAuth: [] }],
+  request: { query: listSystemAnnouncementsQuerySchema },
+  responses: {
+    200: {
+      description: "Listado",
+      content: {
+        "application/json": { schema: listSystemAnnouncementsResponseSchema },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/system-announcements/read-all",
+  tags: ["SystemAnnouncements"],
+  summary: "Marcar todos los avisos como leídos",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Listado actualizado",
+      content: {
+        "application/json": { schema: listSystemAnnouncementsResponseSchema },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/system-announcements/{id}/read",
+  tags: ["SystemAnnouncements"],
+  summary: "Marcar un aviso como leído",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Listado actualizado",
+      content: {
+        "application/json": { schema: listSystemAnnouncementsResponseSchema },
+      },
+    },
+    404: { description: "No encontrado" },
   },
 });
 
