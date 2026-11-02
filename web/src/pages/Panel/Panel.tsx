@@ -1,6 +1,6 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
-  Bell,
   CheckCircle2,
   ChevronDown,
   CircleAlert,
@@ -9,12 +9,20 @@ import {
   Search,
   Ship,
 } from "lucide-react";
-import { useAuth } from "../../lib/auth/AuthContext";
+import { Link } from "react-router";
+import { SystemAnnouncementsBell } from "../../components/SystemAnnouncementsBell/SystemAnnouncementsBell";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
+import {
+  getDashboardSummaryRequest,
+  type DashboardSummary,
+  type DashboardUpcomingItem,
+} from "../../lib/api/dashboard";
+import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
 /**
- * Maqueta S1 · Panel global (Figma 133:4570).
- * Datos de diseño; la API real entra en la sección Dashboard.
+ * Panel global (Figma 133:4570).
+ * KPIs y próximos vencimientos vienen de GET /dashboard/summary;
+ * charts por nave/curso siguen mock hasta el siguiente slice.
  */
 
 /** Capitaliza el primer carácter (nombres del seed vienen en minúscula). */
@@ -26,64 +34,35 @@ function capitalizeName(value: string): string {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
-/** KPIs superiores del Panel (valores mock de Figma). */
-const kpis = [
-  {
-    label: "Cumplimiento global",
-    value: "97,4%",
-    icon: CheckCircle2,
-    delta: "+0,6 pts",
-    deltaTone: "success" as const,
-    hint: "vs mes pasado",
-  },
-  {
-    label: "Vencen en 60 días",
-    value: "21",
-    icon: AlertTriangle,
-    delta: "+4",
-    deltaTone: "danger" as const,
-    hint: "vs semana pasada",
-  },
-  {
-    label: "Vencidos o faltantes",
-    value: "3",
-    icon: CircleAlert,
-    delta: "0",
-    deltaTone: "neutral" as const,
-    hint: "sin cambios",
-  },
-];
+/** Iniciales a partir de nombre y apellido. */
+function initialsOf(firstName: string, lastName: string): string {
+  const a = firstName.trim().charAt(0);
+  const b = lastName.trim().charAt(0);
+  return `${a}${b}`.toUpperCase() || "?";
+}
 
-const vencimientos = [
-  {
-    initials: "DR",
-    name: "Daniel Rojas",
-    curso: "OMI 1.13",
-    vence: "21-10-2026",
-    estado: "Urgente" as const,
-  },
-  {
-    initials: "TH",
-    name: "Tomás Herrera",
-    curso: "OMI 1.19",
-    vence: "28-10-2026",
-    estado: "Crítico" as const,
-  },
-  {
-    initials: "CT",
-    name: "Camila Torres",
-    curso: "OMI 6.1",
-    vence: "02-11-2026",
-    estado: "Urgente" as const,
-  },
-  {
-    initials: "FV",
-    name: "Felipe Vargas",
-    curso: "OMI 1.13",
-    vence: "05-11-2026",
-    estado: "Crítico" as const,
-  },
-];
+/** Fecha corta es-CL (día calendario UTC). */
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("es-CL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** Etiqueta + tono del estado de vencimiento. */
+function upcomingEstado(status: DashboardUpcomingItem["status"]): {
+  label: string;
+  tone: "danger" | "warning" | "neutral";
+} {
+  if (status === "expired") return { label: "Vencido", tone: "danger" };
+  if (status === "pending") return { label: "Faltante", tone: "neutral" };
+  return { label: "Por vencer", tone: "warning" };
+}
 
 /** Escala del plot Figma: 8 unidades = 150px de alto útil. */
 const CAPSULE_MAX = 8;
@@ -159,12 +138,72 @@ const meses = [
   "Oct",
 ];
 
-/** Página Panel global: header S1 + KPIs + charts + tabla mock. */
+/** Página Panel global: header S1 + KPIs reales + charts mock. */
 export function Panel() {
-  const { user } = useAuth();
-  const welcomeName = user
-    ? capitalizeName(user.firstName)
-    : "usuario";
+  const { user, accessToken } = useAuth();
+  const welcomeName = user ? capitalizeName(user.firstName) : "usuario";
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+
+  /** Carga el resumen del dashboard. */
+  const load = useCallback(async () => {
+    if (!accessToken) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getDashboardSummaryRequest(accessToken, 8);
+      setSummary(data);
+    } catch (err) {
+      setSummary(null);
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "No se pudo cargar el panel",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  /** Tres tarjetas KPI desde la API (sin deltas históricos aún). */
+  const kpis = useMemo(() => {
+    const k = summary?.kpis;
+    const horizon = k?.horizonDays ?? 60;
+    return [
+      {
+        label: "Cumplimiento global",
+        value:
+          k?.compliancePercent == null
+            ? "—"
+            : `${k.compliancePercent.toLocaleString("es-CL")} %`,
+        icon: CheckCircle2,
+        hint:
+          k == null
+            ? "cargando…"
+            : `${k.crewCount} tripulantes activos`,
+      },
+      {
+        label: `Vencen en ${horizon} días`,
+        value: k == null ? "—" : String(k.expiringSoonCount),
+        icon: AlertTriangle,
+        hint: "cursos OMI por vencer",
+      },
+      {
+        label: "Vencidos o faltantes",
+        value: k == null ? "—" : String(k.expiredOrMissingCount),
+        icon: CircleAlert,
+        hint: "vencidos + pendientes obligatorios",
+      },
+    ];
+  }, [summary]);
+
+  const upcoming = summary?.upcoming ?? [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-7 py-[22px]">
@@ -175,7 +214,10 @@ export function Panel() {
             Bienvenido, {welcomeName}
           </h1>
           <p className="text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
-            Cumplimiento de todas las empresas
+            Cumplimiento de formación OMI
+            {user?.internalRol === "superadmin"
+              ? " · todas las empresas"
+              : ""}
           </p>
         </div>
 
@@ -201,17 +243,7 @@ export function Panel() {
           <CircleHelp size={16} strokeWidth={1.5} aria-hidden />
         </button>
 
-        <button
-          type="button"
-          className="relative flex size-9 shrink-0 items-center justify-center rounded-[18px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] text-[var(--color-icon-default)]"
-          aria-label="Notificaciones"
-        >
-          <Bell size={16} strokeWidth={1.5} aria-hidden />
-          <span
-            aria-hidden
-            className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-[var(--color-status-danger-fg)]"
-          />
-        </button>
+        <SystemAnnouncementsBell />
 
         <button
           type="button"
@@ -223,6 +255,12 @@ export function Panel() {
 
         <UserMenu />
       </header>
+
+      {error ? (
+        <p className="m-0 text-[13px] text-[var(--color-status-danger-fg)]">
+          {error}
+        </p>
+      ) : null}
 
       <div className="flex gap-4">
         <div className="flex min-w-0 flex-1 flex-col gap-4">
@@ -246,25 +284,11 @@ export function Panel() {
                     />
                   </div>
                   <p className="text-[28px] font-semibold leading-9 tracking-[-0.14px] text-[var(--color-nachipa-title)]">
-                    {kpi.value}
+                    {loading ? "…" : kpi.value}
                   </p>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={[
-                        "rounded-md px-1.5 py-0.5 text-[12px] font-medium leading-4",
-                        kpi.deltaTone === "success"
-                          ? "bg-[var(--color-status-success-bg)] text-[var(--color-status-success-fg)]"
-                          : kpi.deltaTone === "danger"
-                            ? "bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-fg)]"
-                            : "bg-[var(--color-status-neutral-bg)] text-[var(--color-status-neutral-fg)]",
-                      ].join(" ")}
-                    >
-                      {kpi.delta}
-                    </span>
-                    <span className="text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
-                      {kpi.hint}
-                    </span>
-                  </div>
+                  <p className="text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
+                    {kpi.hint}
+                  </p>
                 </div>
               );
             })}
@@ -341,12 +365,12 @@ export function Panel() {
               <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-[21px] text-[var(--color-nachipa-title)]">
                 Próximos vencimientos
               </h2>
-              <button
-                type="button"
+              <Link
+                to="/cursos/vencimientos"
                 className="text-[13px] font-semibold leading-[19px] text-[var(--color-nachipa-primary)]"
               >
                 Ver todos
-              </button>
+              </Link>
             </div>
             <div className="overflow-hidden rounded-lg">
               <div className="grid grid-cols-[1.6fr_0.9fr_0.7fr_0.7fr] bg-[var(--color-table-head-bg)] text-[12px] font-medium leading-4 text-[var(--color-table-head-text)]">
@@ -355,39 +379,55 @@ export function Panel() {
                 <div className="px-3 py-2.5">Vence</div>
                 <div className="px-3 py-2.5">Estado</div>
               </div>
-              {vencimientos.map((row) => (
-                <div
-                  key={row.name}
-                  className="grid grid-cols-[1.6fr_0.9fr_0.7fr_0.7fr] border-b border-[var(--color-nachipa-border-subtle)] text-[12px] last:border-b-0"
-                >
-                  <div className="flex items-center gap-3 px-3 py-2.5">
-                    <span className="flex size-9 items-center justify-center rounded-[18px] bg-[var(--color-kpi-indigo-soft)] text-[12px] font-semibold text-[var(--color-kpi-indigo)]">
-                      {row.initials}
-                    </span>
-                    <span className="font-medium text-[var(--color-nachipa-title)]">
-                      {row.name}
-                    </span>
+              {loading && upcoming.length === 0 ? (
+                <p className="m-0 px-3 py-4 text-[12px] text-[var(--color-nachipa-secondary)]">
+                  Cargando…
+                </p>
+              ) : null}
+              {!loading && upcoming.length === 0 ? (
+                <p className="m-0 px-3 py-4 text-[12px] text-[var(--color-nachipa-secondary)]">
+                  Sin vencimientos próximos en la ventana.
+                </p>
+              ) : null}
+              {upcoming.map((row) => {
+                const estado = upcomingEstado(row.status);
+                const fullName = `${capitalizeName(row.crewFirstName)} ${capitalizeName(row.crewLastName)}`.trim();
+                return (
+                  <div
+                    key={row.assignmentId}
+                    className="grid grid-cols-[1.6fr_0.9fr_0.7fr_0.7fr] border-b border-[var(--color-nachipa-border-subtle)] text-[12px] last:border-b-0"
+                  >
+                    <div className="flex items-center gap-3 px-3 py-2.5">
+                      <span className="flex size-9 items-center justify-center rounded-[18px] bg-[var(--color-kpi-indigo-soft)] text-[12px] font-semibold text-[var(--color-kpi-indigo)]">
+                        {initialsOf(row.crewFirstName, row.crewLastName)}
+                      </span>
+                      <span className="font-medium text-[var(--color-nachipa-title)]">
+                        {fullName || row.crewRun}
+                      </span>
+                    </div>
+                    <div className="flex items-center px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                      {row.courseName}
+                    </div>
+                    <div className="flex items-center px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
+                      {formatDate(row.expiresAt)}
+                    </div>
+                    <div className="flex items-center px-3 py-2.5">
+                      <span
+                        className={[
+                          "rounded-full px-2 py-0.5 text-[12px] font-medium",
+                          estado.tone === "danger"
+                            ? "bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-fg)]"
+                            : estado.tone === "warning"
+                              ? "bg-[var(--color-status-warning-bg)] text-[var(--color-status-warning-fg)]"
+                              : "bg-[var(--color-status-neutral-bg)] text-[var(--color-status-neutral-fg)]",
+                        ].join(" ")}
+                      >
+                        {estado.label}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center px-3 py-2.5 text-[var(--color-nachipa-body)]">
-                    {row.curso}
-                  </div>
-                  <div className="flex items-center px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
-                    {row.vence}
-                  </div>
-                  <div className="flex items-center px-3 py-2.5">
-                    <span
-                      className={[
-                        "rounded-full px-2 py-0.5 text-[12px] font-medium",
-                        row.estado === "Urgente"
-                          ? "bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-fg)]"
-                          : "bg-[var(--color-status-warning-bg)] text-[var(--color-status-warning-fg)]",
-                      ].join(" ")}
-                    >
-                      {row.estado}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

@@ -164,6 +164,10 @@ import {
   listActivityLogsResponseSchema,
 } from "../modules/activityLogs/activityLogs.schemas.js";
 import {
+  getDashboardSummaryQuerySchema,
+  getDashboardSummaryResponseSchema,
+} from "../modules/dashboard/dashboard.schemas.js";
+import {
   listSystemAnnouncementsQuerySchema,
   listSystemAnnouncementsResponseSchema,
 } from "../modules/systemAnnouncements/systemAnnouncements.schemas.js";
@@ -228,6 +232,24 @@ registry.registerComponent("securitySchemes", "bearerAuth", {
   type: "http",
   scheme: "bearer",
   bearerFormat: "JWT",
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/dashboard/summary",
+  tags: ["Dashboard"],
+  summary: "Resumen del Panel (KPIs + próximos vencimientos)",
+  description: "Requiere dashboard:read. Tenant-aware.",
+  security: [{ bearerAuth: [] }],
+  request: { query: getDashboardSummaryQuerySchema },
+  responses: {
+    200: {
+      description: "Resumen",
+      content: {
+        "application/json": { schema: getDashboardSummaryResponseSchema },
+      },
+    },
+  },
 });
 
 registry.registerPath({

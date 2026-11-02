@@ -13,6 +13,7 @@ import { competencyCertificatesRouter } from "./modules/competencyCertificates/c
 import { coursesRouter } from "./modules/courses/courses.routes.js";
 import { crewMemberCoursesGlobalRouter } from "./modules/crewMemberCourses/crewMemberCourses.global.routes.js";
 import { crewMembersRouter } from "./modules/crewMembers/crewMembers.routes.js";
+import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
 import { documentTypesRouter } from "./modules/documentTypes/documentTypes.routes.js";
 import { healthRouter } from "./modules/health/health.routes.js";
 import { locationsRouter } from "./modules/locations/locations.routes.js";
@@ -50,6 +51,7 @@ export function createApp() {
   });
 
   app.use("/api/v1/health", healthRouter);
+  app.use("/api/v1/dashboard", dashboardRouter);
   app.use("/api/v1/auth", authRouter);
   app.use("/api/v1/businesses", businessesRouter);
   app.use("/api/v1/locations", locationsRouter);

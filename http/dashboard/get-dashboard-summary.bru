@@ -1,0 +1,38 @@
+meta {
+  name: Get dashboard summary
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/dashboard/summary?upcomingLimit=10
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  KPIs del Panel + próximos vencimientos de cursos.
+  Permiso: dashboard read.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.kpis: isDefined
+  res.body.upcoming: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
