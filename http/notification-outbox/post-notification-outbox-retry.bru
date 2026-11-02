@@ -1,0 +1,37 @@
+meta {
+  name: Post notification outbox retry
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/notification-outbox/{{outboxId}}/retry
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Reencola failed/cancelled → pending.
+  Requiere outboxId (del listado). Sin fila failed devolverá 404/409.
+  No envía el correo: solo deja la fila lista para el worker.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+  const id = bru.getEnvVar("outboxId");
+  if (!id) {
+    throw new Error("Sin outboxId. Corré Get notification outbox con al menos una fila failed/cancelled.");
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

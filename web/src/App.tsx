@@ -22,6 +22,8 @@ import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
 import { Roles } from "./pages/Roles/Roles";
 import { Embarcados } from "./pages/Embarcados/Embarcados";
 import { FichaTripulante } from "./pages/Embarcados/FichaTripulante";
+import { NotificacionesVencimiento } from "./pages/Notificaciones/NotificacionesVencimiento";
+import { OutboxNotificaciones } from "./pages/Notificaciones/OutboxNotificaciones";
 import { Ubicaciones } from "./pages/Ubicaciones/Ubicaciones";
 import { Usuarios } from "./pages/Usuarios/Usuarios";
 
@@ -131,6 +133,11 @@ export function App() {
           <Route path="ubicaciones" element={<Ubicaciones />} />
           <Route path="catalogos" element={<Catalogos />} />
           <Route path="usuarios" element={<Usuarios />} />
+          <Route path="notificaciones" element={<NotificacionesVencimiento />} />
+          <Route
+            path="notificaciones/outbox"
+            element={<OutboxNotificaciones />}
+          />
           <Route path="roles" element={<Roles />} />
         </Route>
       </Route>

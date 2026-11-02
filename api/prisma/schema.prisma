@@ -61,6 +61,30 @@ enum CrewCourseSource {
 }
 
 /**
+ * Tipo de aviso en el outbox (portal viejo OUTBOX_TYPE).
+ * Libreta y digests quedan modelados; el generador de S9 empieza por cursos.
+ */
+enum NotificationOutboxType {
+  boarding_book_expiring
+  course_expiring
+  course_expired
+  boarding_book_admin_digest
+  course_admin_digest
+}
+
+/**
+ * Estado del envío en el outbox (portal viejo OUTBOX_STATUS).
+ * El worker: pending → processing → sent | failed; cancelado a mano o por dedupe.
+ */
+enum NotificationOutboxStatus {
+  pending
+  processing
+  sent
+  failed
+  cancelled
+}
+
+/**
  * Puerto del catálogo por empresa (maestro de muelles).
  * Nombre único por business entre no borrados (índice parcial en migración).
  */
@@ -246,6 +270,8 @@ model Business {
   travesias              Travesia[]
   crewMembers            CrewMember[]
   documentTypes          DocumentType[]
+  /// Filas del outbox de notificaciones de esta empresa.
+  notificationOutbox     NotificationOutbox[]
 
   @@index([name])
   @@map("businesses")
@@ -493,6 +519,8 @@ model CrewMember {
   travesiaAssignments        CrewMemberTravesia[]
   /// Cursos asignados a este tripulante (ficha).
   courseAssignments          CrewMemberCourse[]
+  /// Avisos de vencimiento dirigidos a este tripulante.
+  notificationOutbox         NotificationOutbox[]
 
   @@index([businessId])
   @@index([locationId])
@@ -668,4 +696,56 @@ model EmailToken {
   @@index([tokenHash])
   @@index([userId, purpose])
   @@map("email_tokens")
+}
+
+/**
+ * Estado global del sistema (key/value JSON).
+ * Portal viejo SystemState: settings de avisos, cursor de digests admin, etc.
+ */
+model SystemSetting {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// Clave estable (ej. expiry_notification_settings).
+  key       String   @unique
+  /// Valor libre (JSON); el service valida por key.
+  value     Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("system_settings")
+}
+
+/**
+ * Cola de correos de vencimiento (outbox).
+ * El generador inserta; el worker envía con Resend (override a correo de prueba mientras el portal viejo esté vivo).
+ */
+model NotificationOutbox {
+  id            String                    @id @default(uuid()) @db.Uuid
+  legacyMongoId String?                   @unique @map("legacy_mongo_id")
+  type          NotificationOutboxType
+  /// Idempotencia: un solo aviso por clave (tipo + entidad + hito + destinatario).
+  dedupeKey     String                    @unique @map("dedupe_key")
+  /// Destinatario lógico (tripulante/admin). El worker puede reescribirlo con NOTIFICATION_EMAIL_OVERRIDE.
+  to            String
+  /// Datos del mail (nombre, curso, fechas, etc.).
+  payload       Json?
+  status        NotificationOutboxStatus  @default(pending)
+  attempts      Int                       @default(0)
+  /// Tope de reintentos antes de quedar en failed (portal viejo: 8).
+  maxAttempts   Int                       @default(8) @map("max_attempts")
+  nextAttemptAt DateTime                  @default(now()) @map("next_attempt_at") @db.Timestamptz
+  lastError     String?                   @map("last_error")
+  lockedAt      DateTime?                 @map("locked_at") @db.Timestamptz
+  sentAt        DateTime?                 @map("sent_at") @db.Timestamptz
+  businessId    String?                   @map("business_id") @db.Uuid
+  business      Business?                 @relation(fields: [businessId], references: [id])
+  crewMemberId  String?                   @map("crew_member_id") @db.Uuid
+  crewMember    CrewMember?               @relation(fields: [crewMemberId], references: [id])
+  createdAt     DateTime                  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime                  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([status, nextAttemptAt])
+  @@index([status, lockedAt])
+  @@index([crewMemberId, status])
+  @@index([businessId, status, createdAt])
+  @@map("notification_outbox")
 }

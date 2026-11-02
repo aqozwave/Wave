@@ -4,6 +4,7 @@ import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import {
   assignCertificateCoursesToCrewMember,
+  computeCourseCompliancePercents,
   reconcileCrewMemberCertificateCourses,
 } from "../crewMemberCourses/crewMemberCourses.service.js";
 import type {
@@ -16,8 +17,14 @@ import type {
 /** Actor mínimo para reglas de tenant. */
 type Actor = Pick<AuthUser, "internalRol" | "businessId">;
 
-/** Serializa fila Prisma → contrato Zod. */
-function toCrewMemberResponse(row: CrewMember): CrewMemberResponse {
+/**
+ * Serializa fila Prisma → contrato Zod.
+ * courseCompliancePercent viene de un cálculo aparte (listado/detalle).
+ */
+function toCrewMemberResponse(
+  row: CrewMember,
+  courseCompliancePercent: number | null = null,
+): CrewMemberResponse {
   return {
     id: row.id,
     legacyMongoId: row.legacyMongoId,
@@ -42,7 +49,21 @@ function toCrewMemberResponse(row: CrewMember): CrewMemberResponse {
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    courseCompliancePercent,
   };
+}
+
+/** Adjunta el % de cumplimiento de cursos al serializar un tripulante. */
+async function toCrewMemberResponseWithCompliance(
+  row: CrewMember,
+): Promise<CrewMemberResponse> {
+  const compliance = await computeCourseCompliancePercents([
+    {
+      id: row.id,
+      competencyCertificateId: row.competencyCertificateId,
+    },
+  ]);
+  return toCrewMemberResponse(row, compliance.get(row.id) ?? null);
 }
 
 /** Filtro de listado: superadmin ve todas; admin/user solo su empresa. */
@@ -326,8 +347,17 @@ export async function listCrewMembers(
     }),
   ]);
 
+  const compliance = await computeCourseCompliancePercents(
+    rows.map((row) => ({
+      id: row.id,
+      competencyCertificateId: row.competencyCertificateId,
+    })),
+  );
+
   return {
-    items: rows.map(toCrewMemberResponse),
+    items: rows.map((row) =>
+      toCrewMemberResponse(row, compliance.get(row.id) ?? null),
+    ),
     total,
     page: query.page,
     limit: query.limit,
@@ -350,7 +380,7 @@ export async function getCrewMemberById(
     );
   }
   assertCrewTenantAccess(actor, row.businessId);
-  return toCrewMemberResponse(row);
+  return toCrewMemberResponseWithCompliance(row);
 }
 
 /** Alta de tripulante con validación de FKs. */
@@ -405,7 +435,7 @@ export async function createCrewMember(
         competencyCertificateId,
       );
     }
-    return toCrewMemberResponse(row);
+    return toCrewMemberResponseWithCompliance(row);
   } catch (err) {
     mapUniqueViolation(err);
   }
@@ -534,7 +564,7 @@ export async function updateCrewMember(
     if (certificateChanged) {
       await reconcileCrewMemberCertificateCourses(updated.id, nextCertId);
     }
-    return toCrewMemberResponse(updated);
+    return toCrewMemberResponseWithCompliance(updated);
   } catch (err) {
     mapUniqueViolation(err);
   }

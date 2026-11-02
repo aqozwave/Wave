@@ -135,7 +135,7 @@ function vigenciaTone(state: BoardingBookUiState): StatusChipTone {
 
 /**
  * Embarcados — lista operativa (Figma D2 · Embarcados).
- * Cumplimiento de cursos: placeholder hasta Sección 8.
+ * Cumplimiento = % de cursos obligatorios al día (API courseCompliancePercent).
  */
 export function Embarcados() {
   const { accessToken, user } = useAuth();
@@ -726,14 +726,38 @@ export function Embarcados() {
                         : "—"}
                     </td>
                     <td className="h-[52px] px-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-[90px] overflow-hidden rounded-full bg-[var(--color-nachipa-border-subtle)]">
-                          <div className="h-full w-0 rounded-full bg-[var(--color-nachipa-secondary)]" />
-                        </div>
-                        <span className="text-[11px] tabular-nums text-[var(--color-nachipa-secondary)]">
-                          —
-                        </span>
-                      </div>
+                      {(() => {
+                        const pct = row.courseCompliancePercent;
+                        if (pct === null) {
+                          return (
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 w-[90px] overflow-hidden rounded-full bg-[var(--color-nachipa-border-subtle)]" />
+                              <span className="text-[11px] tabular-nums text-[var(--color-nachipa-secondary)]">
+                                —
+                              </span>
+                            </div>
+                          );
+                        }
+                        const barColor =
+                          pct >= 80
+                            ? "bg-[var(--color-status-success-fg)]"
+                            : pct >= 50
+                              ? "bg-[var(--color-status-warning-fg)]"
+                              : "bg-[var(--color-status-danger-fg)]";
+                        return (
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-[90px] overflow-hidden rounded-full bg-[var(--color-nachipa-border-subtle)]">
+                              <div
+                                className={`h-full rounded-full ${barColor}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <span className="text-[11px] tabular-nums text-[var(--color-nachipa-secondary)]">
+                              {pct}%
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="relative h-[52px] px-3 text-right">
                       <button

@@ -42,11 +42,20 @@ export type SendEmailInput = {
   attachments?: EmailAttachment[];
 };
 
+/** Resultado de un envío real (id de Resend para trazabilidad). */
+export type SendEmailResult = {
+  /** Id del mensaje en Resend (dashboard / webhooks). */
+  resendId: string | null;
+};
+
 /**
  * Envía un correo vía Resend.
  * Si no hay API key, no llama a la red (el caller hace stub).
+ * Devuelve resendId para guardar en outbox / logs.
  */
-export async function sendEmail(input: SendEmailInput): Promise<void> {
+export async function sendEmail(
+  input: SendEmailInput,
+): Promise<SendEmailResult> {
   const resend = getResendClient();
   if (!resend) {
     throw new AppError(
@@ -56,7 +65,7 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
     );
   }
 
-  const { error } = await resend.emails.send({
+  const { data, error } = await resend.emails.send({
     from: getEmailFrom(),
     to: input.to,
     subject: input.subject,
@@ -71,4 +80,6 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
       error.message || "No se pudo enviar el correo",
     );
   }
+
+  return { resendId: data?.id ?? null };
 }

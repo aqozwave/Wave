@@ -15,6 +15,8 @@ import { documentTypesRouter } from "./modules/documentTypes/documentTypes.route
 import { healthRouter } from "./modules/health/health.routes.js";
 import { locationsRouter } from "./modules/locations/locations.routes.js";
 import { muellesRouter } from "./modules/muelles/muelles.routes.js";
+import { notificationOutboxRouter } from "./modules/notificationOutbox/notificationOutbox.routes.js";
+import { notificationSettingsRouter } from "./modules/notificationSettings/notificationSettings.routes.js";
 import { portsRouter } from "./modules/ports/ports.routes.js";
 import { ranksRouter } from "./modules/ranks/ranks.routes.js";
 import { rolesRouter } from "./modules/roles/roles.routes.js";
@@ -60,6 +62,8 @@ export function createApp() {
   app.use("/api/v1/roles", rolesRouter);
   app.use("/api/v1/users", usersRouter);
   app.use("/api/v1/crew-members", crewMembersRouter);
+  app.use("/api/v1/notification-settings", notificationSettingsRouter);
+  app.use("/api/v1/notification-outbox", notificationOutboxRouter);
   app.use(notFoundHandler);
   app.use(errorHandler);
 

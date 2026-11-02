@@ -25,6 +25,8 @@ export type CrewMember = {
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** % cursos obligatorios al día; null = sin obligatorios. */
+  courseCompliancePercent: number | null;
 };
 
 /** Listado paginado. */

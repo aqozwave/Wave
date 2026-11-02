@@ -51,6 +51,157 @@ function assertCrewTenantAccess(actor: Actor, businessId: string): void {
   }
 }
 
+/**
+ * % de cumplimiento de cursos obligatorios por tripulante (listado Embarcados).
+ * Misma regla que CrewCoursesPanel: mandatory con status valid | expiring_soon.
+ * null si no tiene cursos obligatorios.
+ */
+export async function computeCourseCompliancePercents(
+  crews: Array<{ id: string; competencyCertificateId: string | null }>,
+): Promise<Map<string, number | null>> {
+  const result = new Map<string, number | null>();
+  if (crews.length === 0) return result;
+
+  for (const crew of crews) {
+    result.set(crew.id, null);
+  }
+
+  const crewIds = crews.map((c) => c.id);
+  const assignments = await prisma.crewMemberCourse.findMany({
+    where: { crewMemberId: { in: crewIds }, deletedAt: null },
+    select: {
+      crewMemberId: true,
+      courseId: true,
+      status: true,
+      completedAt: true,
+      expiresAt: true,
+      course: { select: { isMandatory: true, deletedAt: true } },
+    },
+  });
+
+  const certIds = [
+    ...new Set(
+      crews
+        .map((c) => c.competencyCertificateId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const certLinks =
+    certIds.length === 0
+      ? []
+      : await prisma.competencyCertificateCourse.findMany({
+          where: {
+            competencyCertificateId: { in: certIds },
+            deletedAt: null,
+          },
+          select: {
+            competencyCertificateId: true,
+            courseId: true,
+            isMandatory: true,
+          },
+        });
+
+  /** Join título→curso: gana sobre el flag del catálogo. */
+  const certMandatory = new Map<string, boolean>();
+  for (const link of certLinks) {
+    certMandatory.set(
+      `${link.competencyCertificateId}:${link.courseId}`,
+      link.isMandatory !== false,
+    );
+  }
+
+  const crewCert = new Map(
+    crews.map((c) => [c.id, c.competencyCertificateId] as const),
+  );
+
+  /** Acumuladores por tripulante. */
+  const totals = new Map<string, { mandatory: number; done: number }>();
+  for (const id of crewIds) {
+    totals.set(id, { mandatory: 0, done: 0 });
+  }
+
+  const warningDays = getCourseExpiryWarningDays();
+  const now = new Date();
+
+  for (const row of assignments) {
+    if (row.course?.deletedAt) continue;
+    const certId = crewCert.get(row.crewMemberId) ?? null;
+    const fromCert =
+      certId != null
+        ? certMandatory.get(`${certId}:${row.courseId}`)
+        : undefined;
+    const isMandatory =
+      fromCert !== undefined
+        ? fromCert
+        : row.course?.isMandatory !== false;
+    if (!isMandatory) continue;
+
+    const status = resolveAssignmentStatus(row, { warningDays, now });
+    const bucket = totals.get(row.crewMemberId);
+    if (!bucket) continue;
+    bucket.mandatory += 1;
+    if (status === "valid" || status === "expiring_soon") {
+      bucket.done += 1;
+    }
+  }
+
+  for (const [crewId, bucket] of totals) {
+    if (bucket.mandatory === 0) {
+      result.set(crewId, null);
+    } else {
+      result.set(
+        crewId,
+        Math.round((bucket.done / bucket.mandatory) * 100),
+      );
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Recalcula y persiste status desactualizado (portal viejo syncStaleAssignmentStatuses).
+ * Devuelve cuántas filas cambió. Usado por el generador de avisos S9.
+ */
+export async function syncStaleAssignmentStatuses(
+  options?: {
+    crewMemberId?: string;
+    warningDays?: number;
+    now?: Date;
+  },
+): Promise<number> {
+  const warningDays =
+    options?.warningDays ?? getCourseExpiryWarningDays();
+  const now = options?.now ?? new Date();
+
+  const rows = await prisma.crewMemberCourse.findMany({
+    where: {
+      deletedAt: null,
+      ...(options?.crewMemberId
+        ? { crewMemberId: options.crewMemberId }
+        : {}),
+    },
+    select: {
+      id: true,
+      status: true,
+      completedAt: true,
+      expiresAt: true,
+    },
+  });
+
+  let synced = 0;
+  for (const row of rows) {
+    const nextStatus = resolveAssignmentStatus(row, { warningDays, now });
+    if (nextStatus === row.status) continue;
+    await prisma.crewMemberCourse.update({
+      where: { id: row.id },
+      data: { status: nextStatus },
+    });
+    synced += 1;
+  }
+  return synced;
+}
+
 /** Carga tripulante activo y valida tenant. */
 async function loadCrewForActor(actor: Actor, crewMemberId: string) {
   const crew = await prisma.crewMember.findFirst({

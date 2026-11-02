@@ -48,7 +48,7 @@ const CONFIG_LINKS: ReadonlyArray<{
   { label: "Flota y operación", to: "/ubicaciones", icon: MapPin },
   { label: "Catálogos maestros", to: "/catalogos", icon: ClipboardList },
   { label: "Usuarios", to: "/usuarios", icon: Users },
-  { label: "Notificaciones", to: null, icon: Bell },
+  { label: "Notificaciones", to: "/notificaciones", icon: Bell },
 ];
 
 /** Iniciales a partir de nombre y apellido. */
@@ -81,7 +81,8 @@ export function Sidebar() {
     location.pathname.startsWith("/empresas") ||
     location.pathname.startsWith("/ubicaciones") ||
     location.pathname.startsWith("/catalogos") ||
-    location.pathname.startsWith("/usuarios");
+    location.pathname.startsWith("/usuarios") ||
+    location.pathname.startsWith("/notificaciones");
   /** Rutas bajo Tripulación (lista + ficha). */
   const onCrewSection = location.pathname.startsWith("/embarcados");
   /** Rutas bajo Sistema (Figma). */

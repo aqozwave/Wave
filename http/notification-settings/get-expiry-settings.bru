@@ -1,0 +1,37 @@
+meta {
+  name: Get expiry notification settings
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/notification-settings/expiry
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Lee hitos de aviso (cursos/libreta) y repetición de vencidos.
+  Sin fila en BD → defaults 30/25/15/10.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.courseCrewDays: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

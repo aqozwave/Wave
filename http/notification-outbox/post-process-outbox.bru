@@ -1,0 +1,38 @@
+meta {
+  name: Post process outbox
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/notification-outbox/process?limit=2
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Worker: claim pending → Resend (o stub sin API key) → sent/failed.
+  Con NOTIFICATION_EMAIL_OVERRIDE=fsoto@nachipa-w.com nadie más recibe el mail.
+  Asunto lleva [Prueba → destino-lógico]. Mirar resendId en payload tras sent.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.sent: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

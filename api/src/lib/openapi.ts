@@ -194,6 +194,17 @@ import {
   updateDocumentTypeBodySchema,
   updateDocumentTypeResponseSchema,
 } from "../modules/documentTypes/documentTypes.schemas.js";
+import {
+  expiryNotificationSettingsSchema,
+  updateExpiryNotificationSettingsBodySchema,
+} from "../modules/notificationSettings/notificationSettings.schemas.js";
+import {
+  listNotificationOutboxQuerySchema,
+  listNotificationOutboxResponseSchema,
+  notificationOutboxItemSchema,
+  processCourseExpiryResponseSchema,
+  processOutboxResponseSchema,
+} from "../modules/notificationOutbox/notificationOutbox.schemas.js";
 
 const registry = new OpenAPIRegistry();
 
@@ -2926,6 +2937,120 @@ registry.registerPath({
         "application/json": { schema: deleteCrewMemberTravesiaResponseSchema },
       },
     },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/notification-settings/expiry",
+  tags: ["NotificationSettings"],
+  summary: "Leer settings de avisos de vencimiento",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Settings actuales (defaults si no hay fila)",
+      content: {
+        "application/json": { schema: expiryNotificationSettingsSchema },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/v1/notification-settings/expiry",
+  tags: ["NotificationSettings"],
+  summary: "Actualizar settings de avisos de vencimiento",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: updateExpiryNotificationSettingsBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Settings guardados",
+      content: {
+        "application/json": { schema: expiryNotificationSettingsSchema },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/notification-outbox",
+  tags: ["NotificationOutbox"],
+  summary: "Listar cola de avisos",
+  security: [{ bearerAuth: [] }],
+  request: { query: listNotificationOutboxQuerySchema },
+  responses: {
+    200: {
+      description: "Página de avisos",
+      content: {
+        "application/json": { schema: listNotificationOutboxResponseSchema },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/notification-outbox/run-course-expiry",
+  tags: ["NotificationOutbox"],
+  summary: "Correr generador de avisos de cursos (solo encola)",
+  description:
+    "Útil con jobs deshabilitados. No envía correos; deja filas pending en el outbox.",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Métricas del ciclo",
+      content: {
+        "application/json": { schema: processCourseExpiryResponseSchema },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/notification-outbox/process",
+  tags: ["NotificationOutbox"],
+  summary: "Procesar outbox (enviar con Resend)",
+  description:
+    "Claim → validar → enviar. Con NOTIFICATION_EMAIL_OVERRIDE todos van al correo de prueba. Guarda resendId en payload.",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Contadores de la corrida",
+      content: {
+        "application/json": { schema: processOutboxResponseSchema },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/notification-outbox/{id}/retry",
+  tags: ["NotificationOutbox"],
+  summary: "Reencolar aviso failed/cancelled",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Vuelve a pending",
+      content: {
+        "application/json": { schema: notificationOutboxItemSchema },
+      },
+    },
+    409: { description: "Estado no reintentable" },
   },
 });
 

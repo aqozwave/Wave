@@ -259,7 +259,7 @@ con cierre "En una frase" y Glosario del paso.
 | 7 | Runner de tests | Ninguno por ahora / Vitest + Supertest | Sección 0 |
 | 8 | ~~Cómo distingue el login web vs iOS~~ **Resuelto:** Header `X-Client: web \| ios` (un solo `/login`) | — | Sección 1 |
 | 9 | Almacenamiento de archivos | Disco local / Cloudflare R2 / S3 | Sección 7 |
-| 10 | Jobs | `node-cron` / BullMQ (requiere Redis) | Sección 9 |
+| 10 | ~~Jobs~~ **Resuelto:** `setInterval` / timeout diario en el proceso API (sin Redis); BullMQ queda para después | — | Sección 9 |
 | 11 | Hosting de API, web y Postgres | A definir | Sección 12 |
 | 12 | Base Notion para registrar micro-tareas (§6.2) | La que yo indique | Antes de Sección 0 |
 
@@ -278,7 +278,7 @@ con cierre "En una frase" y Glosario del paso.
 | 6 | Roles y permisos | Hecha — API + UI Roles; quitar permiso → 403 real verificado (2026-10-30) |
 | 7 | Tripulantes | Hecha — CRUD, ficha, docs, asignaciones; aislamiento + upload/download OK (2026-10-30) |
 | 8 | Cursos de tripulantes | Hecha — asignaciones ficha + auto por título + ETL + verificación vencimientos/tenant OK (2026-11-02) |
-| 9 | Notificaciones | Pendiente |
+| 9 | Notificaciones | Hecha — outbox + settings + generador cursos + worker Resend (override prueba) + jobs off + UI; verificación OK (2026-11-02) |
 | 10 | Auditoría y sistema | Pendiente |
 | 11 | Dashboard / KPIs | Pendiente (Panel shell existe; KPIs reales no) |
 | 12 | Corte a producción | Pendiente |
@@ -291,4 +291,5 @@ Un paso a la vez, con mi confirmación antes de avanzar. **Ninguna sección se m
 2. ~~Enforcement `uploadBy` / `viewBy` / `crewCanView`~~ **Hecho** (API + `forUpload` en ficha).
 3. ~~Sección 8~~ **Hecha** (2026-11-02) + UI maestro título↔cursos.
 4. ~~Roles de sistema `rrhh` / `area_tecnica` / `prevencionista`~~ **Hecho** (seed + mapeo de tags de docs).
-5. **Sección 9** — notificaciones de vencimiento (siguiente slice grande).
+5. ~~Sección 9~~ **Hecha** (2026-11-02) — falta generador de libreta de embarque.
+6. **Sección 10** — auditoría y sistema (siguiente slice grande).

@@ -1,0 +1,45 @@
+meta {
+  name: Get notification outbox
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/notification-outbox?page=1&limit=30
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Lista la cola de avisos (vacía hasta que corra el generador S9).
+  Guarda outboxId del primer ítem si existe (para retry).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && body && Array.isArray(body.items) && body.items[0]) {
+    bru.setEnvVar("outboxId", body.items[0].id);
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+  res.body.total: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

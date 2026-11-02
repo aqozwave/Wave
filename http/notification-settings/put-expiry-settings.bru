@@ -1,0 +1,44 @@
+meta {
+  name: Put expiry notification settings
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{baseUrl}}/api/v1/notification-settings/expiry
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "courseCrewDays": [30, 15, 10],
+    "courseExpiredCrewRepeatDays": 7
+  }
+}
+
+docs {
+  Actualización parcial. Solo días permitidos: 30, 25, 15, 10.
+  No dispara envíos; solo cambia la configuración del generador.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.courseCrewDays: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
