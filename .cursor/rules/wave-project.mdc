@@ -294,4 +294,4 @@ Un paso a la vez, con mi confirmación antes de avanzar. **Ninguna sección se m
 5. ~~Sección 9~~ **Hecha** (2026-11-02) — falta generador de libreta de embarque.
 6. ~~Sección 10~~ **Hecha** (2026-11-02) — falta ETL de activity/announcements + UI admin para publicar avisos.
 7. ~~Sección 11~~ **Hecha** (2026-11-02) — falta serie histórica del chart «Cumplimiento mensual».
-8. **Sección 12** — Corte a producción: ETL completo + checksums + smoke + plan rollback; hosting pendiente (decisión #11).
+8. **Sección 12** — Corte a producción: `npm run etl:checksums` listo; faltan ETL user (+ activity/announcements) + smoke + rollback; hosting pendiente (decisión #11).
