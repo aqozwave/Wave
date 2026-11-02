@@ -5,7 +5,7 @@ meta {
 }
 
 get {
-  url: {{baseUrl}}/api/v1/dashboard/summary?upcomingLimit=10
+  url: {{baseUrl}}/api/v1/dashboard/summary?upcomingLimit=10&vesselChartLimit=5&courseChartLimit=5&vesselListLimit=8
   body: none
   auth: bearer
 }
@@ -15,8 +15,8 @@ auth:bearer {
 }
 
 docs {
-  KPIs del Panel + próximos vencimientos de cursos.
-  Permiso: dashboard read.
+  KPIs del Panel + próximos vencimientos + breakdowns por nave/curso + lista de naves.
+  soft = 31–60 d, solid = 0–30 d. Permiso: dashboard read.
 }
 
 script:pre-request {
@@ -30,6 +30,9 @@ assert {
   res.status: eq 200
   res.body.kpis: isDefined
   res.body.upcoming: isDefined
+  res.body.byVessel: isDefined
+  res.body.byCourse: isDefined
+  res.body.vessels: isDefined
 }
 
 settings {

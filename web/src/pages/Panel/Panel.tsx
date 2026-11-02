@@ -14,6 +14,7 @@ import { SystemAnnouncementsBell } from "../../components/SystemAnnouncementsBel
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import {
   getDashboardSummaryRequest,
+  type DashboardCapsuleColumn,
   type DashboardSummary,
   type DashboardUpcomingItem,
 } from "../../lib/api/dashboard";
@@ -21,8 +22,9 @@ import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
 /**
  * Panel global (Figma 133:4570).
- * KPIs y próximos vencimientos vienen de GET /dashboard/summary;
- * charts por nave/curso siguen mock hasta el siguiente slice.
+ * KPIs, próximos vencimientos, cápsulas por nave/curso y lista de naves
+ * vienen de GET /dashboard/summary. El chart “Cumplimiento mensual” sigue mock
+ * (no hay serie histórica aún).
  */
 
 /** Capitaliza el primer carácter (nombres del seed vienen en minúscula). */
@@ -64,63 +66,36 @@ function upcomingEstado(status: DashboardUpcomingItem["status"]): {
   return { label: "Por vencer", tone: "warning" };
 }
 
-/** Escala del plot Figma: 8 unidades = 150px de alto útil. */
-const CAPSULE_MAX = 8;
+/**
+ * Escala mínima del plot Figma (8 unidades = 150px).
+ * Si los datos superan 8, el eje crece al máximo real (ceil a par).
+ */
+const CAPSULE_MIN_MAX = 8;
 /** Alto del área de barras (sin labels), igual a Figma Plot · cápsulas. */
 const CAPSULE_PLOT_H = 150;
 /** Ancho de cada cápsula en Figma. */
 const CAPSULE_W = 12;
 
+/** Umbral visual: debajo de esto la barra de nave se pinta “warn”. */
+const VESSEL_WARN_BELOW_PCT = 90;
+
+/** Convierte unidades del eje (0–scaleMax) a píxeles del plot. */
+function capsulePx(units: number, scaleMax: number): number {
+  if (scaleMax <= 0) return 0;
+  return (units / scaleMax) * CAPSULE_PLOT_H;
+}
+
 /**
- * Series “cápsulas” (Figma 133:4937): dos barras redondeadas en la misma
- * categoría, ancladas abajo — soft (31–60 d) detrás / primary (0–30 d) delante.
+ * Escala del eje Y para una serie de cápsulas.
+ * Mínimo 8 (Figma); si hay más, redondea al siguiente par ≥ max.
  */
-const porNaveCapsules = [
-  { label: "POL", soft: 7, solid: 3 },
-  { label: "DIA", soft: 5, solid: 2 },
-  { label: "ATL", soft: 4, solid: 2 },
-  { label: "PIO", soft: 4, solid: 1 },
-  { label: "AUS", soft: 1, solid: 0 },
-] as const;
-
-const porCursoCapsules = [
-  { label: "1.13", soft: 6, solid: 3 },
-  { label: "1.19", soft: 4, solid: 2 },
-  { label: "2.03", soft: 4, solid: 1 },
-  { label: "1.07", soft: 3, solid: 1 },
-  { label: "IND", soft: 2, solid: 1 },
-] as const;
-
-const naves = [
-  {
-    name: "Austral I",
-    meta: "10 de 12 tripulantes al día",
-    pct: 85,
-    tone: "warn" as const,
-  },
-  {
-    name: "Ronia Polaris",
-    meta: "22 de 24 tripulantes al día",
-    pct: 92,
-    tone: "ok" as const,
-  },
-  {
-    name: "Ronia Atlantic",
-    meta: "18 de 19 tripulantes al día",
-    pct: 95,
-    tone: "ok" as const,
-  },
-  {
-    name: "Ronia Diamond",
-    meta: "15 de 15 tripulantes al día",
-    pct: 97,
-    tone: "ok" as const,
-  },
-];
-
-/** Convierte unidades del eje (0–8) a píxeles del plot. */
-function capsulePx(units: number): number {
-  return (units / CAPSULE_MAX) * CAPSULE_PLOT_H;
+function capsuleScaleMax(series: DashboardCapsuleColumn[]): number {
+  let peak = 0;
+  for (const col of series) {
+    peak = Math.max(peak, col.soft, col.solid);
+  }
+  if (peak <= CAPSULE_MIN_MAX) return CAPSULE_MIN_MAX;
+  return peak % 2 === 0 ? peak : peak + 1;
 }
 
 const meses = [
@@ -138,7 +113,7 @@ const meses = [
   "Oct",
 ];
 
-/** Página Panel global: header S1 + KPIs reales + charts mock. */
+/** Página Panel global: header S1 + KPIs + breakdowns reales. */
 export function Panel() {
   const { user, accessToken } = useAuth();
   const welcomeName = user ? capitalizeName(user.firstName) : "usuario";
@@ -153,7 +128,12 @@ export function Panel() {
     setLoading(true);
     setError(null);
     try {
-      const data = await getDashboardSummaryRequest(accessToken, 8);
+      const data = await getDashboardSummaryRequest(accessToken, {
+        upcomingLimit: 8,
+        vesselChartLimit: 5,
+        courseChartLimit: 5,
+        vesselListLimit: 8,
+      });
       setSummary(data);
     } catch (err) {
       setSummary(null);
@@ -204,6 +184,9 @@ export function Panel() {
   }, [summary]);
 
   const upcoming = summary?.upcoming ?? [];
+  const byVessel = summary?.byVessel ?? [];
+  const byCourse = summary?.byCourse ?? [];
+  const vessels = summary?.vessels ?? [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-7 py-[22px]">
@@ -436,102 +419,118 @@ export function Panel() {
           <div className="grid grid-cols-2 gap-4">
             {(
               [
-                { title: "Por nave", series: porNaveCapsules },
-                { title: "Por curso", series: porCursoCapsules },
+                { title: "Por nave", series: byVessel },
+                { title: "Por curso", series: byCourse },
               ] as const
-            ).map((chart) => (
-              <div
-                key={chart.title}
-                className="flex flex-col gap-2.5 overflow-hidden rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-4"
-              >
-                <div className="flex items-center gap-2">
-                  <p className="min-w-0 flex-1 text-[15px] font-semibold leading-[21px] text-[var(--color-nachipa-title)]">
-                    {chart.title}
-                  </p>
-                  <button
-                    type="button"
-                    className="shrink-0 text-[13px] font-semibold leading-[19px] text-[var(--color-nachipa-primary)]"
-                  >
-                    Ver
-                  </button>
-                </div>
+            ).map((chart) => {
+              const scaleMax = capsuleScaleMax(chart.series);
+              const mid = scaleMax / 2;
+              return (
+                <div
+                  key={chart.title}
+                  className="flex flex-col gap-2.5 overflow-hidden rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <p className="min-w-0 flex-1 text-[15px] font-semibold leading-[21px] text-[var(--color-nachipa-title)]">
+                      {chart.title}
+                    </p>
+                    <button
+                      type="button"
+                      className="shrink-0 text-[13px] font-semibold leading-[19px] text-[var(--color-nachipa-primary)]"
+                    >
+                      Ver
+                    </button>
+                  </div>
 
-                <div className="flex items-center gap-3">
-                  <span className="flex items-center gap-1.5 text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
-                    <span
-                      className="size-[7px] rounded-full bg-[var(--color-chart-primary-soft)]"
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1.5 text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
+                      <span
+                        className="size-[7px] rounded-full bg-[var(--color-chart-primary-soft)]"
+                        aria-hidden
+                      />
+                      31–60 d
+                    </span>
+                    <span className="flex items-center gap-1.5 text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
+                      <span
+                        className="size-[7px] rounded-full bg-[var(--color-chart-primary)]"
+                        aria-hidden
+                      />
+                      0–30 d
+                    </span>
+                  </div>
+
+                  {/* Plot · cápsulas: soft detrás + solid delante, mismo baseline. */}
+                  <div className="relative h-[172px] w-full">
+                    <div
+                      className="absolute left-6 right-0 top-0 h-px bg-[var(--color-chart-grid)]"
                       aria-hidden
                     />
-                    31–60 d
-                  </span>
-                  <span className="flex items-center gap-1.5 text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
-                    <span
-                      className="size-[7px] rounded-full bg-[var(--color-chart-primary)]"
+                    <div
+                      className="absolute left-6 right-0 top-[75px] h-px bg-[var(--color-chart-grid)]"
                       aria-hidden
                     />
-                    0–30 d
-                  </span>
-                </div>
+                    <div
+                      className="absolute left-6 right-0 top-[150px] h-px bg-[var(--color-chart-grid)]"
+                      aria-hidden
+                    />
+                    <span className="absolute left-0 top-[-8px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+                      {scaleMax}
+                    </span>
+                    <span className="absolute left-0 top-[67px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+                      {mid}
+                    </span>
+                    <span className="absolute left-0 top-[142px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+                      0
+                    </span>
 
-                {/* Plot · cápsulas: soft detrás + solid delante, mismo baseline. */}
-                <div className="relative h-[172px] w-full">
-                  <div
-                    className="absolute left-6 right-0 top-0 h-px bg-[var(--color-chart-grid)]"
-                    aria-hidden
-                  />
-                  <div
-                    className="absolute left-6 right-0 top-[75px] h-px bg-[var(--color-chart-grid)]"
-                    aria-hidden
-                  />
-                  <div
-                    className="absolute left-6 right-0 top-[150px] h-px bg-[var(--color-chart-grid)]"
-                    aria-hidden
-                  />
-                  <span className="absolute left-0 top-[-8px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
-                    8
-                  </span>
-                  <span className="absolute left-0 top-[67px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
-                    4
-                  </span>
-                  <span className="absolute left-0 top-[142px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
-                    0
-                  </span>
+                    {loading && chart.series.length === 0 ? (
+                      <p className="absolute inset-x-6 top-12 m-0 text-center text-[12px] text-[var(--color-nachipa-secondary)]">
+                        Cargando…
+                      </p>
+                    ) : null}
+                    {!loading && chart.series.length === 0 ? (
+                      <p className="absolute inset-x-6 top-12 m-0 text-center text-[12px] text-[var(--color-nachipa-secondary)]">
+                        Sin datos en 60 d
+                      </p>
+                    ) : null}
 
-                  <div className="absolute bottom-[22px] left-6 right-0 flex h-[150px] items-end justify-between px-1">
-                    {chart.series.map((col) => (
-                      <div
-                        key={col.label}
-                        className="relative flex h-full w-6 flex-col items-center justify-end"
-                      >
-                        {col.soft > 0 ? (
-                          <div
-                            className="absolute bottom-0 rounded-[6px] bg-[var(--color-chart-primary-soft)]"
-                            style={{
-                              width: CAPSULE_W,
-                              height: capsulePx(col.soft),
-                            }}
-                            aria-hidden
-                          />
-                        ) : null}
-                        {col.solid > 0 ? (
-                          <div
-                            className="absolute bottom-0 rounded-[6px] bg-[var(--color-chart-primary)]"
-                            style={{
-                              width: CAPSULE_W,
-                              height: capsulePx(col.solid),
-                            }}
-                            aria-hidden
-                          />
-                        ) : null}
-                        <span className="absolute -bottom-5 text-center text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
-                          {col.label}
-                        </span>
-                      </div>
-                    ))}
+                    <div className="absolute bottom-[22px] left-6 right-0 flex h-[150px] items-end justify-between px-1">
+                      {chart.series.map((col) => (
+                        <div
+                          key={col.id}
+                          className="relative flex h-full w-6 flex-col items-center justify-end"
+                          title={`${col.name}: ${col.solid} (0–30 d), ${col.soft} (31–60 d)`}
+                        >
+                          {col.soft > 0 ? (
+                            <div
+                              className="absolute bottom-0 rounded-[6px] bg-[var(--color-chart-primary-soft)]"
+                              style={{
+                                width: CAPSULE_W,
+                                height: capsulePx(col.soft, scaleMax),
+                              }}
+                              aria-hidden
+                            />
+                          ) : null}
+                          {col.solid > 0 ? (
+                            <div
+                              className="absolute bottom-0 rounded-[6px] bg-[var(--color-chart-primary)]"
+                              style={{
+                                width: CAPSULE_W,
+                                height: capsulePx(col.solid, scaleMax),
+                              }}
+                              aria-hidden
+                            />
+                          ) : null}
+                          <span className="absolute -bottom-5 text-center text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+                            {col.label}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-[18px]">
@@ -547,49 +546,66 @@ export function Panel() {
               </button>
             </div>
             <div className="flex flex-col gap-[10px]">
-              {naves.map((nave) => (
-                <div
-                  key={nave.name}
-                  className="flex items-start gap-3 px-2.5 py-1"
-                >
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-[var(--color-nav-item-active-bg)]">
-                    <Ship
-                      size={18}
-                      strokeWidth={1.5}
-                      className="text-[var(--color-nav-icon)]"
-                      aria-hidden
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-[13px] font-medium leading-[19px] text-[var(--color-nachipa-title)]">
-                          {nave.name}
-                        </p>
-                        <p className="text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
-                          {nave.meta}
-                        </p>
-                      </div>
-                      <p className="text-[13px] font-semibold tabular-nums leading-[19px] text-[var(--color-nachipa-title)]">
-                        {nave.pct}%
-                      </p>
-                    </div>
-                    {/* Track 6px como Figma 133:5008. */}
-                    <div className="h-1.5 overflow-hidden rounded-[3px] bg-[var(--color-chart-track)]">
-                      <div
-                        className="h-full rounded-[3px]"
-                        style={{
-                          width: `${nave.pct}%`,
-                          background:
-                            nave.tone === "warn"
-                              ? "var(--color-chart-critical)"
-                              : "var(--color-chart-primary)",
-                        }}
+              {loading && vessels.length === 0 ? (
+                <p className="m-0 px-2.5 text-[12px] text-[var(--color-nachipa-secondary)]">
+                  Cargando…
+                </p>
+              ) : null}
+              {!loading && vessels.length === 0 ? (
+                <p className="m-0 px-2.5 text-[12px] text-[var(--color-nachipa-secondary)]">
+                  Sin naves con tripulación activa.
+                </p>
+              ) : null}
+              {vessels.map((nave) => {
+                const pct = nave.compliancePercent;
+                const tone: "warn" | "ok" =
+                  pct == null || pct < VESSEL_WARN_BELOW_PCT ? "warn" : "ok";
+                const barWidth = pct == null ? 0 : pct;
+                return (
+                  <div
+                    key={nave.locationId}
+                    className="flex items-start gap-3 px-2.5 py-1"
+                  >
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-[var(--color-nav-item-active-bg)]">
+                      <Ship
+                        size={18}
+                        strokeWidth={1.5}
+                        className="text-[var(--color-nav-icon)]"
+                        aria-hidden
                       />
                     </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-medium leading-[19px] text-[var(--color-nachipa-title)]">
+                            {nave.name}
+                          </p>
+                          <p className="text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
+                            {nave.compliantCrewCount} de {nave.crewCount}{" "}
+                            tripulantes al día
+                          </p>
+                        </div>
+                        <p className="text-[13px] font-semibold tabular-nums leading-[19px] text-[var(--color-nachipa-title)]">
+                          {pct == null ? "—" : `${pct}%`}
+                        </p>
+                      </div>
+                      {/* Track 6px como Figma 133:5008. */}
+                      <div className="h-1.5 overflow-hidden rounded-[3px] bg-[var(--color-chart-track)]">
+                        <div
+                          className="h-full rounded-[3px]"
+                          style={{
+                            width: `${barWidth}%`,
+                            background:
+                              tone === "warn"
+                                ? "var(--color-chart-critical)"
+                                : "var(--color-chart-primary)",
+                          }}
+                        />
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

@@ -238,8 +238,10 @@ registry.registerPath({
   method: "get",
   path: "/api/v1/dashboard/summary",
   tags: ["Dashboard"],
-  summary: "Resumen del Panel (KPIs + próximos vencimientos)",
-  description: "Requiere dashboard:read. Tenant-aware.",
+  summary:
+    "Resumen del Panel (KPIs, vencimientos, por nave/curso, lista naves)",
+  description:
+    "Requiere dashboard:read. Tenant-aware. Incluye cápsulas 0–30 / 31–60 d y cumplimiento por nave.",
   security: [{ bearerAuth: [] }],
   request: { query: getDashboardSummaryQuerySchema },
   responses: {

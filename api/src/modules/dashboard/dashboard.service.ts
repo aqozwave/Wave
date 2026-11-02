@@ -23,7 +23,81 @@ type Actor = Pick<AuthUser, "internalRol" | "businessId">;
 const DASHBOARD_HORIZON_DAYS = 60;
 
 /**
- * Resumen del Panel: KPIs + próximos vencimientos de cursos.
+ * Umbral interno del bucket “urgente” (cápsula solid / 0–30 d).
+ * soft = 31…horizon; solid = 0…este valor.
+ */
+const DASHBOARD_NEAR_DAYS = 30;
+
+/** Acumulador de cápsulas por entidad (nave o curso). */
+type CapsuleBucket = {
+  id: string;
+  name: string;
+  soft: number;
+  solid: number;
+};
+
+/**
+ * Abreviación corta para el eje X del chart “Por nave”.
+ * Prefiere la última palabra significativa (“Ronia Polaris” → “POL”).
+ */
+function vesselShortLabel(name: string): string {
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter((p) => p.length > 0 && !/^(i|ii|iii|iv|de|la|el|los|las)$/i.test(p));
+  const word =
+    parts.length >= 2 ? parts[parts.length - 1]! : (parts[0] ?? name.trim());
+  return word.slice(0, 3).toUpperCase() || "—";
+}
+
+/**
+ * Abreviación corta para el eje X del chart “Por curso”.
+ * Soporta “omi 1.39”, “1.13 Seguridad…” o las 3 primeras letras.
+ */
+function courseShortLabel(name: string): string {
+  const trimmed = name.trim();
+  // Catálogo migrado: "omi 1.39" → "1.39".
+  const omi = trimmed.match(/^omi\s+([\d]+(?:\.[\d]+)*)/i);
+  if (omi) return omi[1]!.slice(0, 8);
+  const code = trimmed.match(/^[\d]+(?:\.[\d]+)*/);
+  if (code) return code[0]!.slice(0, 8);
+  return trimmed.slice(0, 3).toUpperCase() || "—";
+}
+
+/**
+ * Ordena buckets por total soft+solid desc y recorta al límite.
+ * Empate: nombre alfabético.
+ */
+function topCapsules(
+  buckets: Map<string, CapsuleBucket>,
+  limit: number,
+  toLabel: (name: string) => string,
+): Array<{
+  id: string;
+  label: string;
+  name: string;
+  soft: number;
+  solid: number;
+}> {
+  return [...buckets.values()]
+    .filter((b) => b.soft + b.solid > 0)
+    .sort((a, b) => {
+      const diff = b.soft + b.solid - (a.soft + a.solid);
+      if (diff !== 0) return diff;
+      return a.name.localeCompare(b.name, "es");
+    })
+    .slice(0, limit)
+    .map((b) => ({
+      id: b.id,
+      label: toLabel(b.name),
+      name: b.name,
+      soft: b.soft,
+      solid: b.solid,
+    }));
+}
+
+/**
+ * Resumen del Panel: KPIs + próximos vencimientos + breakdowns por nave/curso.
  * Tenant: superadmin ve todo; resto solo su empresa.
  */
 export async function getDashboardSummary(
@@ -47,6 +121,27 @@ export async function getDashboardSummary(
     status: "expired" | "expiring_soon" | "pending";
     expiresAt: string | null;
     daysUntilExpiry: number | null;
+  }>;
+  byVessel: Array<{
+    id: string;
+    label: string;
+    name: string;
+    soft: number;
+    solid: number;
+  }>;
+  byCourse: Array<{
+    id: string;
+    label: string;
+    name: string;
+    soft: number;
+    solid: number;
+  }>;
+  vessels: Array<{
+    locationId: string;
+    name: string;
+    crewCount: number;
+    compliantCrewCount: number;
+    compliancePercent: number | null;
   }>;
 }> {
   const crewWhere: {
@@ -76,6 +171,10 @@ export async function getDashboardSummary(
       lastName: true,
       run: true,
       competencyCertificateId: true,
+      locationId: true,
+      location: {
+        select: { id: true, name: true, kind: true, deletedAt: true, state: true },
+      },
     },
   });
 
@@ -105,7 +204,14 @@ export async function getDashboardSummary(
       : await prisma.crewMemberCourse.findMany({
           where: { crewMemberId: { in: crewIds }, deletedAt: null },
           include: {
-            course: { select: { name: true, isMandatory: true, deletedAt: true } },
+            course: {
+              select: {
+                id: true,
+                name: true,
+                isMandatory: true,
+                deletedAt: true,
+              },
+            },
           },
           orderBy: [{ expiresAt: "asc" }],
         });
@@ -127,6 +233,11 @@ export async function getDashboardSummary(
     sortKey: number;
   }> = [];
 
+  /** Cápsulas por location (solo naves o sin clasificar con tripulación). */
+  const vesselCapsules = new Map<string, CapsuleBucket>();
+  /** Cápsulas por curso. */
+  const courseCapsules = new Map<string, CapsuleBucket>();
+
   for (const row of assignments) {
     if (row.course?.deletedAt) continue;
     const status = resolveAssignmentStatus(row, { warningDays, now });
@@ -140,14 +251,47 @@ export async function getDashboardSummary(
     }
 
     // Por vencer dentro del horizonte del Panel (aún no vencido).
-    if (
+    const inHorizonExpiring =
       status !== "expired" &&
       status !== "pending" &&
       days != null &&
       days >= 0 &&
-      days <= DASHBOARD_HORIZON_DAYS
-    ) {
+      days <= DASHBOARD_HORIZON_DAYS;
+
+    if (inHorizonExpiring) {
       expiringSoonCount += 1;
+
+      // Bucket soft (31–60) vs solid (0–30) para charts.
+      const isSolid = days! <= DASHBOARD_NEAR_DAYS;
+      const loc = crew.location;
+      const locOk =
+        loc &&
+        !loc.deletedAt &&
+        loc.state !== false &&
+        (loc.kind === "vessel" || loc.kind == null);
+      if (locOk) {
+        const vb = vesselCapsules.get(loc.id) ?? {
+          id: loc.id,
+          name: loc.name,
+          soft: 0,
+          solid: 0,
+        };
+        if (isSolid) vb.solid += 1;
+        else vb.soft += 1;
+        vesselCapsules.set(loc.id, vb);
+      }
+
+      if (row.course) {
+        const cb = courseCapsules.get(row.course.id) ?? {
+          id: row.course.id,
+          name: row.course.name,
+          soft: 0,
+          solid: 0,
+        };
+        if (isSolid) cb.solid += 1;
+        else cb.soft += 1;
+        courseCapsules.set(row.course.id, cb);
+      }
     }
 
     // En la tabla: vencidos, por vencer (warningDays o horizonte Panel) y faltantes obligatorios.
@@ -189,6 +333,75 @@ export async function getDashboardSummary(
     .slice(0, query.upcomingLimit)
     .map(({ sortKey: _s, ...rest }) => rest);
 
+  const byVessel = topCapsules(
+    vesselCapsules,
+    query.vesselChartLimit,
+    vesselShortLabel,
+  );
+  const byCourse = topCapsules(
+    courseCapsules,
+    query.courseChartLimit,
+    courseShortLabel,
+  );
+
+  // Cumplimiento por nave: agrupa tripulantes activos en locations vessel/null.
+  type VesselAgg = {
+    locationId: string;
+    name: string;
+    crewCount: number;
+    compliantCrewCount: number;
+    pctSum: number;
+    pctCount: number;
+  };
+  const vesselAggs = new Map<string, VesselAgg>();
+  for (const crew of crews) {
+    const loc = crew.location;
+    if (!loc || loc.deletedAt || loc.state === false) continue;
+    if (loc.kind !== "vessel" && loc.kind != null) continue;
+
+    const agg = vesselAggs.get(loc.id) ?? {
+      locationId: loc.id,
+      name: loc.name,
+      crewCount: 0,
+      compliantCrewCount: 0,
+      pctSum: 0,
+      pctCount: 0,
+    };
+    agg.crewCount += 1;
+    const pct = complianceMap.get(crew.id);
+    if (typeof pct === "number") {
+      agg.pctSum += pct;
+      agg.pctCount += 1;
+      if (pct === 100) agg.compliantCrewCount += 1;
+    }
+    vesselAggs.set(loc.id, agg);
+  }
+
+  const vessels = [...vesselAggs.values()]
+    .map((agg) => ({
+      locationId: agg.locationId,
+      name: agg.name,
+      crewCount: agg.crewCount,
+      compliantCrewCount: agg.compliantCrewCount,
+      compliancePercent:
+        agg.pctCount === 0
+          ? null
+          : Math.round(agg.pctSum / agg.pctCount),
+    }))
+    // Peor cumplimiento primero; sin dato al final; empate por nombre.
+    .sort((a, b) => {
+      if (a.compliancePercent == null && b.compliancePercent == null) {
+        return a.name.localeCompare(b.name, "es");
+      }
+      if (a.compliancePercent == null) return 1;
+      if (b.compliancePercent == null) return -1;
+      if (a.compliancePercent !== b.compliancePercent) {
+        return a.compliancePercent - b.compliancePercent;
+      }
+      return a.name.localeCompare(b.name, "es");
+    })
+    .slice(0, query.vesselListLimit);
+
   return {
     kpis: {
       compliancePercent,
@@ -198,5 +411,8 @@ export async function getDashboardSummary(
       crewCount: crews.length,
     },
     upcoming,
+    byVessel,
+    byCourse,
+    vessels,
   };
 }

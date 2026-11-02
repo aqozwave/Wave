@@ -7,7 +7,7 @@ import {
 import { getDashboardSummary } from "./dashboard.service.js";
 
 /**
- * GET /dashboard/summary — KPIs + próximos vencimientos del Panel.
+ * GET /dashboard/summary — KPIs, próximos vencimientos y breakdowns del Panel.
  */
 export async function getDashboardSummaryHandler(
   req: Request,
