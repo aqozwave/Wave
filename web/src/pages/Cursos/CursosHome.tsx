@@ -131,13 +131,14 @@ export function CursosHome() {
         actions={<UserMenu />}
       />
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 py-5 lg:px-8">
+        {/* Header a la izquierda (ancho completo); solo el hub de tarjetas se centra. */}
         <PageHeader
           crumbs={[{ label: "Cursos" }, { label: "Presentación" }]}
           title="Gestión de cursos"
           description="Formación OMI, títulos marítimos, asignaciones en ficha y avisos de vencimiento. Solo ves lo que tu rol permite."
         />
 
-        <div className="flex max-w-[960px] flex-col gap-8">
+        <div className="mx-auto flex w-full max-w-[960px] flex-col gap-8">
           {groups.length === 0 ? (
             <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
               No tenés permisos de cursos en este rol.

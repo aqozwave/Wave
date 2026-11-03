@@ -46,7 +46,7 @@ function OptionChip({
       onClick={onToggle}
       aria-pressed={selected}
       className={[
-        "inline-flex h-8 items-center gap-1 rounded-full px-3 text-[12px] font-medium transition-colors",
+        "inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] font-medium transition-colors",
         selected
           ? "bg-[var(--color-nachipa-primary)] text-white"
           : "bg-[var(--color-nachipa-bg-page)] text-[var(--color-nachipa-secondary)] hover:bg-[var(--color-tremor-border)]",
@@ -77,8 +77,8 @@ function ChannelRow({
   onToggleDay: (field: DaysField, day: number) => void;
 }) {
   return (
-    <div className="border-t border-[var(--color-tremor-border)] px-4 py-3 first:border-t-0">
-      <div className="mb-2 flex items-center gap-2">
+    <div className="border-t border-[var(--color-tremor-border)] px-3 py-2 first:border-t-0">
+      <div className="mb-1.5 flex items-center gap-2">
         {icon}
         <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
           {title}
@@ -110,11 +110,11 @@ function SettingsCard({
 }) {
   return (
     <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white">
-      <div className="border-b border-[var(--color-tremor-border)] px-4 py-3">
-        <h2 className="m-0 text-[14px] font-semibold text-[var(--color-nachipa-title)]">
+      <div className="border-b border-[var(--color-tremor-border)] px-3 py-2">
+        <h2 className="m-0 text-[13px] font-semibold text-[var(--color-nachipa-title)]">
           {title}
         </h2>
-        <p className="m-0 mt-0.5 text-[12px] text-[var(--color-nachipa-secondary)]">
+        <p className="m-0 mt-0.5 text-[11px] text-[var(--color-nachipa-secondary)]">
           {description}
         </p>
       </div>
@@ -197,7 +197,8 @@ export function NotificacionesVencimiento() {
         breadcrumbIcon={Bell}
         actions={<UserMenu />}
       />
-      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-6 py-3">
+        {/* Header a la izquierda; formulario centrado y compacto sin scroll de página. */}
         <PageHeader
           crumbs={[
             { label: "Configuración" },
@@ -223,7 +224,7 @@ export function NotificacionesVencimiento() {
         ) : (
           <form
             onSubmit={handleSubmit}
-            className="flex max-w-[720px] flex-col gap-4"
+            className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-2.5 overflow-hidden"
           >
             <SettingsCard
               title="Cursos OMI"
@@ -261,7 +262,7 @@ export function NotificacionesVencimiento() {
               title="Cursos vencidos"
               description="Recordatorios cuando el curso ya venció. El admin sigue viéndolos en el resumen sin tope."
             >
-              <div className="border-t border-[var(--color-tremor-border)] px-4 py-3 first:border-t-0">
+              <div className="border-t border-[var(--color-tremor-border)] px-3 py-2 first:border-t-0">
                 <div className="mb-1 flex items-center gap-2">
                   <Mail
                     className="size-3.5 text-[var(--color-nachipa-primary)]"
@@ -272,7 +273,7 @@ export function NotificacionesVencimiento() {
                     Cada cuántos días
                   </p>
                 </div>
-                <p className="m-0 mb-2 text-[11px] text-[var(--color-nachipa-secondary)]">
+                <p className="m-0 mb-1.5 text-[11px] text-[var(--color-nachipa-secondary)]">
                   0 = desactivado (no se envían recordatorios al tripulante).
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -291,8 +292,8 @@ export function NotificacionesVencimiento() {
                   ))}
                 </div>
               </div>
-              <div className="border-t border-[var(--color-tremor-border)] px-4 py-3">
-                <div className="mb-2 flex items-center gap-2">
+              <div className="border-t border-[var(--color-tremor-border)] px-3 py-2">
+                <div className="mb-1.5 flex items-center gap-2">
                   <Bell
                     className="size-3.5 text-[var(--color-nachipa-primary)]"
                     strokeWidth={1.5}
@@ -354,7 +355,7 @@ export function NotificacionesVencimiento() {
               />
             </SettingsCard>
 
-            <div className="flex justify-end gap-2 pt-1">
+            <div className="mt-auto flex shrink-0 justify-end gap-2 pt-1">
               <button
                 type="button"
                 disabled={saving}
