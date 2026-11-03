@@ -31,11 +31,35 @@ export function createApp() {
   const app = express();
   const openApiDocument = buildOpenApiDocument();
 
+  /**
+   * Confiar en X-Forwarded-For solo detrás de un proxy real.
+   * TRUST_PROXY=1 | true → un hop; número → hops; ausente → no confiar (req.ip = socket).
+   */
+  const trustProxyRaw = (process.env.TRUST_PROXY ?? "").trim().toLowerCase();
+  if (trustProxyRaw === "1" || trustProxyRaw === "true") {
+    app.set("trust proxy", 1);
+  } else if (/^\d+$/.test(trustProxyRaw)) {
+    app.set("trust proxy", Number(trustProxyRaw));
+  }
+
   // 12 MB: fotos y documentos en JSON+base64 (crew docs hasta 10 MB).
   app.use(express.json({ limit: "12mb" }));
 
-  // Fotos (y demás archivos locales): /uploads/… → disco.
-  // nosniff evita que el navegador “adivine” un tipo distinto al declarado.
+  /**
+   * Static de /uploads: solo fotos de perfil (/…/users/…).
+   * Documentos de crew NUNCA por static: solo GET …/documents/:id/download (RBAC).
+   */
+  app.use("/uploads", (req, res, next) => {
+    const relative = req.path;
+    if (
+      relative.includes("/crew-members/") ||
+      !relative.includes("/users/")
+    ) {
+      res.status(404).end();
+      return;
+    }
+    next();
+  });
   app.use(
     "/uploads",
     express.static(getUploadRoot(), {

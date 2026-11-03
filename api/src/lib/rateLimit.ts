@@ -33,12 +33,12 @@ export function hitRateLimit(key: string): void {
   }
 }
 
-/** IP del cliente (proxy Vite / Express trust proxy). */
+/**
+ * IP del cliente.
+ * Usa `req.ip` (Express + trust proxy). No lee X-Forwarded-For a mano:
+ * sin trust proxy el header se puede spoofear y saltar el rate limit.
+ */
 export function clientIp(req: Request): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string" && forwarded.trim()) {
-    return forwarded.split(",")[0]!.trim();
-  }
   return req.ip || req.socket.remoteAddress || "unknown";
 }
 

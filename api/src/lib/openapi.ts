@@ -600,7 +600,7 @@ registry.registerPath({
   tags: ["Auth"],
   summary: "Subir mi foto de perfil",
   description:
-    "JSON + base64. Magic bytes deben coincidir con mimeType (JPEG/PNG/WebP), máx 2 MB. Servido en /uploads con X-Content-Type-Options: nosniff.",
+    "JSON + base64. Magic bytes deben coincidir con mimeType (JPEG/PNG/WebP), máx 2 MB. Fotos en /uploads/…/users/… (static). Docs de crew solo vía /download autenticado.",
   security: [{ bearerAuth: [] }],
   request: {
     body: {
@@ -2566,7 +2566,7 @@ registry.registerPath({
   tags: ["Users"],
   summary: "Subir foto de perfil",
   description:
-    "JSON + base64. Magic bytes deben coincidir con mimeType (JPEG/PNG/WebP), máx 2 MB. /uploads con nosniff.",
+    "JSON + base64. Magic bytes deben coincidir con mimeType (JPEG/PNG/WebP), máx 2 MB. Fotos en /uploads/…/users/… (static).",
   security: [{ bearerAuth: [] }],
   request: {
     params: z.object({ id: z.uuid() }),
