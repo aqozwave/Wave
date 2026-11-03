@@ -21,8 +21,13 @@ import {
 } from "../../lib/loginChallenge.js";
 import { hashPassword, verifyPassword } from "../../lib/password.js";
 import {
-  PERMISSION_ACTIONS,
+  filterPermissionsByModules,
+  getEnabledModuleKeySet,
+  listBusinessModuleStates,
+} from "../../lib/businessModules.js";
+import {
   PERMISSION_RESOURCES,
+  catalogActionsFor,
 } from "../../lib/permissions.js";
 import { prisma } from "../../lib/prisma.js";
 import {
@@ -101,14 +106,17 @@ function getDummyPasswordHash(): Promise<string> {
   return dummyPasswordHashPromise;
 }
 
-/** Snapshot de permisos del rol (o catálogo completo si superadmin). */
+/**
+ * Snapshot de permisos efectivos (rol ∩ módulos activos).
+ * Superadmin: catálogo completo, sin filtrar por business_modules.
+ */
 async function loadPermissionsForUser(
   user: User,
 ): Promise<AuthUser["permissions"]> {
   if (user.internalRol === "superadmin") {
     return PERMISSION_RESOURCES.map((resource) => ({
       resource,
-      actions: [...PERMISSION_ACTIONS],
+      actions: catalogActionsFor(resource),
     }));
   }
   if (!user.roleId) return [];
@@ -119,7 +127,9 @@ async function loadPermissionsForUser(
   });
   if (!role || !Array.isArray(role.permissions)) return [];
 
-  return role.permissions as AuthUser["permissions"];
+  const raw = role.permissions as AuthUser["permissions"];
+  const enabledKeys = await getEnabledModuleKeySet(user.businessId);
+  return filterPermissionsByModules(raw, enabledKeys);
 }
 
 /** Proyecta User de Prisma al contrato AuthUser (sin secretos). */
@@ -149,6 +159,8 @@ async function toAuthUser(user: User): Promise<AuthUser> {
     locationName = location?.name ?? null;
   }
 
+  const modules = await listBusinessModuleStates(user.businessId);
+
   return {
     id: user.id,
     email: user.email,
@@ -165,6 +177,10 @@ async function toAuthUser(user: User): Promise<AuthUser> {
     confirmed: user.confirmed,
     state: user.state,
     permissions: await loadPermissionsForUser(user),
+    modules: modules.map((row) => ({
+      key: row.key as AuthUser["modules"][number]["key"],
+      enabled: row.enabled,
+    })),
   };
 }
 

@@ -1,0 +1,42 @@
+meta {
+  name: Get roles catalog by business (S3b)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/roles/catalog?businessId={{businessId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Superadmin. Con módulos Prevención apagados, el grupo «Prevención de riesgos»
+  no debe aparecer (o solo filas de submódulos enabled).
+  Variable: businessId (UUID de una empresa local).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+  const businessId = bru.getVar("businessId") || bru.getEnvVar("businessId");
+  if (!businessId) {
+    throw new Error("Definí businessId (UUID) en el entorno Bruno");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.catalog: isDefined
+  res.body.businessId: isDefined
+  res.body.modules: isArray
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

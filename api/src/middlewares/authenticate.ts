@@ -70,8 +70,9 @@ export async function authenticate(
       dataScope,
       confirmed: user.confirmed,
       state: user.state,
-      // Los permisos se resuelven en requirePermission / login·me; acá no hace falta.
+      // Los permisos/módulos se resuelven en requirePermission / login·me.
       permissions: [],
+      modules: [],
     };
 
     next();

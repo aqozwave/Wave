@@ -29,13 +29,36 @@ import {
   createBusinessRequest,
   deleteBusinessRequest,
   listBusinessesRequest,
+  listBusinessModulesRequest,
+  patchBusinessModuleRequest,
   updateBusinessRequest,
   type Business,
+  type BusinessModule,
+  type BusinessModuleKey,
   type BusinessWriteBody,
 } from "../../lib/api/businesses";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { downloadXls } from "../../lib/exportXls";
 import { isRutValid, normalizeRut } from "../../lib/rut";
+
+/** Etiquetas S6 de submódulos Prevención. */
+const MODULE_LABELS: Record<
+  BusinessModuleKey,
+  { title: string; hint: string }
+> = {
+  contractors: {
+    title: "Contratistas",
+    hint: "Empresas externas, habilitación y documentos",
+  },
+  work_permits: {
+    title: "Permisos de trabajo",
+    hint: "Avisos, tipos y PT (requiere Contratistas)",
+  },
+  trainings: {
+    title: "Capacitaciones",
+    hint: "Capacitaciones del módulo Prevención",
+  },
+};
 
 /** Form create (Figma 1 paso) + edit extendido. */
 type FormState = {
@@ -98,6 +121,12 @@ export function Empresas() {
   const [editing, setEditing] = useState<Business | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
+  /** Interruptores Prevención (solo al editar como superadmin). */
+  const [modules, setModules] = useState<BusinessModule[]>([]);
+  const [modulesLoading, setModulesLoading] = useState(false);
+  const [moduleSavingKey, setModuleSavingKey] = useState<BusinessModuleKey | null>(
+    null,
+  );
   /** Menú kebab abierto por fila. */
   const [menuId, setMenuId] = useState<string | null>(null);
 
@@ -142,6 +171,7 @@ export function Empresas() {
   function openCreate() {
     setEditing(null);
     setForm(EMPTY_FORM);
+    setModules([]);
     setModalOpen(true);
   }
 
@@ -161,13 +191,80 @@ export function Empresas() {
       state: row.state,
       adminEmail: "",
     });
+    setModules([]);
     setModalOpen(true);
+    if (isSuperadmin && accessToken) {
+      setModulesLoading(true);
+      void listBusinessModulesRequest(accessToken, row.id)
+        .then((result) => setModules(result.items))
+        .catch((err) => {
+          showToast(
+            err instanceof ApiError
+              ? err.message
+              : "No se pudieron cargar los módulos.",
+            "danger",
+          );
+        })
+        .finally(() => setModulesLoading(false));
+    }
   }
 
   function closeModal() {
     setModalOpen(false);
     setEditing(null);
     setForm(EMPTY_FORM);
+    setModules([]);
+    setModuleSavingKey(null);
+  }
+
+  /** S6: prende/apaga un submódulo Prevención (inmediato, fuera del form). */
+  async function onToggleModule(key: BusinessModuleKey, enabled: boolean) {
+    if (!accessToken || !editing) return;
+    setModuleSavingKey(key);
+    try {
+      const result = await patchBusinessModuleRequest(
+        accessToken,
+        editing.id,
+        key,
+        enabled,
+      );
+      setModules((prev) => {
+        const next = prev.map((row) =>
+          row.key === result.item.key ? result.item : row,
+        );
+        /** R-02: contractors off también apaga work_permits en UI. */
+        if (result.cascadedOff.length > 0) {
+          return next.map((row) =>
+            result.cascadedOff.includes(row.key)
+              ? {
+                  ...row,
+                  enabled: false,
+                  enabledAt: null,
+                  enabledById: null,
+                }
+              : row,
+          );
+        }
+        return next;
+      });
+      const cascade =
+        result.cascadedOff.length > 0
+          ? ` También se apagó: ${result.cascadedOff.join(", ")}.`
+          : "";
+      showToast(
+        enabled
+          ? `Módulo ${MODULE_LABELS[key].title} activado.`
+          : `Módulo ${MODULE_LABELS[key].title} desactivado.${cascade}`,
+        "success",
+      );
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo cambiar el módulo.",
+        "danger",
+      );
+    } finally {
+      setModuleSavingKey(null);
+    }
   }
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -637,6 +734,53 @@ export function Empresas() {
                     onChange={(next) => setField("state", next)}
                     aria-label="Empresa activa"
                   />
+                </div>
+              ) : null}
+              {isSuperadmin ? (
+                <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] px-3.5 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                      Módulos Prevención
+                    </p>
+                    <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                      Se guardan al instante. Sin módulo activo no aparecen en
+                      Roles ni en el menú del tenant.
+                    </p>
+                  </div>
+                  {modulesLoading ? (
+                    <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                      Cargando módulos…
+                    </p>
+                  ) : (
+                    <ul className="m-0 flex list-none flex-col gap-2 p-0">
+                      {modules.map((mod) => {
+                        const meta = MODULE_LABELS[mod.key];
+                        return (
+                          <li
+                            key={mod.key}
+                            className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] bg-[var(--color-nachipa-bg-page)] px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                                {meta.title}
+                              </p>
+                              <p className="m-0 text-[11px] text-[var(--color-nachipa-secondary)]">
+                                {meta.hint}
+                              </p>
+                            </div>
+                            <Toggle
+                              checked={mod.enabled}
+                              disabled={moduleSavingKey === mod.key}
+                              onChange={(next) =>
+                                void onToggleModule(mod.key, next)
+                              }
+                              aria-label={meta.title}
+                            />
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                 </div>
               ) : null}
             </>

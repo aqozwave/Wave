@@ -22,10 +22,17 @@ export type Role = {
   updatedAt: string;
 };
 
-/** Catálogo UI de módulos / checks. */
+/** Catálogo UI de módulos / checks (filtrable por empresa · S3b). */
 export type PermissionCatalog = {
   actions: string[];
   scopes: string[];
+  /** Empresa de filtro; null = catálogo completo. */
+  businessId: string | null;
+  /** Submódulos de esa empresa; null si no hubo filtro. */
+  modules: Array<{
+    key: "contractors" | "work_permits" | "trainings";
+    enabled: boolean;
+  }> | null;
   catalog: Array<{
     module: string;
     items: Array<{
@@ -45,6 +52,8 @@ export type RoleWriteBody = {
   dataScope?: string;
   permissions?: PermissionEntry[];
   state?: boolean;
+  /** Empresa de contexto S3b: mergea permisos de módulos apagados. */
+  businessId?: string;
 };
 
 /** Parsea error estándar Wave. */
@@ -81,13 +90,23 @@ export async function listRolesRequest(
   return body as { items: Role[]; total: number };
 }
 
-/** GET /api/v1/roles/catalog */
+/**
+ * GET /api/v1/roles/catalog
+ * Con businessId: oculta filas de Prevención si el submódulo está apagado (S3b).
+ */
 export async function getPermissionCatalogRequest(
   accessToken: string,
+  businessId?: string,
 ): Promise<PermissionCatalog> {
-  const res = await fetch("/api/v1/roles/catalog", {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const params = new URLSearchParams();
+  if (businessId) params.set("businessId", businessId);
+  const qs = params.toString();
+  const res = await fetch(
+    `/api/v1/roles/catalog${qs ? `?${qs}` : ""}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw toApiError(res, body);
   return body as PermissionCatalog;

@@ -17,6 +17,10 @@ import { Topbar } from "../../components/Topbar/Topbar";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import {
+  listBusinessesRequest,
+  type Business,
+} from "../../lib/api/businesses";
+import {
   createRoleRequest,
   getPermissionCatalogRequest,
   listRolesRequest,
@@ -25,6 +29,15 @@ import {
   type Role,
 } from "../../lib/api/roles";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+
+/** Capitaliza nombre de empresa guardado en minúsculas. */
+function displayBusinessName(value: string): string {
+  if (!value) return "—";
+  return value
+    .split(" ")
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
 
 /** Etiquetas de alcance (Figma / portal viejo). self = Externo. */
 const SCOPE_LABELS: Record<string, string> = {
@@ -38,12 +51,13 @@ const SCOPE_LABELS: Record<string, string> = {
 /** Scopes visibles en el segmented control (Figma: 4). */
 const SCOPE_OPTIONS = ["all", "business", "location", "self"] as const;
 
-/** Columnas de acciones en la matriz. */
+/** Columnas de acciones en la matriz (receive = PT a bordo). */
 const ACTION_COLUMNS: ReadonlyArray<{ key: string; label: string }> = [
   { key: "read", label: "Ver" },
   { key: "create", label: "Crear" },
   { key: "update", label: "Editar" },
   { key: "deactivate", label: "Desactivar" },
+  { key: "receive", label: "Recibir" },
 ];
 
 /** permissions[] → Map resource → Set actions. */
@@ -97,6 +111,9 @@ export function Roles() {
 
   const [roles, setRoles] = useState<Role[]>([]);
   const [catalog, setCatalog] = useState<PermissionCatalog | null>(null);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  /** Empresa de contexto S3b; vacío = catálogo completo. */
+  const [catalogBusinessId, setCatalogBusinessId] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -120,14 +137,21 @@ export function Roles() {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [rolesResult, catalogResult] = await Promise.all([
+      const [rolesResult, catalogResult, businessesResult] = await Promise.all([
         listRolesRequest(accessToken, true),
         isSuperadmin
-          ? getPermissionCatalogRequest(accessToken)
+          ? getPermissionCatalogRequest(
+              accessToken,
+              catalogBusinessId || undefined,
+            )
           : Promise.resolve(null),
+        isSuperadmin
+          ? listBusinessesRequest(accessToken, 1, 100)
+          : Promise.resolve({ items: [] as Business[] }),
       ]);
       setRoles(rolesResult.items);
       setCatalog(catalogResult);
+      setBusinesses(businessesResult.items);
       setSelectedId((prev) => {
         if (prev && rolesResult.items.some((r) => r.id === prev)) return prev;
         return rolesResult.items[0]?.id ?? null;
@@ -142,7 +166,7 @@ export function Roles() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, isSuperadmin, showToast]);
+  }, [accessToken, catalogBusinessId, isSuperadmin, showToast]);
 
   useEffect(() => {
     void load();
@@ -210,6 +234,8 @@ export function Roles() {
     setSubmitting(true);
     try {
       const permissions = mapToPermissions(permMap);
+      /** Contexto de módulos: no borrar permisos de submódulos apagados. */
+      const scopeBusinessId = catalogBusinessId || undefined;
       if (creating) {
         const created = await createRoleRequest(accessToken, {
           name: name.trim(),
@@ -218,6 +244,7 @@ export function Roles() {
           dataScope,
           permissions,
           state,
+          businessId: scopeBusinessId,
         });
         showToast("Rol creado.", "success");
         setCreating(false);
@@ -230,6 +257,7 @@ export function Roles() {
           ...(isSystem ? {} : { dataScope }),
           permissions,
           state,
+          businessId: scopeBusinessId,
         });
         showToast("Rol actualizado.", "success");
         await load();
@@ -279,14 +307,33 @@ export function Roles() {
           title="Roles y permisos"
           description="Definí qué puede ver y hacer cada perfil. El alcance limita los datos; los checks, las acciones."
           actions={
-            <Button
-              type="button"
-              className="!w-auto shrink-0"
-              onClick={startCreate}
-            >
-              <Plus className="size-4" strokeWidth={1.5} aria-hidden />
-              Nuevo rol
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* S3b: filtrar matriz por módulos activos de la empresa. */}
+              <label className="flex items-center gap-2 text-[12px] text-[var(--color-nachipa-secondary)]">
+                <span className="shrink-0">Empresa (matriz)</span>
+                <select
+                  className="h-9 max-w-[220px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-2.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)]"
+                  value={catalogBusinessId}
+                  onChange={(e) => setCatalogBusinessId(e.target.value)}
+                  aria-label="Empresa para filtrar la matriz de permisos"
+                >
+                  <option value="">Todas (catálogo completo)</option>
+                  {businesses.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {displayBusinessName(b.name)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                type="button"
+                className="!w-auto shrink-0"
+                onClick={startCreate}
+              >
+                <Plus className="size-4" strokeWidth={1.5} aria-hidden />
+                Nuevo rol
+              </Button>
+            </div>
           }
         />
 
@@ -489,7 +536,7 @@ export function Roles() {
                           <Fragment key={mod.module}>
                             <tr>
                               <td
-                                colSpan={5}
+                                colSpan={ACTION_COLUMNS.length + 1}
                                 className="bg-[var(--color-nachipa-bg-page)] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-nachipa-muted)]"
                               >
                                 {mod.module}

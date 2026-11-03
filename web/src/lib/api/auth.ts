@@ -4,6 +4,12 @@ export type AuthPermission = {
   actions: string[];
 };
 
+/** Interruptor de submódulo Prevención en la empresa del usuario. */
+export type AuthBusinessModule = {
+  key: "contractors" | "work_permits" | "trainings";
+  enabled: boolean;
+};
+
 /** Perfil público del usuario (sin passwordHash). */
 export type AuthUser = {
   id: string;
@@ -24,8 +30,10 @@ export type AuthUser = {
   dataScope: "all" | "business" | "location" | "area" | "self" | null;
   confirmed: boolean;
   state: boolean;
-  /** Snapshot RBAC para la UI (login / me). */
+  /** Permisos efectivos (rol ∩ módulos activos). */
   permissions: AuthPermission[];
+  /** Submódulos Prevención del tenant (ausente/apagado = enabled false). */
+  modules: AuthBusinessModule[];
 };
 
 /**

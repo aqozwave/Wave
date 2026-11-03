@@ -17,6 +17,12 @@ export const authPermissionEntrySchema = z.object({
   actions: z.array(z.string()).min(1),
 });
 
+/** Estado de un submódulo Prevención en la empresa del usuario (capa 1). */
+export const authBusinessModuleSchema = z.object({
+  key: z.enum(["contractors", "work_permits", "trainings"]),
+  enabled: z.boolean(),
+});
+
 export const authUserSchema = z
   .object({
     id: z.uuid(),
@@ -43,10 +49,15 @@ export const authUserSchema = z
     confirmed: z.boolean(),
     state: z.boolean(),
     /**
-     * Snapshot del Role.permissions (o todo si superadmin).
-     * La UI usa esto en vez de hardcodear internalRol.
+     * Permisos efectivos = rol ∩ módulos activos de la empresa.
+     * Superadmin: catálogo completo (sin filtro de módulos).
      */
     permissions: z.array(authPermissionEntrySchema),
+    /**
+     * Interruptores Prevención del tenant (fila ausente = enabled false).
+     * Sin businessId: los tres keys en false.
+     */
+    modules: z.array(authBusinessModuleSchema),
   })
   .openapi("AuthUser");
 

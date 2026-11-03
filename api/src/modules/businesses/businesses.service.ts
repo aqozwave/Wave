@@ -1,8 +1,11 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type BusinessModuleKey } from "@prisma/client";
+import { listBusinessModuleStates } from "../../lib/businessModules.js";
 import { AppError } from "../../lib/errors.js";
+import { BUSINESS_MODULE_KEY, BUSINESS_MODULE_KEYS } from "../../lib/permissions.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import type {
+  BusinessModuleResponse,
   BusinessResponse,
   CreateBusinessBody,
   ListBusinessesQuery,
@@ -329,4 +332,161 @@ export async function deleteBusinessById(
   });
 
   return toBusinessResponse(updated);
+}
+
+/** Serializa fila BusinessModule → contrato API. */
+function toModuleResponse(row: {
+  key: BusinessModuleKey;
+  enabled: boolean;
+  enabledAt: Date | null;
+  enabledById: string | null;
+  updatedAt: Date;
+}): BusinessModuleResponse {
+  return {
+    key: row.key,
+    enabled: row.enabled,
+    enabledAt: row.enabledAt ? row.enabledAt.toISOString() : null,
+    enabledById: row.enabledById,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Lista interruptores Prevención de una empresa (los 3 keys; sin fila = off).
+ * No exige requireModule: sirve para S6 / catálogo Roles.
+ */
+export async function listBusinessModules(businessId: string): Promise<{
+  businessId: string;
+  items: BusinessModuleResponse[];
+}> {
+  const business = await prisma.business.findFirst({
+    where: { id: businessId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!business) {
+    throw new AppError(404, "business_not_found", "Empresa no encontrada");
+  }
+
+  const rows = await prisma.businessModule.findMany({
+    where: { businessId },
+  });
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+
+  const items = BUSINESS_MODULE_KEYS.map((key) => {
+    const row = byKey.get(key);
+    if (row) return toModuleResponse(row);
+    return {
+      key,
+      enabled: false,
+      enabledAt: null,
+      enabledById: null,
+      updatedAt: null,
+    } satisfies BusinessModuleResponse;
+  });
+
+  return { businessId, items };
+}
+
+/**
+ * Prende/apaga un submódulo (solo lo llama el handler superadmin).
+ * R-02: apagar contractors → apaga work_permits.
+ * Encender work_permits exige contractors ya on.
+ */
+export async function setBusinessModule(
+  businessId: string,
+  key: BusinessModuleKey,
+  enabled: boolean,
+  actorId: string,
+): Promise<{
+  businessId: string;
+  item: BusinessModuleResponse;
+  cascadedOff: BusinessModuleKey[];
+}> {
+  if (!(BUSINESS_MODULE_KEYS as readonly string[]).includes(key)) {
+    throw new AppError(400, "validation_error", `Módulo inválido: ${key}`);
+  }
+
+  const business = await prisma.business.findFirst({
+    where: { id: businessId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!business) {
+    throw new AppError(404, "business_not_found", "Empresa no encontrada");
+  }
+
+  /** Encender permisos de trabajo sin contratistas → rechazar. */
+  if (enabled && key === BUSINESS_MODULE_KEY.WORK_PERMITS) {
+    const contractorsOn = await listBusinessModuleStates(businessId).then(
+      (states) =>
+        states.find((s) => s.key === BUSINESS_MODULE_KEY.CONTRACTORS)
+          ?.enabled === true,
+    );
+    if (!contractorsOn) {
+      throw new AppError(
+        400,
+        "module_dependency",
+        "Para activar work_permits primero activá contractors",
+        { key, dependsOn: BUSINESS_MODULE_KEY.CONTRACTORS },
+      );
+    }
+  }
+
+  const now = new Date();
+  const cascadedOff: BusinessModuleKey[] = [];
+
+  const item = await prisma.$transaction(async (tx) => {
+    const primary = await tx.businessModule.upsert({
+      where: { businessId_key: { businessId, key } },
+      create: {
+        businessId,
+        key,
+        enabled,
+        enabledAt: enabled ? now : null,
+        enabledById: enabled ? actorId : null,
+      },
+      update: {
+        enabled,
+        enabledAt: enabled ? now : null,
+        enabledById: enabled ? actorId : null,
+      },
+    });
+
+    /** R-02: apagar contractors apaga work_permits en la misma transacción. */
+    if (!enabled && key === BUSINESS_MODULE_KEY.CONTRACTORS) {
+      const wpKey = BUSINESS_MODULE_KEY.WORK_PERMITS as BusinessModuleKey;
+      const wp = await tx.businessModule.findUnique({
+        where: { businessId_key: { businessId, key: wpKey } },
+      });
+      if (!wp) {
+        await tx.businessModule.create({
+          data: {
+            businessId,
+            key: wpKey,
+            enabled: false,
+            enabledAt: null,
+            enabledById: null,
+          },
+        });
+        cascadedOff.push(wpKey);
+      } else if (wp.enabled) {
+        await tx.businessModule.update({
+          where: { id: wp.id },
+          data: {
+            enabled: false,
+            enabledAt: null,
+            enabledById: null,
+          },
+        });
+        cascadedOff.push(wpKey);
+      }
+    }
+
+    return primary;
+  });
+
+  return {
+    businessId,
+    item: toModuleResponse(item),
+    cascadedOff,
+  };
 }

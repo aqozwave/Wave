@@ -137,7 +137,89 @@ export const updateBusinessRequestSchema = z.object({
   body: updateBusinessBodySchema,
 });
 
+/**
+ * Params de la sonda P0: ¿el submódulo está on? (exige requireModule).
+ * key = contractors | work_permits | trainings.
+ */
+export const businessModuleKeySchema = z.enum([
+  "contractors",
+  "work_permits",
+  "trainings",
+]);
+
+export const pingBusinessModuleParamsSchema = z.object({
+  id: z.uuid(),
+  key: businessModuleKeySchema,
+});
+
+export const pingBusinessModuleRequestSchema = z.object({
+  params: pingBusinessModuleParamsSchema,
+});
+
+/** 200 solo si el módulo está activo (si no, 403 MODULE_DISABLED). */
+export const pingBusinessModuleResponseSchema = z
+  .object({
+    businessId: z.uuid(),
+    key: businessModuleKeySchema,
+    enabled: z.literal(true),
+  })
+  .openapi("PingBusinessModule");
+
+/** Una fila de business_modules en respuestas (sin fila en BD → enabled false). */
+export const businessModuleResponseSchema = z
+  .object({
+    key: businessModuleKeySchema,
+    enabled: z.boolean(),
+    enabledAt: z.string().datetime().nullable(),
+    enabledById: z.uuid().nullable(),
+    /** Null si aún no existe fila en business_modules. */
+    updatedAt: z.string().datetime().nullable(),
+  })
+  .openapi("BusinessModule");
+
+/** GET /businesses/:id/modules — lista los 3 interruptores. */
+export const listBusinessModulesRequestSchema = z.object({
+  params: businessIdParamsSchema,
+});
+
+export const listBusinessModulesResponseSchema = z
+  .object({
+    businessId: z.uuid(),
+    items: z.array(businessModuleResponseSchema),
+  })
+  .openapi("ListBusinessModules");
+
+/** PATCH /businesses/:id/modules/:key — solo superadmin (S6). */
+export const patchBusinessModuleParamsSchema = z.object({
+  id: z.uuid(),
+  key: businessModuleKeySchema,
+});
+
+export const patchBusinessModuleBodySchema = z.object({
+  enabled: z.boolean(),
+});
+
+export const patchBusinessModuleRequestSchema = z.object({
+  params: patchBusinessModuleParamsSchema,
+  body: patchBusinessModuleBodySchema,
+});
+
+export const patchBusinessModuleResponseSchema = z
+  .object({
+    businessId: z.uuid(),
+    item: businessModuleResponseSchema,
+    /** Keys apagadas en cascada (R-02: contractors off → work_permits). */
+    cascadedOff: z.array(businessModuleKeySchema),
+  })
+  .openapi("PatchBusinessModule");
+
 export type CreateBusinessBody = z.infer<typeof createBusinessBodySchema>;
 export type ListBusinessesQuery = z.infer<typeof listBusinessesQuerySchema>;
 export type BusinessResponse = z.infer<typeof businessResponseSchema>;
 export type UpdateBusinessBody = z.infer<typeof updateBusinessBodySchema>;
+export type PatchBusinessModuleBody = z.infer<
+  typeof patchBusinessModuleBodySchema
+>;
+export type BusinessModuleResponse = z.infer<
+  typeof businessModuleResponseSchema
+>;

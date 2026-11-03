@@ -110,13 +110,22 @@ function canSeeCatalogos(user: AuthUser | null): boolean {
 }
 
 /**
- * ¿Puede ver el ítem Prevención en el menú?
- * Solo si el rol tiene el módulo o documentos de contratistas (RRHH sin checks → oculto).
+ * Recursos de Prevención con read → mostrar ítem del menú.
+ * Stub viejo prevencion / prevencion.docs reemplazado por recursos finos (P0).
  */
+const PREVENCION_MENU_RESOURCES = [
+  "contractors",
+  "accreditations",
+  "work_notices",
+  "work_permits",
+  "permit_types",
+  "trainings",
+] as const;
+
+/** ¿Puede ver el ítem Prevención? RR.HH. sin estos checks → oculto. */
 function canSeePrevencion(user: AuthUser | null): boolean {
-  return (
-    userHasPermission(user, "prevencion", "read") ||
-    userHasPermission(user, "prevencion.docs", "read")
+  return PREVENCION_MENU_RESOURCES.some((resource) =>
+    userHasPermission(user, resource, "read"),
   );
 }
 

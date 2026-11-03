@@ -1,0 +1,43 @@
+meta {
+  name: Patch business module disable R-02
+  type: http
+  seq: 14
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/businesses/{{businessId}}/modules/contractors
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "enabled": false
+  }
+}
+
+docs {
+  S6 · R-02: apagar contractors también apaga work_permits (cascadedOff).
+  Precondición: work_permits estaba on.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken (superadmin)");
+  const businessId = bru.getVar("businessId") || bru.getEnvVar("businessId");
+  if (!businessId) throw new Error("Definí businessId");
+}
+
+assert {
+  res.status: eq 200
+  res.body.item.enabled: eq false
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

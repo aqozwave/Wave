@@ -16,6 +16,7 @@ import {
   deleteRoleRequestSchema,
   getRoleRequestSchema,
   listRolesRequestSchema,
+  permissionCatalogRequestSchema,
   updateRoleRequestSchema,
 } from "./roles.schemas.js";
 
@@ -37,7 +38,11 @@ rolesRouter.get(
 
 rolesRouter.use(requireSuperadmin);
 
-rolesRouter.get("/catalog", getPermissionCatalogHandler);
+rolesRouter.get(
+  "/catalog",
+  validate(permissionCatalogRequestSchema),
+  getPermissionCatalogHandler,
+);
 
 rolesRouter.get(
   "/:id",

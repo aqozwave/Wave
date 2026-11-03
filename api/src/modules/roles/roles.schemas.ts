@@ -1,15 +1,15 @@
 import { z } from "../../lib/zod.js";
 import {
-  PERMISSION_ACTIONS,
+  PERMISSION_ACTION_VALUES,
   PERMISSION_RESOURCES,
   ROLE_DATA_SCOPES,
 } from "../../lib/permissions.js";
 
-/** Una entrada resource + actions. */
+/** Una entrada resource + actions (CRUD + receive; el service valida por resource). */
 export const permissionEntrySchema = z.object({
   resource: z.enum(PERMISSION_RESOURCES as [string, ...string[]]),
   actions: z
-    .array(z.enum(PERMISSION_ACTIONS as [string, ...string[]]))
+    .array(z.enum(PERMISSION_ACTION_VALUES as [string, ...string[]]))
     .min(1, "Cada permiso requiere al menos una acción"),
 });
 
@@ -50,11 +50,33 @@ export const listRolesResponseSchema = z
   })
   .openapi("ListRolesResponse");
 
+/** Query GET /roles/catalog — businessId filtra filas por módulos activos (S3b). */
+export const permissionCatalogQuerySchema = z.object({
+  businessId: z.uuid().optional(),
+});
+
+export const permissionCatalogRequestSchema = z.object({
+  query: permissionCatalogQuerySchema,
+});
+
+export type PermissionCatalogQuery = z.infer<typeof permissionCatalogQuerySchema>;
+
 /** Catálogo de permisos para la UI de checks. */
 export const permissionCatalogResponseSchema = z
   .object({
     actions: z.array(z.string()),
     scopes: z.array(z.string()),
+    /** Empresa de filtro; null = catálogo completo. */
+    businessId: z.uuid().nullable(),
+    /** Submódulos de esa empresa; null si no hubo filtro. */
+    modules: z
+      .array(
+        z.object({
+          key: z.enum(["contractors", "work_permits", "trainings"]),
+          enabled: z.boolean(),
+        }),
+      )
+      .nullable(),
     catalog: z.array(
       z.object({
         module: z.string(),
@@ -86,6 +108,11 @@ export const createRoleBodySchema = z.object({
   }),
   permissions: z.array(permissionEntrySchema).default([]),
   state: z.boolean().optional(),
+  /**
+   * Empresa de contexto (S3b): mergea permisos de módulos apagados
+   * y rechaza resources de módulos off en el body.
+   */
+  businessId: z.uuid().optional(),
 });
 
 export const createRoleRequestSchema = z.object({
@@ -118,10 +145,18 @@ export const updateRoleBodySchema = z
     dataScope: z.enum(ROLE_DATA_SCOPES as [string, ...string[]]).optional(),
     permissions: z.array(permissionEntrySchema).optional(),
     state: z.boolean().optional(),
+    /** Misma semántica que en create: contexto de módulos de la empresa. */
+    businessId: z.uuid().optional(),
   })
-  .refine((body) => Object.keys(body).length > 0, {
-    message: "Debe enviar al menos un campo para actualizar",
-  });
+  .refine(
+    (body) => {
+      const keys = Object.keys(body).filter((key) => key !== "businessId");
+      return keys.length > 0;
+    },
+    {
+      message: "Debe enviar al menos un campo para actualizar",
+    },
+  );
 
 export const updateRoleRequestSchema = z.object({
   params: roleIdParamsSchema,

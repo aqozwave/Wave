@@ -17,6 +17,17 @@ enum RoleDataScope {
   self
 }
 
+/**
+ * Submódulos de Prevención por empresa (P0 · S6).
+ * Apagar `contractors` debe apagar también `work_permits` (R-02; se aplica en service).
+ * PPE / near_misses etc. se agregan al enum cuando existan pantallas.
+ */
+enum BusinessModuleKey {
+  contractors
+  work_permits
+  trainings
+}
+
 /// Propósito del token de correo (confirmación de cuenta o reset de clave).
 enum EmailTokenPurpose {
   confirm_email
@@ -269,6 +280,8 @@ model User {
   announcementReads UserAnnouncementRead[]
   /// Avisos publicados por este usuario (si aplica).
   announcementsCreated SystemAnnouncement[] @relation("AnnouncementCreatedBy")
+  /// Activaciones/desactivaciones de submódulos Prevención hechas por este usuario.
+  businessModulesEnabled BusinessModule[] @relation("BusinessModuleEnabledBy")
 
   @@index([email])
   @@index([username])
@@ -324,9 +337,36 @@ model Business {
   documentTypes          DocumentType[]
   /// Filas del outbox de notificaciones de esta empresa.
   notificationOutbox     NotificationOutbox[]
+  /// Interruptores de Prevención (contractors / work_permits / trainings).
+  modules                BusinessModule[]
 
   @@index([name])
   @@map("businesses")
+}
+
+/**
+ * Interruptor de un submódulo de Prevención para un tenant.
+ * Nace en Wave (sin legacyMongoId). Una fila por (empresa, key); default enabled=false.
+ */
+model BusinessModule {
+  id          String            @id @default(uuid()) @db.Uuid
+  businessId  String            @map("business_id") @db.Uuid
+  business    Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  /// Clave del submódulo (contractors | work_permits | trainings).
+  key         BusinessModuleKey
+  /// Si false, los permisos de ese módulo no cuentan (capa 1 de autorización).
+  enabled     Boolean           @default(false)
+  /// Cuándo se prendió por última vez (null si nunca o quedó apagado).
+  enabledAt   DateTime?         @map("enabled_at") @db.Timestamptz
+  /// Superadmin (u operador) que hizo el último cambio a enabled=true; null si se apagó o seed.
+  enabledById String?           @map("enabled_by_id") @db.Uuid
+  enabledBy   User?             @relation("BusinessModuleEnabledBy", fields: [enabledById], references: [id], onDelete: SetNull)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([businessId, key])
+  @@index([businessId])
+  @@map("business_modules")
 }
 
 /**

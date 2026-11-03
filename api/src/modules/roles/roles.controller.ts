@@ -33,12 +33,15 @@ export async function listRolesHandler(
   res.status(200).json(listRolesResponseSchema.parse(result));
 }
 
-/** GET /roles/catalog — matriz de permisos para UI. */
+/** GET /roles/catalog — matriz de permisos para UI (opcional ?businessId= S3b). */
 export async function getPermissionCatalogHandler(
-  _req: Request,
+  req: Request,
   res: Response,
 ): Promise<void> {
-  const catalog = getPermissionCatalog();
+  const query = req.query as { businessId?: string };
+  const catalog = await getPermissionCatalog({
+    businessId: query.businessId,
+  });
   res.status(200).json(permissionCatalogResponseSchema.parse(catalog));
 }
 

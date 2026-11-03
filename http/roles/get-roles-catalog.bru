@@ -16,6 +16,8 @@ auth:bearer {
 
 docs {
   Solo superadmin. Matriz de permisos para la UI.
+  Sin businessId: catálogo completo (incluye Prevención).
+  Con ?businessId=: filtra filas según business_modules (S3b / R-04).
 }
 
 script:pre-request {
@@ -26,6 +28,8 @@ script:pre-request {
 assert {
   res.status: eq 200
   res.body.catalog: isDefined
+  res.body.businessId: isNull
+  res.body.modules: isNull
 }
 
 settings {
