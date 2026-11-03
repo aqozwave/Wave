@@ -69,10 +69,22 @@ export function createApp() {
     }),
   );
 
-  app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
-  app.get("/api/openapi.json", (_req, res) => {
-    res.json(openApiDocument);
-  });
+  /**
+   * Swagger/OpenAPI: on en local; off en production salvo ENABLE_API_DOCS=true.
+   */
+  const docsFlag = (process.env.ENABLE_API_DOCS ?? "").trim().toLowerCase();
+  const apiDocsEnabled =
+    docsFlag === "1" || docsFlag === "true"
+      ? true
+      : docsFlag === "0" || docsFlag === "false"
+        ? false
+        : process.env.NODE_ENV !== "production";
+  if (apiDocsEnabled) {
+    app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
+    app.get("/api/openapi.json", (_req, res) => {
+      res.json(openApiDocument);
+    });
+  }
 
   app.use("/api/v1/health", healthRouter);
   app.use("/api/v1/dashboard", dashboardRouter);

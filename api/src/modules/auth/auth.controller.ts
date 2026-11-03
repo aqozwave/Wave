@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
+import { clientIp } from "../../lib/rateLimit.js";
 import { refreshTtlMs } from "../../lib/tokens.js";
 import {
   actorFromProfile,
@@ -95,15 +96,43 @@ function readCookie(req: Request, name: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Secure en la cookie: prod por defecto; override con COOKIE_SECURE=true|false.
+ */
+function cookieSecureEnabled(): boolean {
+  const raw = (process.env.COOKIE_SECURE ?? "").trim().toLowerCase();
+  if (raw === "1" || raw === "true") return true;
+  if (raw === "0" || raw === "false") return false;
+  return process.env.NODE_ENV === "production";
+}
+
+/**
+ * SameSite de la cookie refresh (default Lax; Strict vía COOKIE_SAMESITE).
+ * None exige Secure.
+ */
+function cookieSameSite(): "Strict" | "Lax" | "None" {
+  const raw = (process.env.COOKIE_SAMESITE ?? "Lax").trim();
+  if (raw === "Strict" || raw === "Lax" || raw === "None") return raw;
+  return "Lax";
+}
+
+/** Armado común de atributos de la cookie refresh (set y clear). */
+function refreshCookieBaseParts(): string[] {
+  const sameSite = cookieSameSite();
+  const parts = ["HttpOnly", "Path=/", `SameSite=${sameSite}`];
+  if (cookieSecureEnabled() || sameSite === "None") {
+    parts.push("Secure");
+  }
+  return parts;
+}
+
 /** Cookie HttpOnly del refresh para el cliente web (mismo origen vía proxy). */
 function setRefreshCookie(res: Response, refreshToken: string): void {
   // Max-Age alineado a JWT_REFRESH_EXPIRES_IN (default 7d).
   const maxAgeMs = refreshTtlMs();
   const parts = [
     `${REFRESH_COOKIE}=${refreshToken}`,
-    "HttpOnly",
-    "Path=/",
-    "SameSite=Lax",
+    ...refreshCookieBaseParts(),
     `Max-Age=${Math.floor(maxAgeMs / 1000)}`,
   ];
   res.append("Set-Cookie", parts.join("; "));
@@ -113,7 +142,7 @@ function setRefreshCookie(res: Response, refreshToken: string): void {
 function clearRefreshCookie(res: Response): void {
   res.append(
     "Set-Cookie",
-    `${REFRESH_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`,
+    `${REFRESH_COOKIE}=; ${refreshCookieBaseParts().join("; ")}; Max-Age=0`,
   );
 }
 
@@ -125,7 +154,7 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
   const client = readClient(req);
   const body = req.body as LoginBody;
   try {
-    const result = await loginUser(body);
+    const result = await loginUser(body, { clientIp: clientIp(req) });
 
     if ("mfaRequired" in result) {
       // MFA pendiente: aún no es sesión completa; no se registra LOGIN.

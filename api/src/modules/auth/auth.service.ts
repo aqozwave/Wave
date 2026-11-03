@@ -26,6 +26,11 @@ import {
 } from "../../lib/permissions.js";
 import { prisma } from "../../lib/prisma.js";
 import {
+  assertLoginPairNotLocked,
+  clearLoginPair,
+  recordLoginPairFailure,
+} from "../../lib/rateLimit.js";
+import {
   hashRefreshToken,
   signAccessToken,
   signRefreshToken,
@@ -70,10 +75,11 @@ function maskEmail(email: string): string {
   return `${maskedLocal}@${domain}`;
 }
 
-/** Intentos fallidos antes de bloquear la cuenta. */
+/**
+ * Tope de loginAttempts en BD (auditoría / UI admin).
+ * El bloqueo efectivo es por par IP+email en memoria (anti-DoS de cuenta).
+ */
 const MAX_LOGIN_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5);
-/** Minutos de bloqueo tras superar MAX_LOGIN_ATTEMPTS. */
-const LOCK_MINUTES = Number(process.env.LOGIN_LOCK_MINUTES ?? 15);
 
 /** Mensaje único login (anti-enumeración: usuario inexistente = clave mala). */
 const INVALID_CREDENTIALS_MESSAGE = "Credenciales inválidas";
@@ -220,10 +226,15 @@ async function issueTokens(
  * Login: valida credenciales; con MFA emite challenge + mail (sin tokens).
  * Sin MFA (LOGIN_MFA_ENABLED=false, típico en local) emite tokens directo.
  * Respuesta idéntica si el email no existe o la clave falla (anti-enumeración).
+ * Bloqueo: par IP+email (no lock global de cuenta — evita DoS por email).
  */
 export async function loginUser(
   input: LoginBody,
+  options?: { clientIp?: string },
 ): Promise<LoginResponse | MfaChallengeResponse> {
+  const ip = options?.clientIp ?? "unknown";
+  assertLoginPairNotLocked(input.email, ip);
+
   const user = await prisma.user.findFirst({
     where: {
       email: input.email,
@@ -234,9 +245,19 @@ export async function loginUser(
   if (!user) {
     // Mismo costo aproximado que un fallo real (argon2 verify).
     await verifyPassword(await getDummyPasswordHash(), input.password);
+    // Fallo también cuenta para el par (mismo mensaje; no revela existencia).
+    const locked = recordLoginPairFailure(input.email, ip);
+    if (locked) {
+      throw new AppError(
+        403,
+        "account_locked",
+        `Demasiados intentos desde esta red. Reintentá más tarde`,
+      );
+    }
     throw new AppError(401, "invalid_credentials", INVALID_CREDENTIALS_MESSAGE);
   }
 
+  // Locks globales viejos (pre-mitigación): se respetan hasta que expiren o unlock.
   if (user.lockUntil && user.lockUntil.getTime() > Date.now()) {
     const minutes = Math.ceil(
       (user.lockUntil.getTime() - Date.now()) / 60_000,
@@ -250,25 +271,22 @@ export async function loginUser(
 
   const valid = await verifyPassword(user.passwordHash, input.password);
   if (!valid) {
-    const attempts = user.loginAttempts + 1;
-    const lockUntil =
-      attempts >= MAX_LOGIN_ATTEMPTS
-        ? new Date(Date.now() + LOCK_MINUTES * 60_000)
-        : null;
-
+    const attempts = Math.min(user.loginAttempts + 1, MAX_LOGIN_ATTEMPTS);
     await prisma.user.update({
       where: { id: user.id },
       data: {
         loginAttempts: attempts,
-        lockUntil,
+        // Ya no seteamos lockUntil global (DoS). Solo contador para admin.
+        lockUntil: null,
       },
     });
 
-    if (lockUntil) {
+    const locked = recordLoginPairFailure(input.email, ip);
+    if (locked) {
       throw new AppError(
         403,
         "account_locked",
-        `Cuenta bloqueada. Reintentá en ${LOCK_MINUTES} min`,
+        `Demasiados intentos desde esta red. Reintentá más tarde`,
       );
     }
 
@@ -289,7 +307,8 @@ export async function loginUser(
 
   assertAccessNotExpired(user);
 
-  // Credenciales OK: limpiamos intentos; lastLoginAt se setea al verificar MFA.
+  // Credenciales OK: limpiamos intentos y el par IP+email.
+  clearLoginPair(input.email, ip);
   await prisma.user.update({
     where: { id: user.id },
     data: {

@@ -54,6 +54,7 @@ authRouter.post(
 // Público: el token del correo demuestra posesión del enlace.
 authRouter.post(
   "/confirm-email",
+  authRateLimit("confirm-email"),
   validate(confirmEmailRequestSchema),
   confirmEmailHandler,
 );
@@ -77,6 +78,7 @@ authRouter.post(
 // Público: aplica nueva contraseña con el token del correo.
 authRouter.post(
   "/reset-password",
+  authRateLimit("reset-password"),
   validate(resetPasswordRequestSchema),
   resetPasswordHandler,
 );
@@ -103,7 +105,19 @@ authRouter.post(
   resendMfaHandler,
 );
 
-authRouter.post("/refresh", validate(refreshRequestSchema), refreshHandler);
+authRouter.post(
+  "/refresh",
+  authRateLimit("refresh"),
+  validate(refreshRequestSchema),
+  refreshHandler,
+);
+
+// Público: también rate-limited (abuso de clear).
+authRouter.post(
+  "/clear-session",
+  authRateLimit("clear-session"),
+  clearSessionHandler,
+);
 
 // Bearer obligatorio; 401 si falta o es inválido.
 authRouter.get("/me", authenticate, meHandler);
@@ -133,6 +147,3 @@ authRouter.post(
 
 // Invalida sesión y limpia cookie.
 authRouter.post("/logout", authenticate, logoutHandler);
-
-// Público: borra cookie + revoca ese refresh (confirm / reset / otra cuenta).
-authRouter.post("/clear-session", clearSessionHandler);

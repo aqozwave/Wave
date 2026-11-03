@@ -11,6 +11,7 @@ import {
 import { hashPassword } from "../../lib/password.js";
 import { SYSTEM_ROLE_KEYS } from "../../lib/permissions.js";
 import { prisma } from "../../lib/prisma.js";
+import { clearLoginPairsForEmail } from "../../lib/rateLimit.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import { requestPasswordReset } from "../auth/auth.service.js";
 import type {
@@ -588,7 +589,7 @@ export async function deleteUserById(
   return toUserAdminResponse(deleted);
 }
 
-/** Limpia bloqueo por intentos fallidos (loginAttempts + lockUntil). */
+/** Limpia bloqueo por intentos fallidos (BD + pares IP+email en memoria). */
 export async function unlockUserById(
   actor: Actor,
   id: string,
@@ -610,6 +611,9 @@ export async function unlockUserById(
     },
     include: userAdminInclude,
   });
+
+  // También limpia locks en memoria de este email (todas las IPs).
+  clearLoginPairsForEmail(existing.email);
 
   return toUserAdminResponse(unlocked);
 }
