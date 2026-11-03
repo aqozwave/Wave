@@ -1,7 +1,13 @@
+import cors from "cors";
 import express from "express";
+import helmet from "helmet";
 import swaggerUi from "swagger-ui-express";
-import { getUploadRoot } from "./lib/localUploads.js";
+import {
+  getUploadRoot,
+  isAllowedPublicUploadPhotoPath,
+} from "./lib/localUploads.js";
 import { buildOpenApiDocument } from "./lib/openapi.js";
+import { startRateLimitCleanup } from "./lib/rateLimit.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { notFoundHandler } from "./middlewares/notFound.js";
 import { academicDegreesRouter } from "./modules/academicDegrees/academicDegrees.routes.js";
@@ -27,13 +33,32 @@ import { systemAnnouncementsRouter } from "./modules/systemAnnouncements/systemA
 import { travesiasRouter } from "./modules/travesias/travesias.routes.js";
 import { usersRouter } from "./modules/users/users.routes.js";
 
+/** Orígenes CORS permitidos: WEB_APP_URL + CORS_ORIGINS (coma-separados). */
+function resolveCorsOrigins(): string[] {
+  const web = (process.env.WEB_APP_URL ?? "").trim().replace(/\/$/, "");
+  const extras = (process.env.CORS_ORIGINS ?? "")
+    .split(",")
+    .map((s) => s.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+  const list = [...(web ? [web] : []), ...extras];
+  // Local sin env: Vite por defecto.
+  if (list.length === 0 && process.env.NODE_ENV !== "production") {
+    return ["http://localhost:5173"];
+  }
+  return [...new Set(list)];
+}
+
 export function createApp() {
   const app = express();
   const openApiDocument = buildOpenApiDocument();
 
+  // Barrido de Maps de rate-limit / login pair (anti memory leak).
+  startRateLimitCleanup();
+
   /**
    * Confiar en X-Forwarded-For solo detrás de un proxy real.
    * TRUST_PROXY=1 | true → un hop; número → hops; ausente → no confiar (req.ip = socket).
+   * En prod detrás de Nginx/Cloudflare: obligatorio para que el rate limit por IP funcione.
    */
   const trustProxyRaw = (process.env.TRUST_PROXY ?? "").trim().toLowerCase();
   if (trustProxyRaw === "1" || trustProxyRaw === "true") {
@@ -42,19 +67,55 @@ export function createApp() {
     app.set("trust proxy", Number(trustProxyRaw));
   }
 
+  /**
+   * Swagger/OpenAPI: on en local; off en production salvo ENABLE_API_DOCS=true.
+   * (Se calcula antes de helmet: con docs hay que relajar CSP.)
+   */
+  const docsFlag = (process.env.ENABLE_API_DOCS ?? "").trim().toLowerCase();
+  const apiDocsEnabled =
+    docsFlag === "1" || docsFlag === "true"
+      ? true
+      : docsFlag === "0" || docsFlag === "false"
+        ? false
+        : process.env.NODE_ENV !== "production";
+
+  // Cabeceras de seguridad (CSP off si Swagger UI está activo: usa inline scripts).
+  app.use(
+    helmet({
+      contentSecurityPolicy: apiDocsEnabled ? false : undefined,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+    }),
+  );
+
+  // CORS con lista blanca (credenciales para cookie refresh si el front pega directo).
+  const corsOrigins = resolveCorsOrigins();
+  app.use(
+    cors({
+      origin(origin, callback) {
+        // Requests same-origin / curl sin Origin.
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+        if (corsOrigins.includes(origin)) {
+          callback(null, true);
+          return;
+        }
+        callback(null, false);
+      },
+      credentials: true,
+    }),
+  );
+
   // 12 MB: fotos y documentos en JSON+base64 (crew docs hasta 10 MB).
   app.use(express.json({ limit: "12mb" }));
 
   /**
-   * Static de /uploads: solo fotos de perfil (/…/users/…).
+   * Static de /uploads: whitelist estricta de fotos de perfil.
    * Documentos de crew NUNCA por static: solo GET …/documents/:id/download (RBAC).
    */
   app.use("/uploads", (req, res, next) => {
-    const relative = req.path;
-    if (
-      relative.includes("/crew-members/") ||
-      !relative.includes("/users/")
-    ) {
+    if (!isAllowedPublicUploadPhotoPath(req.path)) {
       res.status(404).end();
       return;
     }
@@ -69,16 +130,6 @@ export function createApp() {
     }),
   );
 
-  /**
-   * Swagger/OpenAPI: on en local; off en production salvo ENABLE_API_DOCS=true.
-   */
-  const docsFlag = (process.env.ENABLE_API_DOCS ?? "").trim().toLowerCase();
-  const apiDocsEnabled =
-    docsFlag === "1" || docsFlag === "true"
-      ? true
-      : docsFlag === "0" || docsFlag === "false"
-        ? false
-        : process.env.NODE_ENV !== "production";
   if (apiDocsEnabled) {
     app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
     app.get("/api/openapi.json", (_req, res) => {

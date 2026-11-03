@@ -28,6 +28,7 @@ import { prisma } from "../../lib/prisma.js";
 import {
   assertLoginPairNotLocked,
   clearLoginPair,
+  LOGIN_PAIR_LOCK_MESSAGE,
   recordLoginPairFailure,
 } from "../../lib/rateLimit.js";
 import {
@@ -246,27 +247,14 @@ export async function loginUser(
     // Mismo costo aproximado que un fallo real (argon2 verify).
     await verifyPassword(await getDummyPasswordHash(), input.password);
     // Fallo también cuenta para el par (mismo mensaje; no revela existencia).
-    const locked = recordLoginPairFailure(input.email, ip);
-    if (locked) {
-      throw new AppError(
-        403,
-        "account_locked",
-        `Demasiados intentos desde esta red. Reintentá más tarde`,
-      );
-    }
+    recordLoginPairFailure(input.email, ip);
+    // Mismo 401/mensaje aunque el par haya quedado locked (anti-enumeración).
     throw new AppError(401, "invalid_credentials", INVALID_CREDENTIALS_MESSAGE);
   }
 
-  // Locks globales viejos (pre-mitigación): se respetan hasta que expiren o unlock.
+  // Locks globales viejos (pre-mitigación): mismo mensaje genérico.
   if (user.lockUntil && user.lockUntil.getTime() > Date.now()) {
-    const minutes = Math.ceil(
-      (user.lockUntil.getTime() - Date.now()) / 60_000,
-    );
-    throw new AppError(
-      403,
-      "account_locked",
-      `Cuenta bloqueada. Reintentá en ${minutes} min`,
-    );
+    throw new AppError(401, "invalid_credentials", LOGIN_PAIR_LOCK_MESSAGE);
   }
 
   const valid = await verifyPassword(user.passwordHash, input.password);
@@ -281,15 +269,7 @@ export async function loginUser(
       },
     });
 
-    const locked = recordLoginPairFailure(input.email, ip);
-    if (locked) {
-      throw new AppError(
-        403,
-        "account_locked",
-        `Demasiados intentos desde esta red. Reintentá más tarde`,
-      );
-    }
-
+    recordLoginPairFailure(input.email, ip);
     throw new AppError(401, "invalid_credentials", INVALID_CREDENTIALS_MESSAGE);
   }
 

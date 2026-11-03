@@ -164,6 +164,33 @@ export function isUserPhotoRelativePath(relativePath: string): boolean {
   );
 }
 
+/**
+ * Whitelist estricta para GET público /uploads (path ya sin el prefijo mount).
+ * Acepta:
+ *   /{businessUuid}/users/{userUuid}/{file}
+ *   /users/{userUuid}/{file}
+ * Rechaza traversal, crew-members y cualquier otra forma.
+ */
+export function isAllowedPublicUploadPhotoPath(requestPath: string): boolean {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(requestPath);
+  } catch {
+    return false;
+  }
+  if (decoded.includes("..") || decoded.includes("\\") || decoded.includes("\0")) {
+    return false;
+  }
+  // UUID v4-ish + nombre de archivo alfanumérico (rand hex + ext).
+  const uuid =
+    "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+  const file = "[A-Za-z0-9._-]+";
+  const re = new RegExp(
+    `^/(?:${uuid}/)?users/${uuid}/${file}$`,
+  );
+  return re.test(decoded);
+}
+
 /** Escribe foto de perfil en disco. */
 export async function writeUserPhotoFile(input: {
   businessId: string | null;

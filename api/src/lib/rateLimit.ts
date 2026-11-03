@@ -7,6 +7,9 @@ const WINDOW_MS = 60_000;
 /** Máximo de intentos por clave dentro de la ventana. */
 const MAX_HITS = Number(process.env.AUTH_RATE_LIMIT_MAX ?? 20);
 
+/** Cada cuánto barrer entradas vencidas de los Maps. */
+const CLEANUP_INTERVAL_MS = 60_000;
+
 /** Contadores en memoria del proceso (se reinician al reiniciar la API). */
 const buckets = new Map<string, { count: number; resetAt: number }>();
 
@@ -77,10 +80,16 @@ const LOGIN_PAIR_MAX = Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5);
 /** Minutos de bloqueo del par IP+email. */
 const LOGIN_PAIR_LOCK_MINUTES = Number(process.env.LOGIN_LOCK_MINUTES ?? 15);
 
+/**
+ * Mensaje idéntico al de credenciales inválidas (anti-enumeración del lock).
+ * El status también es 401, no 403.
+ */
+export const LOGIN_PAIR_LOCK_MESSAGE = "Credenciales inválidas";
+
 /** Fallos / lock en memoria por `email|ip` (no bloquea la cuenta global). */
 const loginPairBuckets = new Map<
   string,
-  { fails: number; lockedUntil: number | null }
+  { fails: number; lockedUntil: number | null; touchAt: number }
 >();
 
 /** Clave estable del par email+IP. */
@@ -90,23 +99,19 @@ function loginPairKey(email: string, ip: string): string {
 
 /**
  * Rechaza si este IP ya agotó intentos contra ese email.
- * Un atacante en otra IP no puede “cerrar” la cuenta de la víctima.
+ * Mismo 401 + mensaje que clave mala (no filtrar “locked” vs “bad password”).
  */
 export function assertLoginPairNotLocked(email: string, ip: string): void {
   const key = loginPairKey(email, ip);
   const row = loginPairBuckets.get(key);
-  if (!row?.lockedUntil || row.lockedUntil <= Date.now()) {
-    if (row?.lockedUntil && row.lockedUntil <= Date.now()) {
+  const now = Date.now();
+  if (!row?.lockedUntil || row.lockedUntil <= now) {
+    if (row?.lockedUntil && row.lockedUntil <= now) {
       loginPairBuckets.delete(key);
     }
     return;
   }
-  const minutes = Math.ceil((row.lockedUntil - Date.now()) / 60_000);
-  throw new AppError(
-    403,
-    "account_locked",
-    `Demasiados intentos desde esta red. Reintentá en ${minutes} min`,
-  );
+  throw new AppError(401, "invalid_credentials", LOGIN_PAIR_LOCK_MESSAGE);
 }
 
 /**
@@ -117,13 +122,14 @@ export function recordLoginPairFailure(email: string, ip: string): boolean {
   const now = Date.now();
   const current = loginPairBuckets.get(key);
   if (!current || (current.lockedUntil != null && current.lockedUntil <= now)) {
-    loginPairBuckets.set(key, { fails: 1, lockedUntil: null });
+    loginPairBuckets.set(key, { fails: 1, lockedUntil: null, touchAt: now });
     return false;
   }
   if (current.lockedUntil != null && current.lockedUntil > now) {
     return true;
   }
   current.fails += 1;
+  current.touchAt = now;
   if (current.fails >= LOGIN_PAIR_MAX) {
     current.lockedUntil = now + LOGIN_PAIR_LOCK_MINUTES * 60_000;
     return true;
@@ -143,5 +149,44 @@ export function clearLoginPairsForEmail(email: string): void {
     if (key.startsWith(prefix)) {
       loginPairBuckets.delete(key);
     }
+  }
+}
+
+/**
+ * Borra entradas vencidas de rate-limit y de pares login.
+ * Evita que Maps crezcan sin cota ante emails/IPs aleatorios.
+ */
+export function sweepRateLimitMemory(now = Date.now()): void {
+  for (const [key, row] of buckets) {
+    if (row.resetAt <= now) {
+      buckets.delete(key);
+    }
+  }
+  const failTtlMs = LOGIN_PAIR_LOCK_MINUTES * 60_000;
+  for (const [key, row] of loginPairBuckets) {
+    if (row.lockedUntil != null) {
+      if (row.lockedUntil <= now) {
+        loginPairBuckets.delete(key);
+      }
+      continue;
+    }
+    // Fallos sin lock: expiran tras la misma ventana de lock.
+    if (row.touchAt + failTtlMs <= now) {
+      loginPairBuckets.delete(key);
+    }
+  }
+}
+
+let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Arranca el barrido periódico (idempotente). Llamar desde createApp. */
+export function startRateLimitCleanup(): void {
+  if (cleanupTimer) return;
+  cleanupTimer = setInterval(() => {
+    sweepRateLimitMemory();
+  }, CLEANUP_INTERVAL_MS);
+  // No mantener el proceso vivo solo por este timer.
+  if (typeof cleanupTimer.unref === "function") {
+    cleanupTimer.unref();
   }
 }
