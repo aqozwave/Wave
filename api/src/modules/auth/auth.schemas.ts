@@ -29,6 +29,17 @@ export const authUserSchema = z
     internalRol: z.string(),
     roleId: z.uuid().nullable(),
     businessId: z.uuid().nullable(),
+    /** Nave/lugar del usuario (colaborador / tripulante). */
+    locationId: z.uuid().nullable(),
+    /** Nombre de la nave/lugar para el Panel C1. */
+    locationName: z.string().nullable(),
+    /**
+     * Alcance de datos del rol (`all` | `business` | `location` | `area` | `self`).
+     * Null si no hay rol (p. ej. superadmin sin fila Role).
+     */
+    dataScope: z
+      .enum(["all", "business", "location", "area", "self"])
+      .nullable(),
     confirmed: z.boolean(),
     state: z.boolean(),
     /**

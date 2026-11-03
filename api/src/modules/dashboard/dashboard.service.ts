@@ -13,14 +13,38 @@ import {
 } from "../notificationSettings/notificationSettings.service.js";
 import type { GetDashboardSummaryQuery } from "./dashboard.schemas.js";
 
-/** Actor mínimo tenant. */
-type Actor = Pick<AuthUser, "internalRol" | "businessId">;
+/** Actor mínimo tenant + alcance de nave. */
+type Actor = Pick<
+  AuthUser,
+  "internalRol" | "businessId" | "locationId" | "dataScope"
+>;
 
 /**
  * Horizonte del KPI “Vencen en N días” del Panel Figma (60).
  * Independiente de courseCrewDays (avisos); el Panel pide 60 fijo.
  */
 const DASHBOARD_HORIZON_DAYS = 60;
+
+/**
+ * Resuelve el alcance del Panel según rol Figma:
+ * S1 global · D1 empresa · C1 nave (location / colaborador / user).
+ */
+function resolveDashboardScope(actor: Actor): {
+  kind: "global" | "business" | "location";
+  locationId: string | null;
+} {
+  if (actor.internalRol === "superadmin" || actor.dataScope === "all") {
+    return { kind: "global", locationId: null };
+  }
+  const locationScoped =
+    actor.dataScope === "location" ||
+    actor.internalRol === "colaborador" ||
+    actor.internalRol === "user";
+  if (locationScoped && actor.locationId) {
+    return { kind: "location", locationId: actor.locationId };
+  }
+  return { kind: "business", locationId: null };
+}
 
 /**
  * Umbral interno del bucket “urgente” (cápsula solid / 0–30 d).
@@ -98,12 +122,17 @@ function topCapsules(
 
 /**
  * Resumen del Panel: KPIs + próximos vencimientos + breakdowns por nave/curso.
- * Tenant: superadmin ve todo; resto solo su empresa.
+ * Tenant: global (S1) · empresa (D1) · nave (C1).
  */
 export async function getDashboardSummary(
   actor: Actor,
   query: GetDashboardSummaryQuery,
 ): Promise<{
+  scope: {
+    kind: "global" | "business" | "location";
+    locationId: string | null;
+    locationName: string | null;
+  };
   kpis: {
     compliancePercent: number | null;
     expiringSoonCount: number;
@@ -144,14 +173,33 @@ export async function getDashboardSummary(
     compliancePercent: number | null;
   }>;
 }> {
+  const resolved = resolveDashboardScope(actor);
   const crewWhere: {
     deletedAt: null;
     state: boolean;
     businessId?: string;
+    locationId?: string;
   } = { deletedAt: null, state: true };
 
-  if (actor.internalRol === "superadmin") {
-    // Sin filtro de empresa: visión global.
+  if (resolved.kind === "global") {
+    // Sin filtro de empresa: visión global (S1).
+  } else if (resolved.kind === "location") {
+    if (!actor.businessId) {
+      throw new AppError(
+        403,
+        "forbidden",
+        "Tu usuario no tiene una empresa asignada",
+      );
+    }
+    if (!resolved.locationId) {
+      throw new AppError(
+        403,
+        "forbidden",
+        "Tu usuario no tiene una nave asignada",
+      );
+    }
+    crewWhere.businessId = actor.businessId;
+    crewWhere.locationId = resolved.locationId;
   } else {
     if (!actor.businessId) {
       throw new AppError(
@@ -161,6 +209,56 @@ export async function getDashboardSummary(
       );
     }
     crewWhere.businessId = actor.businessId;
+  }
+
+  /**
+   * Filtro UI “Embarcación”: acota global/empresa a una nave.
+   * Rol ya location-scoped: solo admite su propia nave (defensa en profundidad).
+   */
+  let effectiveLocationId = resolved.locationId;
+  let effectiveKind: "global" | "business" | "location" = resolved.kind;
+
+  if (query.locationId) {
+    if (resolved.kind === "location") {
+      if (query.locationId !== resolved.locationId) {
+        throw new AppError(
+          403,
+          "forbidden",
+          "No podés filtrar por otra nave que la asignada",
+        );
+      }
+    } else {
+      const loc = await prisma.location.findFirst({
+        where: { id: query.locationId, deletedAt: null },
+        select: { id: true, name: true, businessId: true },
+      });
+      if (!loc) {
+        throw new AppError(404, "location_not_found", "Embarcación no encontrada");
+      }
+      if (
+        actor.internalRol !== "superadmin" &&
+        actor.businessId &&
+        loc.businessId !== actor.businessId
+      ) {
+        throw new AppError(404, "location_not_found", "Embarcación no encontrada");
+      }
+      crewWhere.locationId = loc.id;
+      if (resolved.kind === "global") {
+        // Superadmin filtrando una nave: también fija empresa vía location.
+        crewWhere.businessId = loc.businessId;
+      }
+      effectiveLocationId = loc.id;
+      effectiveKind = "location";
+    }
+  }
+
+  let locationName: string | null = null;
+  if (effectiveLocationId) {
+    const loc = await prisma.location.findFirst({
+      where: { id: effectiveLocationId, deletedAt: null },
+      select: { name: true },
+    });
+    locationName = loc?.name ?? null;
   }
 
   const crews = await prisma.crewMember.findMany({
@@ -403,6 +501,11 @@ export async function getDashboardSummary(
     .slice(0, query.vesselListLimit);
 
   return {
+    scope: {
+      kind: effectiveKind,
+      locationId: effectiveLocationId,
+      locationName,
+    },
     kpis: {
       compliancePercent,
       expiringSoonCount,

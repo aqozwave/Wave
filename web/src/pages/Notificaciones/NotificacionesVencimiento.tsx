@@ -324,7 +324,7 @@ export function NotificacionesVencimiento() {
 
             <SettingsCard
               title="Libreta de embarque"
-              description="Misma lógica de hitos; el generador de libreta llega después."
+              description="Hitos para el generador de libreta (run-boarding-book-expiry / job)."
             >
               <ChannelRow
                 icon={

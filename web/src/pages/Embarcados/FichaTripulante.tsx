@@ -47,6 +47,7 @@ import {
 } from "../../lib/boardingBook";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { isRutValid, normalizeRut } from "../../lib/rut";
+import { CrewBoardingBookPanel } from "./CrewBoardingBookPanel";
 import { CrewCoursesPanel } from "./CrewCoursesPanel";
 import { CrewDocumentsPanel } from "./CrewDocumentsPanel";
 import { OfficerAssignmentsPanel } from "./OfficerAssignmentsPanel";
@@ -728,7 +729,12 @@ export function FichaTripulante() {
             ) : null}
 
             {tab === "libreta" ? (
-              <PlaceholderCard text="Libreta de embarque: detalle y hitos en un siguiente paso." />
+              <CrewBoardingBookPanel
+                boardingBookValidUntil={crew.boardingBookValidUntil}
+                onEdit={() => {
+                  void openEdit();
+                }}
+              />
             ) : null}
             {tab === "capacitaciones" ? (
               <PlaceholderCard text="Capacitaciones (Prevención) llegan con ese módulo." />

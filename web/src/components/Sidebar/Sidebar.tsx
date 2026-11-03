@@ -109,6 +109,17 @@ function canSeeCatalogos(user: AuthUser | null): boolean {
   );
 }
 
+/**
+ * ¿Puede ver el ítem Prevención en el menú?
+ * Solo si el rol tiene el módulo o documentos de contratistas (RRHH sin checks → oculto).
+ */
+function canSeePrevencion(user: AuthUser | null): boolean {
+  return (
+    userHasPermission(user, "prevencion", "read") ||
+    userHasPermission(user, "prevencion.docs", "read")
+  );
+}
+
 /** Subítems de Configuración (sin Notificaciones: viven bajo Cursos). */
 const CONFIG_LINKS: ReadonlyArray<NavLink> = [
   {
@@ -215,7 +226,17 @@ export function Sidebar() {
   const showCrewGroup = visibleCrewLinks.length > 0;
   const showCursosGroup = visibleCursosLinks.length > 0;
   const showConfigGroup = visibleConfigLinks.length > 0;
+  const showPrevencion = canSeePrevencion(user);
   const showSystemGroup = user?.internalRol === "superadmin";
+  /** Etiqueta del home según rol (Figma C1 / T* / E3). */
+  const panelLabel =
+    user?.internalRol === "colaborador"
+      ? "Panel de mi nave"
+      : user?.internalRol === "user"
+        ? "Inicio"
+        : user?.internalRol === "contratista"
+          ? "Panel"
+          : "Panel";
 
   useEffect(() => {
     setCollapsed(readCollapsed());
@@ -293,7 +314,7 @@ export function Sidebar() {
 
           <nav className="flex min-h-0 flex-1 flex-col items-center gap-0.5 overflow-y-auto px-2 pt-1">
             <SidebarItem
-              label="Panel"
+              label={panelLabel}
               icon={LayoutDashboard}
               to="/"
               active={onPanel}
@@ -318,7 +339,9 @@ export function Sidebar() {
                 collapsed
               />
             ) : null}
-            <SidebarItem label="Prevención" icon={HardHat} collapsed />
+            {showPrevencion ? (
+              <SidebarItem label="Prevención" icon={HardHat} collapsed />
+            ) : null}
             {showConfigGroup ? (
               <SidebarItem
                 label="Configuración"
@@ -374,7 +397,7 @@ export function Sidebar() {
 
           <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pt-2">
             <SidebarItem
-              label="Panel"
+              label={panelLabel}
               icon={LayoutDashboard}
               to="/"
               active={onPanel}
@@ -575,7 +598,9 @@ export function Sidebar() {
             </div>
             ) : null}
 
-            <SidebarItem label="Prevención" icon={HardHat} expandable />
+            {showPrevencion ? (
+              <SidebarItem label="Prevención" icon={HardHat} expandable />
+            ) : null}
 
             {/* Grupo Configuración (Figma): Empresas es subítem. */}
             {showConfigGroup ? (

@@ -43,8 +43,16 @@ export type DashboardVesselCompliance = {
   compliancePercent: number | null;
 };
 
+/** Alcance del resumen (S1 / D1 / C1). */
+export type DashboardScope = {
+  kind: "global" | "business" | "location";
+  locationId: string | null;
+  locationName: string | null;
+};
+
 /** Respuesta GET /dashboard/summary. */
 export type DashboardSummary = {
+  scope: DashboardScope;
   kpis: DashboardKpis;
   upcoming: DashboardUpcomingItem[];
   byVessel: DashboardCapsuleColumn[];
@@ -70,6 +78,8 @@ export async function getDashboardSummaryRequest(
     vesselChartLimit?: number;
     courseChartLimit?: number;
     vesselListLimit?: number;
+    /** Filtro opcional por embarcación. */
+    locationId?: string;
   } = {},
 ): Promise<DashboardSummary> {
   const params = new URLSearchParams();
@@ -77,6 +87,9 @@ export async function getDashboardSummaryRequest(
   params.set("vesselChartLimit", String(options.vesselChartLimit ?? 5));
   params.set("courseChartLimit", String(options.courseChartLimit ?? 5));
   params.set("vesselListLimit", String(options.vesselListLimit ?? 8));
+  if (options.locationId) {
+    params.set("locationId", options.locationId);
+  }
   const res = await fetch(`/api/v1/dashboard/summary?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });

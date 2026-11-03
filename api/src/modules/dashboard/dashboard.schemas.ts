@@ -71,8 +71,19 @@ export const dashboardVesselComplianceSchema = z
   })
   .openapi("DashboardVesselCompliance");
 
+/** Alcance efectivo del resumen (alineado a rol / Figma S1·D1·C1). */
+export const dashboardScopeSchema = z
+  .object({
+    kind: z.enum(["global", "business", "location"]),
+    /** Nombre de la nave cuando kind = location. */
+    locationId: z.uuid().nullable(),
+    locationName: z.string().nullable(),
+  })
+  .openapi("DashboardScope");
+
 export const getDashboardSummaryResponseSchema = z
   .object({
+    scope: dashboardScopeSchema,
     kpis: dashboardKpiSchema,
     upcoming: z.array(dashboardUpcomingItemSchema),
     /** Top naves por cursos por vencer (cápsulas). */
@@ -94,6 +105,12 @@ export const getDashboardSummaryQuerySchema = z.object({
   courseChartLimit: z.coerce.number().int().positive().max(20).default(5),
   /** Tope de filas en “Cumplimiento por nave”. */
   vesselListLimit: z.coerce.number().int().positive().max(50).default(8),
+  /**
+   * Filtro opcional por embarcación (locationId).
+   * Superadmin/admin: acota el resumen a esa nave.
+   * Colaborador/user: solo se acepta su propia nave (o se ignora).
+   */
+  locationId: z.uuid().optional(),
 });
 
 export const getDashboardSummaryRequestSchema = z.object({

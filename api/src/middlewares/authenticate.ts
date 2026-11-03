@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../lib/errors.js";
 import { prisma } from "../lib/prisma.js";
 import { verifyAccessToken } from "../lib/tokens.js";
+import type { AuthUser } from "../modules/auth/auth.schemas.js";
 
 /**
  * Exige `Authorization: Bearer <access>` y deja el usuario en `req.user`.
@@ -42,6 +43,18 @@ export async function authenticate(
       throw new AppError(401, "unauthorized", "Sesión inválida");
     }
 
+    // Alcance del rol (para dashboard / tenant); null si no hay Role.
+    let dataScope: AuthUser["dataScope"] = null;
+    if (user.internalRol === "superadmin") {
+      dataScope = "all";
+    } else if (user.roleId) {
+      const role = await prisma.role.findFirst({
+        where: { id: user.roleId, deletedAt: null },
+        select: { dataScope: true },
+      });
+      dataScope = role?.dataScope ?? null;
+    }
+
     req.user = {
       id: user.id,
       email: user.email,
@@ -52,6 +65,9 @@ export async function authenticate(
       internalRol: user.internalRol,
       roleId: user.roleId,
       businessId: user.businessId,
+      locationId: user.locationId,
+      locationName: null,
+      dataScope,
       confirmed: user.confirmed,
       state: user.state,
       // Los permisos se resuelven en requirePermission / login·me; acá no hace falta.

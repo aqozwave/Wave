@@ -117,6 +117,31 @@ async function loadPermissionsForUser(
 
 /** Proyecta User de Prisma al contrato AuthUser (sin secretos). */
 async function toAuthUser(user: User): Promise<AuthUser> {
+  let dataScope: AuthUser["dataScope"] = null;
+  let locationName: string | null = null;
+
+  if (user.roleId) {
+    const role = await prisma.role.findFirst({
+      where: { id: user.roleId, deletedAt: null },
+      select: { dataScope: true },
+    });
+    if (role?.dataScope) {
+      dataScope = role.dataScope;
+    }
+  }
+  // Superadmin: alcance global aunque no tenga fila Role.
+  if (user.internalRol === "superadmin") {
+    dataScope = "all";
+  }
+
+  if (user.locationId) {
+    const location = await prisma.location.findFirst({
+      where: { id: user.locationId, deletedAt: null },
+      select: { name: true },
+    });
+    locationName = location?.name ?? null;
+  }
+
   return {
     id: user.id,
     email: user.email,
@@ -127,6 +152,9 @@ async function toAuthUser(user: User): Promise<AuthUser> {
     internalRol: user.internalRol,
     roleId: user.roleId,
     businessId: user.businessId,
+    locationId: user.locationId,
+    locationName,
+    dataScope,
     confirmed: user.confirmed,
     state: user.state,
     permissions: await loadPermissionsForUser(user),

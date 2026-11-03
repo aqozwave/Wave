@@ -16,6 +16,12 @@ export type AuthUser = {
   internalRol: string;
   roleId: string | null;
   businessId: string | null;
+  /** Nave/lugar (colaborador / tripulante). */
+  locationId: string | null;
+  /** Nombre de la nave para el Panel C1. */
+  locationName: string | null;
+  /** Alcance del rol: all | business | location | area | self. */
+  dataScope: "all" | "business" | "location" | "area" | "self" | null;
   confirmed: boolean;
   state: boolean;
   /** Snapshot RBAC para la UI (login / me). */

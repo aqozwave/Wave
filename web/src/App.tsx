@@ -19,7 +19,7 @@ import { CursosHome } from "./pages/Cursos/CursosHome";
 import { CursosTripulacion } from "./pages/Cursos/CursosTripulacion";
 import { Vencimientos } from "./pages/Cursos/Vencimientos";
 import { Empresas } from "./pages/Empresas/Empresas";
-import { Panel } from "./pages/Panel/Panel";
+import { HomeIndex } from "./pages/Home/HomeIndex";
 import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmation";
 import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
 import { Roles } from "./pages/Roles/Roles";
@@ -126,7 +126,7 @@ export function App() {
       <Route path="/resend-confirmation" element={<ResendConfirmation />} />
       <Route element={<RequireAuth />}>
         <Route element={<ShellLayout />}>
-          <Route index element={<Panel />} />
+          <Route index element={<HomeIndex />} />
           <Route path="embarcados" element={<Embarcados />} />
           <Route path="embarcados/:id" element={<FichaTripulante />} />
           <Route

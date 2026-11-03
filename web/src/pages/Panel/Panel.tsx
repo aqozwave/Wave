@@ -18,7 +18,11 @@ import {
   type DashboardSummary,
   type DashboardUpcomingItem,
 } from "../../lib/api/dashboard";
+import { listLocationsRequest } from "../../lib/api/locations";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+
+/** Valor del select “Todas las embarcaciones”. */
+const VESSEL_FILTER_ALL = "";
 
 /**
  * Panel global (Figma 133:4570).
@@ -71,8 +75,8 @@ function upcomingEstado(status: DashboardUpcomingItem["status"]): {
  * Si los datos superan 8, el eje crece al máximo real (ceil a par).
  */
 const CAPSULE_MIN_MAX = 8;
-/** Alto del área de barras (sin labels), igual a Figma Plot · cápsulas. */
-const CAPSULE_PLOT_H = 150;
+/** Alto del área de barras (compacto para Panel sin scroll). */
+const CAPSULE_PLOT_H = 110;
 /** Ancho de cada cápsula en Figma. */
 const CAPSULE_W = 12;
 
@@ -113,26 +117,46 @@ const meses = [
   "Oct",
 ];
 
-/** Página Panel global: header S1 + KPIs + breakdowns reales. */
+/**
+ * Panel OMI alineado a Figma:
+ * S1 superadmin (global) · D1 admin/empresa · C1 colaborador (mi nave).
+ */
 export function Panel() {
   const { user, accessToken } = useAuth();
   const welcomeName = user ? capitalizeName(user.firstName) : "usuario";
+  const isLocationScope =
+    user?.dataScope === "location" ||
+    user?.internalRol === "colaborador" ||
+    user?.internalRol === "user";
+  const isGlobalScope =
+    user?.internalRol === "superadmin" || user?.dataScope === "all";
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  /** Filtro de embarcación (vacío = todas del alcance). */
+  const [vesselFilter, setVesselFilter] = useState(VESSEL_FILTER_ALL);
+  /** Opciones del select (naves visibles para el usuario). */
+  const [vesselOptions, setVesselOptions] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
 
-  /** Carga el resumen del dashboard. */
+  /** ¿Mostrar el select? Solo si el rol no está ya fijado a una nave. */
+  const showVesselFilter = !isLocationScope;
+
+  /** Carga el resumen del dashboard (respeta filtro de nave). */
   const load = useCallback(async () => {
     if (!accessToken) return;
     setLoading(true);
     setError(null);
     try {
       const data = await getDashboardSummaryRequest(accessToken, {
-        upcomingLimit: 8,
-        vesselChartLimit: 5,
-        courseChartLimit: 5,
-        vesselListLimit: 8,
+        // 4 filas: el Panel debe caber en viewport sin scroll vertical.
+        upcomingLimit: 4,
+        vesselChartLimit: 4,
+        courseChartLimit: 4,
+        vesselListLimit: 4,
+        locationId: vesselFilter || undefined,
       });
       setSummary(data);
     } catch (err) {
@@ -145,19 +169,64 @@ export function Panel() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken]);
+  }, [accessToken, vesselFilter]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  /** Carga naves para el select (vessel; si no hay kind, todas activas). */
+  useEffect(() => {
+    if (!accessToken || !showVesselFilter) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await listLocationsRequest(
+          accessToken,
+          1,
+          200,
+          user?.businessId ?? undefined,
+        );
+        if (cancelled) return;
+        const vessels = result.items.filter(
+          (loc) => loc.state && (loc.kind === "vessel" || loc.kind == null),
+        );
+        const list =
+          vessels.length > 0
+            ? vessels
+            : result.items.filter((loc) => loc.state);
+        setVesselOptions(
+          list
+            .map((loc) => ({ id: loc.id, name: loc.name }))
+            .sort((a, b) => a.name.localeCompare(b.name, "es")),
+        );
+      } catch {
+        if (!cancelled) setVesselOptions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, showVesselFilter, user?.businessId]);
+
+  const scopeKind = summary?.scope.kind;
+  const locationScoped =
+    scopeKind === "location" || (scopeKind == null && isLocationScope);
+  const globalScoped =
+    scopeKind === "global" || (scopeKind == null && isGlobalScope);
+
   /** Tres tarjetas KPI desde la API (sin deltas históricos aún). */
   const kpis = useMemo(() => {
     const k = summary?.kpis;
     const horizon = k?.horizonDays ?? 60;
+    const complianceLabel = locationScoped
+      ? "Cumplimiento de la nave"
+      : globalScoped
+        ? "Cumplimiento global"
+        : "Cumplimiento";
     return [
       {
-        label: "Cumplimiento global",
+        label: complianceLabel,
         value:
           k?.compliancePercent == null
             ? "—"
@@ -175,36 +244,90 @@ export function Panel() {
         hint: "cursos OMI por vencer",
       },
       {
-        label: "Vencidos o faltantes",
+        label: locationScoped ? "Pendientes / vencidos" : "Vencidos o faltantes",
         value: k == null ? "—" : String(k.expiredOrMissingCount),
         icon: CircleAlert,
-        hint: "vencidos + pendientes obligatorios",
+        hint: locationScoped
+          ? "obligatorios vencidos o sin cursar"
+          : "vencidos + pendientes obligatorios",
       },
     ];
-  }, [summary]);
+  }, [summary, locationScoped, globalScoped]);
+
+  /** Subtítulo del header según alcance Figma. */
+  const subtitle = useMemo(() => {
+    if (locationScoped) {
+      const nave =
+        summary?.scope.locationName ?? user?.locationName ?? "tu nave";
+      const n = summary?.kpis.crewCount;
+      return n == null
+        ? `${nave}`
+        : `${nave} · ${n} tripulantes a bordo`;
+    }
+    if (globalScoped) {
+      return "Cumplimiento de todas las empresas";
+    }
+    return "Cumplimiento de formación OMI";
+  }, [locationScoped, globalScoped, summary, user?.locationName]);
+
+  const chartTitleMonthly = locationScoped
+    ? "Cumplimiento mensual de la nave"
+    : "Cumplimiento mensual";
 
   const upcoming = summary?.upcoming ?? [];
   const byVessel = summary?.byVessel ?? [];
   const byCourse = summary?.byCourse ?? [];
   const vessels = summary?.vessels ?? [];
+  /** En C1 no tiene sentido el chart “Por nave” (ya filtró a una). */
+  const showVesselCapsule = !locationScoped;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-7 py-[22px]">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-7 py-4">
       {/* Header S1 (133:4710): saludo + búsqueda + iconos + exportar + UserMenu */}
       <header className="flex items-center gap-2.5">
         <div className="min-w-0 flex-1">
           <h1 className="text-[20px] font-semibold leading-[26px] text-[var(--color-nachipa-title)]">
-            Bienvenido, {welcomeName}
+            {locationScoped
+              ? summary?.scope.locationName ?? user?.locationName ?? "Mi nave"
+              : `Bienvenido, ${welcomeName}`}
           </h1>
           <p className="text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
-            Cumplimiento de formación OMI
-            {user?.internalRol === "superadmin"
-              ? " · todas las empresas"
-              : ""}
+            {locationScoped ? (
+              <>
+                {welcomeName}
+                {subtitle ? ` · ${subtitle}` : ""}
+              </>
+            ) : (
+              subtitle
+            )}
           </p>
         </div>
 
-        <label className="flex h-9 w-[240px] shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] pl-3 pr-2.5">
+        {showVesselFilter ? (
+          <label className="flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] pl-3 pr-2">
+            <Ship
+              size={14}
+              strokeWidth={1.5}
+              className="shrink-0 text-[var(--color-nav-icon)]"
+              aria-hidden
+            />
+            <select
+              value={vesselFilter}
+              onChange={(e) => setVesselFilter(e.target.value)}
+              aria-label="Filtrar por embarcación"
+              className="max-w-[200px] bg-transparent text-[12px] leading-[18px] text-[var(--color-nachipa-title)] outline-none"
+            >
+              <option value={VESSEL_FILTER_ALL}>Todas las embarcaciones</option>
+              {vesselOptions.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        <label className="flex h-9 w-[200px] shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] pl-3 pr-2.5">
           <input
             type="search"
             placeholder="Buscar…"
@@ -245,15 +368,15 @@ export function Panel() {
         </p>
       ) : null}
 
-      <div className="flex gap-4">
-        <div className="flex min-w-0 flex-1 flex-col gap-4">
-          <div className="flex gap-3.5">
+      <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden">
+          <div className="flex shrink-0 gap-3">
             {kpis.map((kpi) => {
               const Icon = kpi.icon;
               return (
                 <div
                   key={kpi.label}
-                  className="flex min-w-0 flex-1 flex-col gap-2.5 rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] px-[18px] py-4"
+                  className="flex min-w-0 flex-1 flex-col gap-1.5 rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] px-4 py-3"
                 >
                   <div className="flex items-center gap-2">
                     <p className="text-[13px] font-medium leading-[19px] text-[var(--color-nachipa-body)]">
@@ -266,7 +389,7 @@ export function Panel() {
                       aria-hidden
                     />
                   </div>
-                  <p className="text-[28px] font-semibold leading-9 tracking-[-0.14px] text-[var(--color-nachipa-title)]">
+                  <p className="text-[24px] font-semibold leading-8 tracking-[-0.14px] text-[var(--color-nachipa-title)]">
                     {loading ? "…" : kpi.value}
                   </p>
                   <p className="text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
@@ -277,10 +400,10 @@ export function Panel() {
             })}
           </div>
 
-          <div className="rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-[18px]">
-            <div className="mb-3 flex items-center gap-2">
+          <div className="shrink-0 rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-3.5">
+            <div className="mb-2 flex items-center gap-2">
               <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-[21px] text-[var(--color-nachipa-title)]">
-                Cumplimiento mensual
+                {chartTitleMonthly}
               </h2>
               <button
                 type="button"
@@ -290,7 +413,7 @@ export function Panel() {
                 <ChevronDown size={14} strokeWidth={1.5} aria-hidden />
               </button>
             </div>
-            <div className="relative h-[216px] w-full">
+            <div className="relative h-[140px] w-full">
               <svg
                 viewBox="0 0 590 216"
                 className="size-full"
@@ -343,8 +466,8 @@ export function Panel() {
             </div>
           </div>
 
-          <div className="rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-[18px]">
-            <div className="mb-2 flex items-center gap-2">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-3.5">
+            <div className="mb-1.5 flex shrink-0 items-center gap-2">
               <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-[21px] text-[var(--color-nachipa-title)]">
                 Próximos vencimientos
               </h2>
@@ -355,20 +478,20 @@ export function Panel() {
                 Ver todos
               </Link>
             </div>
-            <div className="overflow-hidden rounded-lg">
+            <div className="min-h-0 flex-1 overflow-hidden rounded-lg">
               <div className="grid grid-cols-[1.6fr_0.9fr_0.7fr_0.7fr] bg-[var(--color-table-head-bg)] text-[12px] font-medium leading-4 text-[var(--color-table-head-text)]">
-                <div className="px-3 py-2.5">Tripulante</div>
-                <div className="px-3 py-2.5">Curso</div>
-                <div className="px-3 py-2.5">Vence</div>
-                <div className="px-3 py-2.5">Estado</div>
+                <div className="px-3 py-1.5">Tripulante</div>
+                <div className="px-3 py-1.5">Curso</div>
+                <div className="px-3 py-1.5">Vence</div>
+                <div className="px-3 py-1.5">Estado</div>
               </div>
               {loading && upcoming.length === 0 ? (
-                <p className="m-0 px-3 py-4 text-[12px] text-[var(--color-nachipa-secondary)]">
+                <p className="m-0 px-3 py-3 text-[12px] text-[var(--color-nachipa-secondary)]">
                   Cargando…
                 </p>
               ) : null}
               {!loading && upcoming.length === 0 ? (
-                <p className="m-0 px-3 py-4 text-[12px] text-[var(--color-nachipa-secondary)]">
+                <p className="m-0 px-3 py-3 text-[12px] text-[var(--color-nachipa-secondary)]">
                   Sin vencimientos próximos en la ventana.
                 </p>
               ) : null}
@@ -380,24 +503,24 @@ export function Panel() {
                     key={row.assignmentId}
                     className="grid grid-cols-[1.6fr_0.9fr_0.7fr_0.7fr] border-b border-[var(--color-nachipa-border-subtle)] text-[12px] last:border-b-0"
                   >
-                    <div className="flex items-center gap-3 px-3 py-2.5">
-                      <span className="flex size-9 items-center justify-center rounded-[18px] bg-[var(--color-kpi-indigo-soft)] text-[12px] font-semibold text-[var(--color-kpi-indigo)]">
+                    <div className="flex items-center gap-2 px-3 py-1.5">
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-kpi-indigo-soft)] text-[11px] font-semibold text-[var(--color-kpi-indigo)]">
                         {initialsOf(row.crewFirstName, row.crewLastName)}
                       </span>
-                      <span className="font-medium text-[var(--color-nachipa-title)]">
+                      <span className="truncate font-medium text-[var(--color-nachipa-title)]">
                         {fullName || row.crewRun}
                       </span>
                     </div>
-                    <div className="flex items-center px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                    <div className="flex items-center truncate px-3 py-1.5 text-[var(--color-nachipa-body)]">
                       {row.courseName}
                     </div>
-                    <div className="flex items-center px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
+                    <div className="flex items-center px-3 py-1.5 tabular-nums text-[var(--color-nachipa-body)]">
                       {formatDate(row.expiresAt)}
                     </div>
-                    <div className="flex items-center px-3 py-2.5">
+                    <div className="flex items-center px-3 py-1.5">
                       <span
                         className={[
-                          "rounded-full px-2 py-0.5 text-[12px] font-medium",
+                          "rounded-full px-2 py-0.5 text-[11px] font-medium",
                           estado.tone === "danger"
                             ? "bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-fg)]"
                             : estado.tone === "warning"
@@ -415,11 +538,18 @@ export function Panel() {
           </div>
         </div>
 
-        <div className="flex w-[min(470px,38%)] shrink-0 flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="flex w-[min(420px,36%)] shrink-0 flex-col gap-3 overflow-hidden">
+          <div
+            className={[
+              "grid shrink-0 gap-3",
+              showVesselCapsule ? "grid-cols-2" : "grid-cols-1",
+            ].join(" ")}
+          >
             {(
               [
-                { title: "Por nave", series: byVessel },
+                ...(showVesselCapsule
+                  ? [{ title: "Por nave", series: byVessel }]
+                  : []),
                 { title: "Por curso", series: byCourse },
               ] as const
             ).map((chart) => {
@@ -428,7 +558,7 @@ export function Panel() {
               return (
                 <div
                   key={chart.title}
-                  className="flex flex-col gap-2.5 overflow-hidden rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-4"
+                  className="flex flex-col gap-1.5 overflow-hidden rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-3"
                 >
                   <div className="flex items-center gap-2">
                     <p className="min-w-0 flex-1 text-[15px] font-semibold leading-[21px] text-[var(--color-nachipa-title)]">
@@ -460,26 +590,26 @@ export function Panel() {
                   </div>
 
                   {/* Plot · cápsulas: soft detrás + solid delante, mismo baseline. */}
-                  <div className="relative h-[172px] w-full">
+                  <div className="relative h-[132px] w-full">
                     <div
                       className="absolute left-6 right-0 top-0 h-px bg-[var(--color-chart-grid)]"
                       aria-hidden
                     />
                     <div
-                      className="absolute left-6 right-0 top-[75px] h-px bg-[var(--color-chart-grid)]"
+                      className="absolute left-6 right-0 top-[55px] h-px bg-[var(--color-chart-grid)]"
                       aria-hidden
                     />
                     <div
-                      className="absolute left-6 right-0 top-[150px] h-px bg-[var(--color-chart-grid)]"
+                      className="absolute left-6 right-0 top-[110px] h-px bg-[var(--color-chart-grid)]"
                       aria-hidden
                     />
                     <span className="absolute left-0 top-[-8px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
                       {scaleMax}
                     </span>
-                    <span className="absolute left-0 top-[67px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+                    <span className="absolute left-0 top-[47px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
                       {mid}
                     </span>
-                    <span className="absolute left-0 top-[142px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+                    <span className="absolute left-0 top-[102px] w-[18px] text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
                       0
                     </span>
 
@@ -494,7 +624,7 @@ export function Panel() {
                       </p>
                     ) : null}
 
-                    <div className="absolute bottom-[22px] left-6 right-0 flex h-[150px] items-end justify-between px-1">
+                    <div className="absolute bottom-[18px] left-6 right-0 flex h-[110px] items-end justify-between px-1">
                       {chart.series.map((col) => (
                         <div
                           key={col.id}
@@ -533,8 +663,8 @@ export function Panel() {
             })}
           </div>
 
-          <div className="rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-[18px]">
-            <div className="mb-4 flex items-center gap-2">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-3.5">
+            <div className="mb-2 flex shrink-0 items-center gap-2">
               <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-[21px] text-[var(--color-nachipa-title)]">
                 Cumplimiento por nave
               </h2>
@@ -545,7 +675,7 @@ export function Panel() {
                 Ver todo
               </button>
             </div>
-            <div className="flex flex-col gap-[10px]">
+            <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
               {loading && vessels.length === 0 ? (
                 <p className="m-0 px-2.5 text-[12px] text-[var(--color-nachipa-secondary)]">
                   Cargando…
@@ -564,32 +694,25 @@ export function Panel() {
                 return (
                   <div
                     key={nave.locationId}
-                    className="flex items-start gap-3 px-2.5 py-1"
+                    className="flex items-center gap-2.5 px-1.5 py-0.5"
                   >
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-[var(--color-nav-item-active-bg)]">
+                    <div className="flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-[var(--color-nav-item-active-bg)]">
                       <Ship
-                        size={18}
+                        size={16}
                         strokeWidth={1.5}
                         className="text-[var(--color-nav-icon)]"
                         aria-hidden
                       />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-[13px] font-medium leading-[19px] text-[var(--color-nachipa-title)]">
-                            {nave.name}
-                          </p>
-                          <p className="text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
-                            {nave.compliantCrewCount} de {nave.crewCount}{" "}
-                            tripulantes al día
-                          </p>
-                        </div>
-                        <p className="text-[13px] font-semibold tabular-nums leading-[19px] text-[var(--color-nachipa-title)]">
+                      <div className="mb-0.5 flex items-center justify-between gap-2">
+                        <p className="min-w-0 truncate text-[13px] font-medium leading-[18px] text-[var(--color-nachipa-title)]">
+                          {nave.name}
+                        </p>
+                        <p className="shrink-0 text-[13px] font-semibold tabular-nums leading-[18px] text-[var(--color-nachipa-title)]">
                           {pct == null ? "—" : `${pct}%`}
                         </p>
                       </div>
-                      {/* Track 6px como Figma 133:5008. */}
                       <div className="h-1.5 overflow-hidden rounded-[3px] bg-[var(--color-chart-track)]">
                         <div
                           className="h-full rounded-[3px]"
