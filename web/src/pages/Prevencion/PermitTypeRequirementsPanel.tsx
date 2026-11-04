@@ -41,9 +41,8 @@ type Props = {
   canManage: boolean;
 };
 
-/** Form exigencia. */
+/** Form exigencia (sin key: la genera el sistema al crear). */
 type ReqForm = {
-  key: string;
   kind: PermitRequirementKind;
   scope: PermitRequirementScope;
   moment: PermitRequirementMoment;
@@ -56,10 +55,8 @@ type ReqForm = {
 };
 
 /** Form vacío. */
-function emptyForm(code: string): ReqForm {
-  const prefix = code.trim().toLowerCase() || "tipo";
+function emptyForm(): ReqForm {
   return {
-    key: `${prefix}.`,
     kind: "document",
     scope: "company",
     moment: "before",
@@ -70,6 +67,65 @@ function emptyForm(code: string): ReqForm {
     trainingId: "",
     active: true,
   };
+}
+
+/** Slug corto para armar keys a partir de label o códigos. */
+function slugPart(raw: string): string {
+  const s = raw
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 24);
+  return s || "item";
+}
+
+/**
+ * Genera key estable: {códigoTipo}.{tipo}_{ref}.
+ * Ej. alt.doc_ane, alt.training_ext01, alt.docs_company_pack.
+ * Si choca con una existente, agrega _2, _3…
+ */
+function buildRequirementKey(input: {
+  permitTypeCode: string;
+  form: ReqForm;
+  docs: DocumentType[];
+  trainings: Training[];
+  existingKeys: string[];
+}): string {
+  const prefix = input.permitTypeCode.trim().toLowerCase() || "tipo";
+  const { form, docs, trainings } = input;
+
+  let suffix = "req";
+  if (form.kind === "document") {
+    if (form.accreditationScope) {
+      suffix = `docs_${form.accreditationScope}_pack`;
+    } else if (form.documentTypeId) {
+      const doc = docs.find((d) => d.id === form.documentTypeId);
+      suffix = `doc_${slugPart(doc?.code ?? form.label)}`;
+    } else {
+      suffix = `doc_${slugPart(form.label)}`;
+    }
+  } else if (form.kind === "training") {
+    const tr = trainings.find((t) => t.id === form.trainingId);
+    suffix = `training_${slugPart(tr?.code ?? form.label)}`;
+  } else {
+    suffix = `checklist_${slugPart(form.label)}`;
+  }
+
+  let candidate = `${prefix}.${suffix}`;
+  // Cumple schema: ^[a-z][a-z0-9_.]{1,63}$
+  candidate = candidate.replace(/[^a-z0-9_.]/g, "_").slice(0, 64);
+  if (!/^[a-z]/.test(candidate)) candidate = `r.${candidate}`;
+
+  const taken = new Set(input.existingKeys.map((k) => k.toLowerCase()));
+  if (!taken.has(candidate)) return candidate;
+  for (let i = 2; i < 50; i += 1) {
+    const next = `${candidate}_${i}`.slice(0, 64);
+    if (!taken.has(next)) return next;
+  }
+  return `${candidate}_${Date.now().toString(36)}`.slice(0, 64);
 }
 
 /** Etiqueta de momento. */
@@ -106,7 +162,7 @@ export function PermitTypeRequirementsPanel({
   const [trainings, setTrainings] = useState<Training[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PermitTypeRequirement | null>(null);
-  const [form, setForm] = useState<ReqForm>(() => emptyForm(permitTypeCode));
+  const [form, setForm] = useState<ReqForm>(() => emptyForm());
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -128,15 +184,14 @@ export function PermitTypeRequirementsPanel({
   /** Abre alta. */
   function openCreate() {
     setEditing(null);
-    setForm(emptyForm(permitTypeCode));
+    setForm(emptyForm());
     setOpen(true);
   }
 
-  /** Abre edición. */
+  /** Abre edición (key no se toca: es id interno del sistema). */
   function openEdit(row: PermitTypeRequirement) {
     setEditing(row);
     setForm({
-      key: row.key,
       kind: row.kind,
       scope: row.scope,
       moment: row.moment,
@@ -162,11 +217,7 @@ export function PermitTypeRequirementsPanel({
     e.preventDefault();
     if (!accessToken || submitting) return;
     if (!form.label.trim()) {
-      showToast("El nombre/label es requerido.", "danger");
-      return;
-    }
-    if (!/^[a-z][a-z0-9_.]{1,63}$/.test(form.key.trim().toLowerCase())) {
-      showToast("key inválida (ej. cal.docs_company_pack).", "danger");
+      showToast("El nombre es requerido.", "danger");
       return;
     }
     if (form.kind === "training" && !form.trainingId) {
@@ -184,8 +235,18 @@ export function PermitTypeRequirementsPanel({
 
     setSubmitting(true);
     try {
+      // Key solo en alta: id interno; en edición no se envía.
+      const key = editing
+        ? editing.key
+        : buildRequirementKey({
+            permitTypeCode,
+            form,
+            docs,
+            trainings,
+            existingKeys: items.map((r) => r.key),
+          });
+
       const payload = {
-        key: form.key.trim().toLowerCase(),
         kind: form.kind,
         scope: form.scope,
         moment: form.moment,
@@ -214,7 +275,7 @@ export function PermitTypeRequirementsPanel({
         await createPermitTypeRequirementRequest(
           accessToken,
           permitTypeId,
-          payload,
+          { ...payload, key },
         );
         showToast("Exigencia creada.", "success");
       }
@@ -296,15 +357,15 @@ export function PermitTypeRequirementsPanel({
                     ) : null}
                   </p>
                   <p className="m-0 mt-0.5 text-[11px] text-[var(--color-nachipa-secondary)]">
-                    {req.key}
-                    {req.training
-                      ? ` · ${req.training.code}`
-                      : req.trainingCode
-                        ? ` · ${req.trainingCode}`
-                        : null}
-                    {req.documentType
-                      ? ` · ${req.documentType.code}`
-                      : null}
+                    {[
+                      req.training?.code ?? req.trainingCode,
+                      req.documentType?.code,
+                      req.accreditationScope
+                        ? `Pack ${req.accreditationScope}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || kindLabel(req.kind)}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -377,22 +438,12 @@ export function PermitTypeRequirementsPanel({
           onSubmit={(e) => void onSubmit(e)}
         >
           <TextField
-            label="Key"
-            name="key"
-            required
-            value={form.key}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, key: e.target.value.toLowerCase() }))
-            }
-            placeholder="cal.docs_company_pack"
-            disabled={Boolean(editing)}
-          />
-          <TextField
-            label="Etiqueta"
+            label="Nombre"
             name="label"
             required
             value={form.label}
             onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+            placeholder="Ej. Anexo ANE vigente"
           />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
