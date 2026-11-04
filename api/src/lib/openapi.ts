@@ -3251,7 +3251,8 @@ registry.registerPath({
   path: "/api/v1/crew-members/{id}",
   tags: ["CrewMembers"],
   summary: "Eliminar tripulante (soft)",
-  description: "Requiere embarcados:deactivate. Desvincula userId.",
+  description:
+    "Requiere embarcados:deactivate. Desvincula userId; si el usuario era User/Colaborador, lo desactiva (state=false) sin borrarlo.",
   security: [{ bearerAuth: [] }],
   request: { params: z.object({ id: z.uuid() }) },
   responses: {

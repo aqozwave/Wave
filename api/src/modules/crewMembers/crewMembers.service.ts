@@ -580,7 +580,12 @@ export async function updateCrewMember(
   }
 }
 
-/** Soft delete de tripulante. */
+/**
+ * Soft delete de tripulante.
+ * Desvincula userId; si el usuario vinculado es User/Colaborador,
+ * lo desactiva (state=false + tokenVersion++) para que no siga entrando.
+ * No toca admin/rrhh/otros roles ni borra la fila de users.
+ */
 export async function deleteCrewMemberById(
   actor: Actor,
   id: string,
@@ -597,13 +602,39 @@ export async function deleteCrewMemberById(
   }
   assertCrewTenantAccess(actor, existing.businessId);
 
-  const deleted = await prisma.crewMember.update({
-    where: { id },
-    data: {
-      deletedAt: new Date(),
-      state: false,
-      user: { disconnect: true },
-    },
+  const linkedUserId = existing.userId;
+
+  const deleted = await prisma.$transaction(async (tx) => {
+    const row = await tx.crewMember.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        state: false,
+        user: { disconnect: true },
+      },
+    });
+
+    if (linkedUserId) {
+      const linked = await tx.user.findFirst({
+        where: { id: linkedUserId, deletedAt: null },
+        select: { id: true, internalRol: true },
+      });
+      // Solo cuentas de nave (Acceso); no desactivar admin u otros roles.
+      if (
+        linked &&
+        ACCESS_ROLE_KEYS.includes(linked.internalRol as AccessRoleKey)
+      ) {
+        await tx.user.update({
+          where: { id: linked.id },
+          data: {
+            state: false,
+            tokenVersion: { increment: 1 },
+          },
+        });
+      }
+    }
+
+    return row;
   });
 
   return toCrewMemberResponse(deleted);
