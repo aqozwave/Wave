@@ -297,6 +297,185 @@ const DEFAULT_TRAININGS: ReadonlyArray<{
   },
 ];
 
+/**
+ * Pack document_types Prevención (Anexo A del spec).
+ * 8 empresa + 8 persona + CA + PP. Códigos 2 letras; nombres provisionales
+ * marcados «por confirmar» cuando el anexo no los fija.
+ * Sin @@unique Prisma en (businessId, code): findFirst + create/update.
+ */
+const PREVENCION_DOCUMENT_TYPES: ReadonlyArray<{
+  code: string;
+  name: string;
+  /** crew | external | crew_and_external */
+  appliesTo: "crew" | "external" | "crew_and_external";
+  requiresExpiry: boolean;
+}> = [
+  // Empresa externa — los «8»
+  {
+    code: "NT",
+    name: "Nómina de trabajadores",
+    appliesTo: "external",
+    requiresExpiry: false,
+  },
+  {
+    code: "SA",
+    name: "Certificado de siniestralidad",
+    appliesTo: "external",
+    requiresExpiry: true,
+  },
+  {
+    code: "RS",
+    name: "RS (nombre por confirmar)",
+    appliesTo: "external",
+    requiresExpiry: true,
+  },
+  {
+    code: "RI",
+    name: "RI · RIOHS (nombre por confirmar)",
+    appliesTo: "external",
+    requiresExpiry: true,
+  },
+  {
+    code: "MP",
+    name: "Matriz de peligros (MIPER)",
+    appliesTo: "external",
+    requiresExpiry: true,
+  },
+  {
+    code: "AF",
+    name: "AF · Afiliación (nombre por confirmar)",
+    appliesTo: "external",
+    requiresExpiry: true,
+  },
+  {
+    code: "PS",
+    name: "Procedimiento de trabajo seguro",
+    appliesTo: "external",
+    requiresExpiry: false,
+  },
+  {
+    code: "PA",
+    name: "PA (nombre por confirmar)",
+    appliesTo: "external",
+    requiresExpiry: true,
+  },
+  // Persona — los «8»
+  {
+    code: "CD",
+    name: "CD (nombre por confirmar)",
+    appliesTo: "crew_and_external",
+    requiresExpiry: true,
+  },
+  {
+    code: "CO",
+    name: "CO (nombre por confirmar)",
+    appliesTo: "crew_and_external",
+    requiresExpiry: true,
+  },
+  {
+    code: "EN",
+    name: "Entrega de EPP",
+    appliesTo: "crew_and_external",
+    requiresExpiry: false,
+  },
+  {
+    code: "CE",
+    name: "CE (nombre por confirmar)",
+    appliesTo: "crew_and_external",
+    requiresExpiry: true,
+  },
+  {
+    code: "OD",
+    name: "Informar los riesgos laborales (ODI)",
+    appliesTo: "crew_and_external",
+    requiresExpiry: true,
+  },
+  {
+    code: "DA",
+    name: "DA (nombre por confirmar)",
+    appliesTo: "crew_and_external",
+    requiresExpiry: true,
+  },
+  {
+    code: "DE",
+    name: "DE (nombre por confirmar)",
+    appliesTo: "crew_and_external",
+    requiresExpiry: true,
+  },
+  {
+    code: "EO",
+    name: "Examen ocupacional",
+    appliesTo: "crew_and_external",
+    requiresExpiry: true,
+  },
+  // Acredita capacitaciones
+  {
+    code: "CA",
+    name: "Certificado de capacitación",
+    appliesTo: "crew_and_external",
+    requiresExpiry: true,
+  },
+  // Cierre de permiso
+  {
+    code: "PP",
+    name: "Check list post permiso de trabajo",
+    appliesTo: "external",
+    requiresExpiry: false,
+  },
+];
+
+/** Upsert pack Prevención por empresa (idempotente por code). */
+async function seedPrevencionDocumentTypes(): Promise<number> {
+  const businesses = await prisma.business.findMany({
+    where: { deletedAt: null },
+    select: { id: true },
+  });
+
+  let upserts = 0;
+  for (const business of businesses) {
+    for (const doc of PREVENCION_DOCUMENT_TYPES) {
+      const existing = await prisma.documentType.findFirst({
+        where: {
+          businessId: business.id,
+          code: doc.code,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      if (existing) {
+        // No pisa nombres ETL ya cargados; solo asegura subtype prevencion.
+        await prisma.documentType.update({
+          where: { id: existing.id },
+          data: {
+            subtype: "prevencion",
+            uploadBy: "prevention_or_admin",
+            viewBy: "prevention_or_admin",
+          },
+        });
+      } else {
+        await prisma.documentType.create({
+          data: {
+            businessId: business.id,
+            code: doc.code,
+            name: doc.name.toLowerCase(),
+            subtype: "prevencion",
+            appliesTo: doc.appliesTo,
+            requiresExpiry: doc.requiresExpiry,
+            uploadBy: "prevention_or_admin",
+            viewBy: "prevention_or_admin",
+            crewCanView: true,
+            visibility: "employee",
+            state: true,
+          },
+        });
+      }
+      upserts += 1;
+    }
+  }
+  return upserts;
+}
+
 /** Upsert de capacitaciones por empresa. */
 async function seedTrainingsForBusinesses(): Promise<number> {
   const businesses = await prisma.business.findMany({
@@ -387,10 +566,13 @@ async function seedCalRequirements(): Promise<number> {
           trainingId,
           active: true,
         },
-        // Enlace trainingId si el seed de capacitaciones corrió después o faltaba.
-        update: trainingId
-          ? { trainingId, trainingCode: req.trainingCode ?? null }
-          : {},
+        // Enlaza FKs si el seed de docs/capacitaciones corrió después o faltaba.
+        update: {
+          ...(trainingId
+            ? { trainingId, trainingCode: req.trainingCode ?? null }
+            : {}),
+          ...(documentTypeId ? { documentTypeId } : {}),
+        },
       });
       upserts += 1;
     }
@@ -451,6 +633,10 @@ async function main() {
 
   const trainingUpserts = await seedTrainingsForBusinesses();
   console.log(`trainings seed: ${trainingUpserts} upserts`);
+
+  // Antes de exigencias CAL: PS/PP deben existir para enlazar documentTypeId.
+  const docUpserts = await seedPrevencionDocumentTypes();
+  console.log(`document_types (prevención pack) seed: ${docUpserts} upserts`);
 
   const reqUpserts = await seedCalRequirements();
   console.log(`permit_type_requirements (CAL) seed: ${reqUpserts} upserts`);
