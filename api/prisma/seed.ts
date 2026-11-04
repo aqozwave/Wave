@@ -1,7 +1,402 @@
-import { PrismaClient, RoleDataScope } from "@prisma/client";
+import {
+  AccreditationScope,
+  PermitAstMode,
+  PermitCriticality,
+  PermitRequirementKind,
+  PermitRequirementMoment,
+  PermitRequirementScope,
+  PrismaClient,
+  RoleDataScope,
+} from "@prisma/client";
 import { hashPassword } from "../src/lib/password.js";
 
 const prisma = new PrismaClient();
+
+/**
+ * Catálogo base P1: 5 tipos oficiales de Nachipa.
+ * Idempotente por (businessId, code). No pisa name/criticality si ya existe
+ * (solo asegura que la fila esté; update vacío).
+ */
+const DEFAULT_PERMIT_TYPES: ReadonlyArray<{
+  code: string;
+  name: string;
+  criticality: PermitCriticality;
+  requiresAst: boolean;
+  astMode: PermitAstMode | null;
+  description: string;
+}> = [
+  {
+    code: "ALT",
+    name: "Trabajo en altura",
+    criticality: PermitCriticality.high,
+    requiresAst: false,
+    astMode: null,
+    description: "Trabajos con riesgo de caída a distinto nivel.",
+  },
+  {
+    code: "ECF",
+    name: "Trabajo en espacios confinados",
+    criticality: PermitCriticality.high,
+    requiresAst: false,
+    astMode: null,
+    description: "Ingreso a espacios con ventilación limitada.",
+  },
+  {
+    code: "BUC",
+    name: "Faena de buceo",
+    criticality: PermitCriticality.high,
+    requiresAst: true,
+    astMode: PermitAstMode.both,
+    description: "Operaciones de buceo; exige AST (formulario y/o PDF).",
+  },
+  {
+    code: "GEN",
+    name: "Trabajos generales",
+    criticality: PermitCriticality.medium,
+    requiresAst: false,
+    astMode: null,
+    description: "Trabajos de riesgo estándar a bordo.",
+  },
+  {
+    code: "CAL",
+    name: "Trabajos en caliente",
+    criticality: PermitCriticality.high,
+    requiresAst: false,
+    astMode: null,
+    description: "Soldadura, corte u otras fuentes de ignición.",
+  },
+];
+
+/** Upsert de los 5 tipos en cada empresa activa (sin soft-delete). */
+async function seedPermitTypesForBusinesses(): Promise<number> {
+  const businesses = await prisma.business.findMany({
+    where: { deletedAt: null },
+    select: { id: true },
+  });
+
+  let upserts = 0;
+  for (const business of businesses) {
+    for (const type of DEFAULT_PERMIT_TYPES) {
+      await prisma.permitType.upsert({
+        where: {
+          businessId_code: {
+            businessId: business.id,
+            code: type.code,
+          },
+        },
+        create: {
+          businessId: business.id,
+          code: type.code,
+          name: type.name,
+          criticality: type.criticality,
+          requiresAst: type.requiresAst,
+          astMode: type.astMode,
+          description: type.description,
+          active: true,
+        },
+        // No pisar personalización local en re-seed.
+        update: {},
+      });
+      upserts += 1;
+    }
+  }
+  return upserts;
+}
+
+/**
+ * Exigencias de ejemplo · CAL (spec Anexo + Figma P15).
+ * documentTypeCode: busca DocumentType de la empresa (PS, PP); null si no hay.
+ */
+const CAL_REQUIREMENTS: ReadonlyArray<{
+  key: string;
+  kind: PermitRequirementKind;
+  scope: PermitRequirementScope;
+  moment: PermitRequirementMoment;
+  label: string;
+  accreditationScope?: AccreditationScope;
+  documentTypeCode?: string;
+  trainingCode?: string;
+}> = [
+  {
+    key: "cal.company_accreditation",
+    kind: PermitRequirementKind.document,
+    scope: PermitRequirementScope.company,
+    moment: PermitRequirementMoment.before,
+    label: "Habilitación de la empresa vigente",
+  },
+  {
+    key: "cal.docs_company_pack",
+    kind: PermitRequirementKind.document,
+    scope: PermitRequirementScope.company,
+    moment: PermitRequirementMoment.before,
+    label: "8 documentos de la empresa",
+    accreditationScope: AccreditationScope.company,
+  },
+  {
+    key: "cal.doc_ps",
+    kind: PermitRequirementKind.document,
+    scope: PermitRequirementScope.company,
+    moment: PermitRequirementMoment.before,
+    label: "PS · Procedimiento de trabajo seguro en caliente",
+    documentTypeCode: "PS",
+  },
+  {
+    key: "cal.docs_person_pack",
+    kind: PermitRequirementKind.document,
+    scope: PermitRequirementScope.person,
+    moment: PermitRequirementMoment.before,
+    label: "8 documentos por persona",
+    accreditationScope: AccreditationScope.person,
+  },
+  {
+    key: "cal.training_ext01",
+    kind: PermitRequirementKind.training,
+    scope: PermitRequirementScope.person,
+    moment: PermitRequirementMoment.before,
+    label: "EXT-01 · Uso y manejo de extintores",
+    trainingCode: "EXT-01",
+  },
+  {
+    key: "cal.training_odi01",
+    kind: PermitRequirementKind.training,
+    scope: PermitRequirementScope.person,
+    moment: PermitRequirementMoment.before,
+    label: "ODI-01 · Obligación de informar los riesgos",
+    trainingCode: "ODI-01",
+  },
+  {
+    key: "cal.checklist_hot_work",
+    kind: PermitRequirementKind.checklist,
+    scope: PermitRequirementScope.permit,
+    moment: PermitRequirementMoment.before,
+    label: "Checklist de trabajos en caliente (6 ítems)",
+  },
+  {
+    key: "cal.doc_pp_closure",
+    kind: PermitRequirementKind.document,
+    scope: PermitRequirementScope.permit,
+    moment: PermitRequirementMoment.closure,
+    label: "PP · Check list post permiso de trabajo",
+    documentTypeCode: "PP",
+  },
+];
+
+/**
+ * Checklist CAL (6 ítems). El anexo del spec no lista el texto;
+ * estos son ítems típicos de hot work a bordo (provisional hasta OK de Prevención).
+ */
+const CAL_CHECKLIST: ReadonlyArray<string> = [
+  "Extintor operativo y a menos de 10 m del frente de trabajo",
+  "Área libre de combustibles o protegida con mantas ignífugas",
+  "Equipo de soldadura/corte/esmerilado en buen estado",
+  "Ventilación adecuada del área de trabajo",
+  "Vigía o apoyo asignado durante la faena",
+  "EPP completo (careta, guantes, ropa de protección)",
+];
+
+/**
+ * Checklist ECF (8 ítems) — texto oficial del anexo del spec.
+ */
+const ECF_CHECKLIST: ReadonlyArray<string> = [
+  "Medición de atmósfera (O₂, CO, H₂S, LEL) antes de ingresar",
+  "Ventilación forzada operativa",
+  "Permiso de ingreso firmado por el supervisor",
+  "Vigía exterior con comunicación permanente",
+  "Equipo de rescate y arnés con línea de vida",
+  "Bloqueo y etiquetado de energías (LOTO)",
+  "Iluminación antiexplosiva",
+  "EPP completo incluido el respirador",
+];
+
+/** Upsert de ítems de checklist por código de tipo. */
+async function seedChecklistForCode(
+  code: string,
+  texts: ReadonlyArray<string>,
+): Promise<number> {
+  const types = await prisma.permitType.findMany({
+    where: { code, deletedAt: null },
+    select: { id: true },
+  });
+
+  let upserts = 0;
+  for (const type of types) {
+    for (let i = 0; i < texts.length; i += 1) {
+      const order = i + 1;
+      await prisma.permitChecklistItem.upsert({
+        where: {
+          permitTypeId_order: {
+            permitTypeId: type.id,
+            order,
+          },
+        },
+        create: {
+          permitTypeId: type.id,
+          order,
+          text: texts[i]!,
+          active: true,
+        },
+        update: {},
+      });
+      upserts += 1;
+    }
+  }
+  return upserts;
+}
+
+/**
+ * Catálogo P1 capacitaciones (ejemplos del diseño).
+ * PAU/ECF/SPE: nombres provisionales («por confirmar» en el spec).
+ */
+const DEFAULT_TRAININGS: ReadonlyArray<{
+  code: string;
+  name: string;
+  validityMonths: number | null;
+  appliesTo: string[];
+}> = [
+  {
+    code: "ALT-01",
+    name: "Trabajo en altura física",
+    validityMonths: 12,
+    appliesTo: ["crew", "external_person"],
+  },
+  {
+    code: "IND-SEG",
+    name: "Inducción de seguridad a bordo",
+    validityMonths: null,
+    appliesTo: ["crew", "external_person"],
+  },
+  {
+    code: "ODI-01",
+    name: "Obligación de informar los riesgos (ODI)",
+    validityMonths: 12,
+    appliesTo: ["crew", "external_person"],
+  },
+  {
+    code: "EXT-01",
+    name: "Uso y manejo de extintores",
+    validityMonths: 12,
+    appliesTo: ["crew", "external_person"],
+  },
+  {
+    code: "PAU-01",
+    name: "PAU-01 (nombre por confirmar)",
+    validityMonths: 12,
+    appliesTo: ["external_person"],
+  },
+  {
+    code: "ECF-01",
+    name: "ECF-01 (nombre por confirmar)",
+    validityMonths: 12,
+    appliesTo: ["external_person"],
+  },
+  {
+    code: "SPE-01",
+    name: "SPE-01 (nombre por confirmar)",
+    validityMonths: 12,
+    appliesTo: ["external_person"],
+  },
+];
+
+/** Upsert de capacitaciones por empresa. */
+async function seedTrainingsForBusinesses(): Promise<number> {
+  const businesses = await prisma.business.findMany({
+    where: { deletedAt: null },
+    select: { id: true },
+  });
+
+  let upserts = 0;
+  for (const business of businesses) {
+    for (const t of DEFAULT_TRAININGS) {
+      await prisma.training.upsert({
+        where: {
+          businessId_code: {
+            businessId: business.id,
+            code: t.code,
+          },
+        },
+        create: {
+          businessId: business.id,
+          code: t.code,
+          name: t.name,
+          validityMonths: t.validityMonths,
+          appliesTo: [...t.appliesTo],
+          active: true,
+        },
+        update: {},
+      });
+      upserts += 1;
+    }
+  }
+  return upserts;
+}
+
+/** Upsert de las 8 exigencias CAL por cada empresa que tenga el tipo. */
+async function seedCalRequirements(): Promise<number> {
+  const calTypes = await prisma.permitType.findMany({
+    where: { code: "CAL", deletedAt: null },
+    select: { id: true, businessId: true },
+  });
+
+  let upserts = 0;
+  for (const cal of calTypes) {
+    for (const req of CAL_REQUIREMENTS) {
+      let documentTypeId: string | null = null;
+      if (req.documentTypeCode) {
+        const doc = await prisma.documentType.findFirst({
+          where: {
+            businessId: cal.businessId,
+            code: req.documentTypeCode,
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        documentTypeId = doc?.id ?? null;
+      }
+
+      let trainingId: string | null = null;
+      if (req.trainingCode) {
+        const training = await prisma.training.findFirst({
+          where: {
+            businessId: cal.businessId,
+            code: req.trainingCode,
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        trainingId = training?.id ?? null;
+      }
+
+      await prisma.permitTypeRequirement.upsert({
+        where: {
+          permitTypeId_key: {
+            permitTypeId: cal.id,
+            key: req.key,
+          },
+        },
+        create: {
+          permitTypeId: cal.id,
+          key: req.key,
+          kind: req.kind,
+          scope: req.scope,
+          moment: req.moment,
+          mandatory: true,
+          label: req.label,
+          accreditationScope: req.accreditationScope ?? null,
+          documentTypeId,
+          trainingCode: req.trainingCode ?? null,
+          trainingId,
+          active: true,
+        },
+        // Enlace trainingId si el seed de capacitaciones corrió después o faltaba.
+        update: trainingId
+          ? { trainingId, trainingCode: req.trainingCode ?? null }
+          : {},
+      });
+      upserts += 1;
+    }
+  }
+  return upserts;
+}
 
 async function main() {
   const role = await prisma.role.upsert({
@@ -50,6 +445,21 @@ async function main() {
       state: true,
     },
   });
+
+  const permitUpserts = await seedPermitTypesForBusinesses();
+  console.log(`permit_types seed: ${permitUpserts} upserts`);
+
+  const trainingUpserts = await seedTrainingsForBusinesses();
+  console.log(`trainings seed: ${trainingUpserts} upserts`);
+
+  const reqUpserts = await seedCalRequirements();
+  console.log(`permit_type_requirements (CAL) seed: ${reqUpserts} upserts`);
+
+  const calCheck = await seedChecklistForCode("CAL", CAL_CHECKLIST);
+  console.log(`permit_checklist_items (CAL) seed: ${calCheck} upserts`);
+
+  const ecfCheck = await seedChecklistForCode("ECF", ECF_CHECKLIST);
+  console.log(`permit_checklist_items (ECF) seed: ${ecfCheck} upserts`);
 }
 
 main()

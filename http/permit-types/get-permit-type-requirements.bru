@@ -1,0 +1,39 @@
+meta {
+  name: Get permit type requirements
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/permit-types/{{permitTypeId}}/requirements
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Exigencias del tipo (P15). Seed CAL = 8 filas (docs, capacitaciones, checklist).
+  Corré antes Get permit types (preferencia código CAL).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("permitTypeId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y permitTypeId (vía Get permit types)");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+  res.body.total: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

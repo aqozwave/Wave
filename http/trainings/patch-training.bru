@@ -1,0 +1,49 @@
+meta {
+  name: Patch training
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/trainings/{{trainingId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Capacitación de prueba (editada)",
+    "active": false
+  }
+}
+
+docs {
+  Editar campos o desactivar (active=false) sin soft-delete.
+  Corré antes Post training.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("trainingId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y trainingId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

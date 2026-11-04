@@ -26,7 +26,9 @@ import { locationsRouter } from "./modules/locations/locations.routes.js";
 import { muellesRouter } from "./modules/muelles/muelles.routes.js";
 import { notificationOutboxRouter } from "./modules/notificationOutbox/notificationOutbox.routes.js";
 import { notificationSettingsRouter } from "./modules/notificationSettings/notificationSettings.routes.js";
+import { permitTypesRouter } from "./modules/permitTypes/permitTypes.routes.js";
 import { portsRouter } from "./modules/ports/ports.routes.js";
+import { trainingsRouter } from "./modules/trainings/trainings.routes.js";
 import { ranksRouter } from "./modules/ranks/ranks.routes.js";
 import { rolesRouter } from "./modules/roles/roles.routes.js";
 import { systemAnnouncementsRouter } from "./modules/systemAnnouncements/systemAnnouncements.routes.js";
@@ -147,6 +149,8 @@ export function createApp() {
   app.use("/api/v1/academic-degrees", academicDegreesRouter);
   app.use("/api/v1/competency-certificates", competencyCertificatesRouter);
   app.use("/api/v1/document-types", documentTypesRouter);
+  app.use("/api/v1/permit-types", permitTypesRouter);
+  app.use("/api/v1/trainings", trainingsRouter);
   app.use("/api/v1/courses", coursesRouter);
   app.use("/api/v1/ports", portsRouter);
   app.use("/api/v1/muelles", muellesRouter);

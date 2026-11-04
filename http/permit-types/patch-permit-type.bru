@@ -1,0 +1,49 @@
+meta {
+  name: Patch permit type
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/permit-types/{{permitTypeId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Tipo de prueba (editado)",
+    "active": false
+  }
+}
+
+docs {
+  Editar campos o desactivar (active=false) sin soft-delete.
+  Corré antes Post permit type o Get permit types.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("permitTypeId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y permitTypeId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

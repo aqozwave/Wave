@@ -1,0 +1,39 @@
+meta {
+  name: Delete training
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/trainings/{{trainingId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Soft delete: deletedAt + active=false.
+  Preferí un training de prueba (Post training), no EXT-01/ODI seed.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("trainingId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y trainingId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.deletedAt: isDefined
+  res.body.active: eq false
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

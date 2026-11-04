@@ -209,6 +209,26 @@ import {
   updateDocumentTypeResponseSchema,
 } from "../modules/documentTypes/documentTypes.schemas.js";
 import {
+  createPermitTypeBodySchema,
+  createPermitTypeResponseSchema,
+  deletePermitTypeResponseSchema,
+  getPermitTypeResponseSchema,
+  listPermitChecklistItemsResponseSchema,
+  listPermitTypeRequirementsResponseSchema,
+  listPermitTypesResponseSchema,
+  updatePermitTypeBodySchema,
+  updatePermitTypeResponseSchema,
+} from "../modules/permitTypes/permitTypes.schemas.js";
+import {
+  createTrainingBodySchema,
+  createTrainingResponseSchema,
+  deleteTrainingResponseSchema,
+  getTrainingResponseSchema,
+  listTrainingsResponseSchema,
+  updateTrainingBodySchema,
+  updateTrainingResponseSchema,
+} from "../modules/trainings/trainings.schemas.js";
+import {
   expiryNotificationSettingsSchema,
   updateExpiryNotificationSettingsBodySchema,
 } from "../modules/notificationSettings/notificationSettings.schemas.js";
@@ -1592,6 +1612,331 @@ registry.registerPath({
       },
     },
     401: { description: "Sin token" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/permit-types",
+  tags: ["PermitTypes"],
+  summary: "Listar tipos de permiso de trabajo",
+  description:
+    "Catálogo P1 (ALT/CAL/ECF/GEN/BUC) por empresa. Superadmin: filtro businessId. Permiso permit_types.read + módulo work_permits (capa 1).",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(100).default(20).optional(),
+      businessId: z.uuid().optional(),
+      active: z.enum(["true", "false"]).optional(),
+      search: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listPermitTypesResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo work_permits apagado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/permit-types",
+  tags: ["PermitTypes"],
+  summary: "Crear tipo de permiso",
+  description:
+    "Admin/superadmin + permit_types.create. Superadmin: businessId obligatorio.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createPermitTypeBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": { schema: createPermitTypeResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    409: { description: "Código duplicado en la empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/permit-types/{id}",
+  tags: ["PermitTypes"],
+  summary: "Obtener tipo de permiso por id",
+  description:
+    "Detalle de un tipo. 404 si no existe o es de otra empresa (no-superadmin). Permiso permit_types.read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Tipo de permiso",
+      content: {
+        "application/json": { schema: getPermitTypeResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo work_permits apagado" },
+    404: { description: "No encontrado o otra empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/permit-types/{id}",
+  tags: ["PermitTypes"],
+  summary: "Actualizar tipo de permiso",
+  description:
+    "Editar datos o active (desactivar suave). Admin/superadmin + permit_types.update.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updatePermitTypeBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizado",
+      content: {
+        "application/json": { schema: updatePermitTypeResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrado" },
+    409: { description: "Código duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/permit-types/{id}",
+  tags: ["PermitTypes"],
+  summary: "Eliminar (soft) tipo de permiso",
+  description:
+    "deletedAt + active=false. No borra exigencias/checklist. Permiso permit_types.deactivate.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deletePermitTypeResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/permit-types/{id}/requirements",
+  tags: ["PermitTypes"],
+  summary: "Listar exigencias de un tipo de permiso",
+  description:
+    "P15 Exigencias (documentos, capacitaciones, checklist). Seed CAL = 8 filas. Permiso permit_types.read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Listado de exigencias",
+      content: {
+        "application/json": {
+          schema: listPermitTypeRequirementsResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo work_permits apagado" },
+    404: { description: "Tipo no encontrado o otra empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/permit-types/{id}/checklist-items",
+  tags: ["PermitTypes"],
+  summary: "Listar ítems del checklist de un tipo de permiso",
+  description:
+    "Ítems ordenados del checklist del tipo. Seed: CAL 6 (provisional), ECF 8 (anexo spec). Permiso permit_types.read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Listado de ítems",
+      content: {
+        "application/json": {
+          schema: listPermitChecklistItemsResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo work_permits apagado" },
+    404: { description: "Tipo no encontrado o otra empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/trainings",
+  tags: ["Trainings"],
+  summary: "Listar capacitaciones de Prevención",
+  description:
+    "Catálogo P1 (EXT-01, ODI-01…). Superadmin: filtro businessId. Permiso trainings.read + módulo trainings.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(100).default(20).optional(),
+      businessId: z.uuid().optional(),
+      active: z.enum(["true", "false"]).optional(),
+      search: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listTrainingsResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo trainings apagado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/trainings",
+  tags: ["Trainings"],
+  summary: "Crear capacitación",
+  description:
+    "Admin/superadmin + trainings.create. Superadmin: businessId obligatorio.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createTrainingBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creada",
+      content: {
+        "application/json": { schema: createTrainingResponseSchema },
+      },
+    },
+    400: { description: "Validación o documentType inválido" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    409: { description: "Código duplicado en la empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/trainings/{id}",
+  tags: ["Trainings"],
+  summary: "Obtener capacitación por id",
+  description: "Detalle. 404 si no existe o es de otra empresa. Permiso trainings.read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Capacitación",
+      content: {
+        "application/json": { schema: getTrainingResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo trainings apagado" },
+    404: { description: "No encontrada o otra empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/trainings/{id}",
+  tags: ["Trainings"],
+  summary: "Actualizar capacitación",
+  description:
+    "Editar datos o active. Admin/superadmin + trainings.update.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateTrainingBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizada",
+      content: {
+        "application/json": { schema: updateTrainingResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrada" },
+    409: { description: "Código duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/trainings/{id}",
+  tags: ["Trainings"],
+  summary: "Eliminar (soft) capacitación",
+  description:
+    "deletedAt + active=false. No desvincula exigencias de permiso. Permiso trainings.deactivate.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteTrainingResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrada" },
   },
 });
 

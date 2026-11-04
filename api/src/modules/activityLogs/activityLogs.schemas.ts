@@ -28,6 +28,8 @@ export const activityResourceSchema = z.enum([
   "port",
   "course",
   "role",
+  "permitType",
+  "training",
   "system",
 ]);
 

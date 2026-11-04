@@ -28,6 +28,64 @@ enum BusinessModuleKey {
   trainings
 }
 
+/**
+ * Criticidad del tipo de permiso (P1 · P14/P15).
+ * UI: chips Activo + Criticidad alta/media/baja.
+ */
+enum PermitCriticality {
+  low
+  medium
+  high
+}
+
+/**
+ * Cómo se entrega el AST cuando requiresAst=true.
+ * Solo BUC en el seed inicial; FORM = formulario, PDF = archivo, BOTH = ambos.
+ */
+enum PermitAstMode {
+  form
+  pdf
+  both
+}
+
+/**
+ * Tipo de exigencia del permiso (P1 · P15 Exigencias).
+ * document = tipo de doc o pack de habilitación; training = curso; checklist = lista del tipo.
+ */
+enum PermitRequirementKind {
+  document
+  training
+  checklist
+}
+
+/**
+ * A quién aplica la exigencia.
+ * company = empresa contratista; person = cada trabajador; permit = el PT en sí.
+ */
+enum PermitRequirementScope {
+  company
+  person
+  permit
+}
+
+/**
+ * Momento del ciclo en que se exige.
+ * before = antes de iniciar; closure = al cierre.
+ */
+enum PermitRequirementMoment {
+  before
+  closure
+}
+
+/**
+ * Pack de documentos de habilitación («los 8»).
+ * company = 8 de empresa; person = 8 por persona.
+ */
+enum AccreditationScope {
+  company
+  person
+}
+
 /// Propósito del token de correo (confirmación de cuenta o reset de clave).
 enum EmailTokenPurpose {
   confirm_email
@@ -138,6 +196,10 @@ enum ActivityResource {
   port
   course
   role
+  /// Catálogo tipos de permiso (Prevención / P14m).
+  permitType
+  /// Catálogo capacitaciones Prevención (P1).
+  training
   system
 }
 
@@ -339,6 +401,10 @@ model Business {
   notificationOutbox     NotificationOutbox[]
   /// Interruptores de Prevención (contractors / work_permits / trainings).
   modules                BusinessModule[]
+  /// Catálogo de tipos de permiso de trabajo (ALT, CAL, …).
+  permitTypes            PermitType[]
+  /// Catálogo de capacitaciones de Prevención (EXT-01, ODI-01, …).
+  trainings              Training[]
 
   @@index([name])
   @@map("businesses")
@@ -401,6 +467,10 @@ model DocumentType {
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   documents     CrewMemberDocument[]
+  /// Exigencias de tipos de permiso que apuntan a este tipo de documento.
+  permitTypeRequirements PermitTypeRequirement[]
+  /// Capacitaciones que se acreditan con este tipo de documento.
+  trainings              Training[]
 
   @@index([businessId])
   @@index([code, businessId])
@@ -913,4 +983,130 @@ model UserAnnouncementRead {
   @@id([userId, announcementId])
   @@index([userId])
   @@map("user_announcement_reads")
+}
+
+/**
+ * Tipo de permiso de trabajo (P1 · P14).
+ * Maestro por empresa: ALT, CAL, ECF, GEN, BUC (+ tipos nuevos).
+ * Flujo/checklist ítems se agregan en pasos siguientes.
+ */
+model PermitType {
+  id          String            @id @default(uuid()) @db.Uuid
+  businessId  String            @map("business_id") @db.Uuid
+  business    Business          @relation(fields: [businessId], references: [id])
+  /// Código corto estable (ALT, CAL, ECF, GEN, BUC).
+  code        String
+  name        String
+  criticality PermitCriticality
+  /// Si true, el tipo exige AST (formulario y/o PDF según astMode).
+  requiresAst Boolean           @default(false) @map("requires_ast")
+  /// Null si requiresAst=false.
+  astMode     PermitAstMode?    @map("ast_mode")
+  description String?
+  /// false = desactivado (Figma «Desactivar tipo»); no borra historial.
+  active      Boolean           @default(true)
+  deletedAt   DateTime?         @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+  /// Exigencias del tipo (documentos, capacitaciones, checklist).
+  requirements PermitTypeRequirement[]
+  /// Ítems del checklist propio del tipo (P15 · Checklist N ítems).
+  checklistItems PermitChecklistItem[]
+
+  @@unique([businessId, code])
+  @@index([businessId])
+  @@index([active])
+  @@map("permit_types")
+}
+
+/**
+ * Exigencia de un tipo de permiso (P1 · P15 Exigencias).
+ * Seed de ejemplo: 8 filas de CAL (spec Anexo).
+ * trainingCode hasta existir tabla trainings (P1 capacitaciones).
+ */
+model PermitTypeRequirement {
+  id                   String                   @id @default(uuid()) @db.Uuid
+  permitTypeId         String                   @map("permit_type_id") @db.Uuid
+  permitType           PermitType               @relation(fields: [permitTypeId], references: [id], onDelete: Cascade)
+  /// Clave estable por tipo (seed idempotente), ej. cal.docs_company_pack.
+  key                  String
+  kind                 PermitRequirementKind
+  scope                PermitRequirementScope
+  moment               PermitRequirementMoment  @default(before)
+  mandatory            Boolean                  @default(true)
+  /// kind=document y apunta a un tipo concreto (PS, PP…).
+  documentTypeId       String?                  @map("document_type_id") @db.Uuid
+  documentType         DocumentType?            @relation(fields: [documentTypeId], references: [id], onDelete: SetNull)
+  /// kind=document pack «los 8» (empresa o persona).
+  accreditationScope   AccreditationScope?      @map("accreditation_scope")
+  /// kind=training: código de catálogo (EXT-01); redundante con trainingId para lectura.
+  trainingCode         String?                  @map("training_code")
+  /// FK a Training cuando el catálogo ya existe en la empresa.
+  trainingId           String?                  @map("training_id") @db.Uuid
+  training             Training?                @relation(fields: [trainingId], references: [id], onDelete: SetNull)
+  /// Texto visible en la tabla (Figma columna Exigencia).
+  label                String
+  active               Boolean                  @default(true)
+  createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([permitTypeId, key])
+  @@index([permitTypeId])
+  @@index([kind])
+  @@index([trainingId])
+  @@map("permit_type_requirements")
+}
+
+/**
+ * Capacitación del módulo Prevención (P1 · P4).
+ * Distinta de Course (OMI/tripulación). Código estable por empresa (EXT-01…).
+ */
+model Training {
+  id             String    @id @default(uuid()) @db.Uuid
+  businessId     String    @map("business_id") @db.Uuid
+  business       Business  @relation(fields: [businessId], references: [id])
+  /// Código corto (ALT-01, EXT-01, ODI-01, IND-SEG…).
+  code           String
+  name           String
+  /// Meses de vigencia; null = sin vencimiento.
+  validityMonths Int?      @map("validity_months")
+  /**
+   * A quién aplica (tags). Valores: crew | external_person.
+   * Array Prisma para poder marcar ambos.
+   */
+  appliesTo      String[]  @default([]) @map("applies_to")
+  /// Documento que acredita la capacitación (opcional si el tipo aún no existe).
+  documentTypeId String?   @map("document_type_id") @db.Uuid
+  documentType   DocumentType? @relation(fields: [documentTypeId], references: [id], onDelete: SetNull)
+  active         Boolean   @default(true)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  /// Exigencias de permiso que apuntan a esta capacitación.
+  permitTypeRequirements PermitTypeRequirement[]
+
+  @@unique([businessId, code])
+  @@index([businessId])
+  @@index([active])
+  @@map("trainings")
+}
+
+/**
+ * Ítem del checklist de un tipo de permiso (P1).
+ * Orden estable; el requisito kind=checklist apunta al set completo.
+ */
+model PermitChecklistItem {
+  id           String     @id @default(uuid()) @db.Uuid
+  permitTypeId String     @map("permit_type_id") @db.Uuid
+  permitType   PermitType @relation(fields: [permitTypeId], references: [id], onDelete: Cascade)
+  /// Posición 1-based en la UI / PDF del permiso.
+  order        Int
+  text         String
+  active       Boolean    @default(true)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([permitTypeId, order])
+  @@index([permitTypeId])
+  @@map("permit_checklist_items")
 }

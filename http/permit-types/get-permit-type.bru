@@ -1,0 +1,39 @@
+meta {
+  name: Get permit type
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/permit-types/{{permitTypeId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Detalle de un tipo de permiso por id.
+  Corré antes Get permit types (guarda permitTypeId, preferencia CAL).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("permitTypeId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y permitTypeId (vía Get permit types)");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+  res.body.code: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

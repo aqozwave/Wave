@@ -1,0 +1,61 @@
+meta {
+  name: Post training
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/trainings
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "code": "TST-01",
+    "name": "Capacitación de prueba",
+    "validityMonths": 12,
+    "appliesTo": ["crew", "external_person"],
+    "active": true,
+    "businessId": "{{businessId}}"
+  }
+}
+
+docs {
+  Admin o superadmin + trainings.create.
+  Superadmin: businessId obligatorio.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const businessId = bru.getEnvVar("businessId");
+  if (!token || !businessId) {
+    throw new Error("Definí accessToken y businessId en el entorno local");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body && body.id) {
+    bru.setEnvVar("trainingId", body.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.code: eq TST-01
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

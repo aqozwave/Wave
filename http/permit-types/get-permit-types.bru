@@ -1,0 +1,50 @@
+meta {
+  name: Get permit types
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/permit-types?page=1&limit=20
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Catálogo P1 de tipos de permiso (ALT, CAL, ECF, GEN, BUC).
+  Superadmin: ve todas las empresas (o ?businessId=).
+  Exige permiso permit_types.read y módulo work_permits on (no-superadmin).
+  Guarda permitTypeId (preferencia código CAL) para requests siguientes.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && body && Array.isArray(body.items)) {
+    const cal = body.items.find((i) => i.code === "CAL");
+    const pick = cal || body.items[0];
+    if (pick && pick.id) {
+      bru.setEnvVar("permitTypeId", pick.id);
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

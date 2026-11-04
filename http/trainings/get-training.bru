@@ -1,0 +1,39 @@
+meta {
+  name: Get training
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/trainings/{{trainingId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Detalle de una capacitación por id.
+  Corré antes Get trainings.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("trainingId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y trainingId (vía Get trainings)");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+  res.body.code: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

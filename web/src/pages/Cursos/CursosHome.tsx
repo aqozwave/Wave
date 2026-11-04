@@ -137,7 +137,8 @@ export function CursosHome() {
           description="Formación OMI, títulos marítimos, asignaciones en ficha y avisos de vencimiento. Solo ves lo que tu rol permite."
         />
 
-        <div className="flex max-w-[960px] flex-col gap-8">
+        {/* Header a la izquierda (ancho completo); solo el hub de tarjetas se centra. */}
+        <div className="mx-auto flex w-full max-w-[960px] flex-col gap-8">
           {groups.length === 0 ? (
             <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
               No tenés permisos de cursos en este rol.
