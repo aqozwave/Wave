@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   MapPin,
+  Package,
   PanelLeft,
   PanelLeftClose,
   Settings,
@@ -151,6 +152,13 @@ const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
     to: "/prevencion/capacitaciones",
     icon: GraduationCap,
     canShow: (u) => userHasPermission(u, "trainings", "read"),
+  },
+  {
+    label: "Packs de habilitación",
+    to: "/prevencion/packs",
+    icon: Package,
+    canShow: (u) =>
+      userHasPermission(u, "maestros.document_types", "read"),
   },
 ];
 

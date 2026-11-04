@@ -205,8 +205,8 @@ import {
   createDocumentTypeBodySchema,
   createDocumentTypeResponseSchema,
   deleteDocumentTypeResponseSchema,
-  documentSubtypeSchema,
   getDocumentTypeResponseSchema,
+  listDocumentTypesQuerySchema,
   listDocumentTypesResponseSchema,
   updateDocumentTypeBodySchema,
   updateDocumentTypeResponseSchema,
@@ -1609,13 +1609,7 @@ registry.registerPath({
     "Maestro por empresa (códigos HR). Superadmin: filtro businessId. Admin/user: su empresa. Permiso maestros.document_types read.",
   security: [{ bearerAuth: [] }],
   request: {
-    query: z.object({
-      page: z.coerce.number().int().positive().default(1).optional(),
-      limit: z.coerce.number().int().positive().max(200).default(100).optional(),
-      businessId: z.uuid().optional(),
-      subtype: documentSubtypeSchema.optional(),
-      search: z.string().optional(),
-    }),
+    query: listDocumentTypesQuerySchema,
   },
   responses: {
     200: {

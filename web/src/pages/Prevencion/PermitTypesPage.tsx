@@ -105,6 +105,10 @@ export function PermitTypesPage() {
   const [editing, setEditing] = useState<PermitType | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingDeactivate, setPendingDeactivate] = useState<PermitType | null>(
+    null,
+  );
+  const [deactivating, setDeactivating] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -250,23 +254,30 @@ export function PermitTypesPage() {
     }
   }
 
-  /** Soft-delete del tipo. */
-  async function onDelete(row: PermitType) {
-    if (!accessToken || !canManage) return;
+  /** Abre Modal de confirmación para desactivar. */
+  function askDeactivate(row: PermitType) {
     setMenuId(null);
-    const ok = window.confirm(
-      `¿Desactivar el tipo «${row.code}»? Quedará inactivo y no se ofrecerá en nuevos permisos.`,
-    );
-    if (!ok) return;
+    setPendingDeactivate(row);
+  }
+
+  /** Soft-delete del tipo (tras Modal). */
+  async function confirmDeactivate() {
+    if (!accessToken || !canManage || !pendingDeactivate || deactivating) {
+      return;
+    }
+    setDeactivating(true);
     try {
-      await deletePermitTypeRequest(accessToken, row.id);
+      await deletePermitTypeRequest(accessToken, pendingDeactivate.id);
       showToast("Tipo desactivado.", "success");
+      setPendingDeactivate(null);
       await load();
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo desactivar.",
         "danger",
       );
+    } finally {
+      setDeactivating(false);
     }
   }
 
@@ -416,9 +427,7 @@ export function PermitTypesPage() {
                               <button
                                 type="button"
                                 className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-nachipa-bg-page)]"
-                                onClick={() => {
-                                  void onDelete(row);
-                                }}
+                                onClick={() => askDeactivate(row)}
                               >
                                 Desactivar
                               </button>
@@ -605,6 +614,46 @@ export function PermitTypesPage() {
             </div>
           ) : null}
         </form>
+      </Modal>
+
+      <Modal
+        open={pendingDeactivate !== null}
+        onClose={() => {
+          if (!deactivating) setPendingDeactivate(null);
+        }}
+        title="Desactivar tipo de permiso"
+        subtitle={
+          pendingDeactivate
+            ? `¿Desactivar «${pendingDeactivate.code}»? Quedará inactivo y no se ofrecerá en permisos nuevos.`
+            : undefined
+        }
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={deactivating}
+              onClick={() => setPendingDeactivate(null)}
+              className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={deactivating}
+              onClick={() => {
+                void confirmDeactivate();
+              }}
+            >
+              {deactivating ? "Desactivando…" : "Desactivar"}
+            </Button>
+          </div>
+        }
+      >
+        <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+          Exigencias e historial se conservan.
+        </p>
       </Modal>
     </div>
   );

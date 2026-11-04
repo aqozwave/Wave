@@ -33,6 +33,7 @@ import {
   deleteDocumentTypeRequest,
   listDocumentTypesRequest,
   updateDocumentTypeRequest,
+  type DocumentAccreditationPack,
   type DocumentActorScope,
   type DocumentAppliesTo,
   type DocumentSubtype,
@@ -98,6 +99,8 @@ type FormState = {
   uploadBy: DocumentActorScope;
   viewBy: DocumentActorScope;
   crewCanView: boolean;
+  /** "" = fuera del pack. */
+  accreditationPack: "" | DocumentAccreditationPack;
   businessId: string;
   state: boolean;
 };
@@ -111,6 +114,7 @@ const EMPTY_FORM: FormState = {
   uploadBy: "prevention_or_admin",
   viewBy: "prevention_or_admin",
   crewCanView: true,
+  accreditationPack: "",
   businessId: "",
   state: true,
 };
@@ -257,6 +261,7 @@ export const DocumentTypesPanel = forwardRef<DocumentTypesPanelHandle>(
         uploadBy: (row.uploadBy as DocumentActorScope) || "prevention_or_admin",
         viewBy: (row.viewBy as DocumentActorScope) || "prevention_or_admin",
         crewCanView: row.crewCanView,
+        accreditationPack: row.accreditationPack ?? "",
         businessId: row.businessId,
         state: row.state,
       });
@@ -300,6 +305,7 @@ export const DocumentTypesPanel = forwardRef<DocumentTypesPanelHandle>(
           uploadBy: form.uploadBy,
           viewBy: form.viewBy,
           crewCanView: form.crewCanView,
+          accreditationPack: form.accreditationPack || null,
           state: form.state,
         };
         if (isSuperadmin && form.businessId) {
@@ -724,6 +730,30 @@ export const DocumentTypesPanel = forwardRef<DocumentTypesPanelHandle>(
                 </select>
               </label>
             </div>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                Pack de habilitación
+              </span>
+              <select
+                className={selectClass}
+                value={form.accreditationPack}
+                onChange={(e) =>
+                  setField(
+                    "accreditationPack",
+                    e.target.value as "" | DocumentAccreditationPack,
+                  )
+                }
+              >
+                <option value="">Ninguno (fuera del pack)</option>
+                <option value="company">Pack empresa (habilitación org)</option>
+                <option value="person">Pack persona (habilitación trabajador)</option>
+              </select>
+              <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                Define si este tipo entra en los documentos exigidos al habilitar
+                una empresa o una persona externa.
+              </span>
+            </label>
 
             <OptionToggleRow
               title="El tripulante puede ver este documento"

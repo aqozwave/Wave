@@ -460,6 +460,11 @@ model DocumentType {
   crewCanView   Boolean   @default(true) @map("crew_can_view")
   /// Legacy: nobody | employee | employee_supervisor | supervisor (sincronizado con crewCanView).
   visibility    String    @default("employee") @map("visibility")
+  /**
+   * Pack de habilitación editable (Anexo A).
+   * company = entra en los 8 de empresa; person = los 8 de persona; null = fuera del pack.
+   */
+  accreditationPack AccreditationScope? @map("accreditation_pack")
   businessId    String    @map("business_id") @db.Uuid
   business      Business  @relation(fields: [businessId], references: [id])
   state         Boolean   @default(true)
@@ -476,6 +481,7 @@ model DocumentType {
   @@index([code, businessId])
   @@index([subtype])
   @@index([appliesTo])
+  @@index([accreditationPack])
   @@map("document_types")
 }
 

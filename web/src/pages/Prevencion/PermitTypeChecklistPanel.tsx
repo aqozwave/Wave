@@ -52,6 +52,10 @@ export function PermitTypeChecklistPanel({
     active: true,
   });
   const [submitting, setSubmitting] = useState(false);
+  /** Fila pendiente de confirmar desactivar. */
+  const [pendingDeactivate, setPendingDeactivate] =
+    useState<PermitChecklistItem | null>(null);
+  const [deactivating, setDeactivating] = useState(false);
 
   /** Abre alta. */
   function openCreate() {
@@ -130,24 +134,28 @@ export function PermitTypeChecklistPanel({
     }
   }
 
-  /** Soft-deactivate. */
-  async function onDelete(row: PermitChecklistItem) {
-    if (!accessToken || !canManage) return;
-    const ok = window.confirm(`¿Desactivar el ítem «${row.text}»?`);
-    if (!ok) return;
+  /** Confirma desactivar ítem (Modal del sistema). */
+  async function confirmDeactivate() {
+    if (!accessToken || !canManage || !pendingDeactivate || deactivating) {
+      return;
+    }
+    setDeactivating(true);
     try {
       await deletePermitChecklistItemRequest(
         accessToken,
         permitTypeId,
-        row.id,
+        pendingDeactivate.id,
       );
       showToast("Ítem desactivado.", "success");
+      setPendingDeactivate(null);
       onChanged();
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo desactivar.",
         "danger",
       );
+    } finally {
+      setDeactivating(false);
     }
   }
 
@@ -195,9 +203,7 @@ export function PermitTypeChecklistPanel({
                       <button
                         type="button"
                         className="font-medium text-[var(--color-status-danger-fg)] hover:underline"
-                        onClick={() => {
-                          void onDelete(item);
-                        }}
+                        onClick={() => setPendingDeactivate(item)}
                       >
                         Desactivar
                       </button>
@@ -272,6 +278,47 @@ export function PermitTypeChecklistPanel({
             </div>
           ) : null}
         </form>
+      </Modal>
+
+      <Modal
+        open={pendingDeactivate !== null}
+        onClose={() => {
+          if (!deactivating) setPendingDeactivate(null);
+        }}
+        title="Desactivar ítem"
+        subtitle={
+          pendingDeactivate
+            ? `¿Desactivar «${pendingDeactivate.text}»?`
+            : undefined
+        }
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={deactivating}
+              onClick={() => setPendingDeactivate(null)}
+              className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={deactivating}
+              onClick={() => {
+                void confirmDeactivate();
+              }}
+            >
+              {deactivating ? "Desactivando…" : "Desactivar"}
+            </Button>
+          </div>
+        }
+      >
+        <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+          El ítem deja de aparecer en checklists nuevos; no se borra el
+          historial.
+        </p>
       </Modal>
     </>
   );

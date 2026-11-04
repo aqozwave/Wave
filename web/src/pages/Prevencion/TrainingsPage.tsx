@@ -99,6 +99,10 @@ export function TrainingsPage() {
   const [editing, setEditing] = useState<Training | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingDeactivate, setPendingDeactivate] = useState<Training | null>(
+    null,
+  );
+  const [deactivating, setDeactivating] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -294,23 +298,30 @@ export function TrainingsPage() {
     }
   }
 
-  /** Soft-delete. */
-  async function onDelete(row: Training) {
-    if (!accessToken || !canManage) return;
+  /** Abre Modal de confirmación. */
+  function askDeactivate(row: Training) {
     setMenuId(null);
-    const ok = window.confirm(
-      `¿Desactivar «${row.code}»? Quedará inactiva en el catálogo.`,
-    );
-    if (!ok) return;
+    setPendingDeactivate(row);
+  }
+
+  /** Soft-delete (tras Modal). */
+  async function confirmDeactivate() {
+    if (!accessToken || !canManage || !pendingDeactivate || deactivating) {
+      return;
+    }
+    setDeactivating(true);
     try {
-      await deleteTrainingRequest(accessToken, row.id);
+      await deleteTrainingRequest(accessToken, pendingDeactivate.id);
       showToast("Capacitación desactivada.", "success");
+      setPendingDeactivate(null);
       await load();
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo desactivar.",
         "danger",
       );
+    } finally {
+      setDeactivating(false);
     }
   }
 
@@ -455,9 +466,7 @@ export function TrainingsPage() {
                               <button
                                 type="button"
                                 className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-nachipa-bg-page)]"
-                                onClick={() => {
-                                  void onDelete(row);
-                                }}
+                                onClick={() => askDeactivate(row)}
                               >
                                 Desactivar
                               </button>
@@ -638,6 +647,46 @@ export function TrainingsPage() {
             </div>
           ) : null}
         </form>
+      </Modal>
+
+      <Modal
+        open={pendingDeactivate !== null}
+        onClose={() => {
+          if (!deactivating) setPendingDeactivate(null);
+        }}
+        title="Desactivar capacitación"
+        subtitle={
+          pendingDeactivate
+            ? `¿Desactivar «${pendingDeactivate.code}»? Quedará inactiva en el catálogo.`
+            : undefined
+        }
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={deactivating}
+              onClick={() => setPendingDeactivate(null)}
+              className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={deactivating}
+              onClick={() => {
+                void confirmDeactivate();
+              }}
+            >
+              {deactivating ? "Desactivando…" : "Desactivar"}
+            </Button>
+          </div>
+        }
+      >
+        <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+          No se borra el historial de asignaciones.
+        </p>
       </Modal>
     </div>
   );

@@ -146,6 +146,7 @@ const selectClass =
 /**
  * Sección Exigencias de la ficha de tipo (P15).
  * Alta / editar / desactivar; selectores de doc y capacitación.
+ * El contenido del pack viene del maestro document_types.accreditationPack.
  */
 export function PermitTypeRequirementsPanel({
   permitTypeId,
@@ -159,27 +160,53 @@ export function PermitTypeRequirementsPanel({
   const { showToast } = useToast();
 
   const [docs, setDocs] = useState<DocumentType[]>([]);
+  const [packCompany, setPackCompany] = useState<DocumentType[]>([]);
+  const [packPerson, setPackPerson] = useState<DocumentType[]>([]);
   const [trainings, setTrainings] = useState<Training[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PermitTypeRequirement | null>(null);
   const [form, setForm] = useState<ReqForm>(() => emptyForm());
   const [submitting, setSubmitting] = useState(false);
+  /** Fila pendiente de confirmar desactivar (Modal del sistema, no alert). */
+  const [pendingDeactivate, setPendingDeactivate] =
+    useState<PermitTypeRequirement | null>(null);
+  const [deactivating, setDeactivating] = useState(false);
 
   useEffect(() => {
     if (!accessToken || !open) return;
     void Promise.all([
       listDocumentTypesRequest(accessToken, 1, 100, { businessId }),
+      listDocumentTypesRequest(accessToken, 1, 100, {
+        businessId,
+        accreditationPack: "company",
+      }),
+      listDocumentTypesRequest(accessToken, 1, 100, {
+        businessId,
+        accreditationPack: "person",
+      }),
       listTrainingsRequest(accessToken, 1, 100, { businessId, active: true }),
     ])
-      .then(([d, t]) => {
+      .then(([d, company, person, t]) => {
         setDocs(d.items.filter((x) => x.state));
+        setPackCompany(company.items.filter((x) => x.state));
+        setPackPerson(person.items.filter((x) => x.state));
         setTrainings(t.items);
       })
       .catch(() => {
         setDocs([]);
+        setPackCompany([]);
+        setPackPerson([]);
         setTrainings([]);
       });
   }, [accessToken, open, businessId]);
+
+  /** Docs del pack seleccionado (maestro editable). */
+  const packPreview =
+    form.accreditationScope === "company"
+      ? packCompany
+      : form.accreditationScope === "person"
+        ? packPerson
+        : [];
 
   /** Abre alta. */
   function openCreate() {
@@ -291,24 +318,28 @@ export function PermitTypeRequirementsPanel({
     }
   }
 
-  /** Soft-deactivate. */
-  async function onDelete(row: PermitTypeRequirement) {
-    if (!accessToken || !canManage) return;
-    const ok = window.confirm(`¿Desactivar la exigencia «${row.label}»?`);
-    if (!ok) return;
+  /** Confirma desactivar exigencia (tras Modal). */
+  async function confirmDeactivate() {
+    if (!accessToken || !canManage || !pendingDeactivate || deactivating) {
+      return;
+    }
+    setDeactivating(true);
     try {
       await deletePermitTypeRequirementRequest(
         accessToken,
         permitTypeId,
-        row.id,
+        pendingDeactivate.id,
       );
       showToast("Exigencia desactivada.", "success");
+      setPendingDeactivate(null);
       onChanged();
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo desactivar.",
         "danger",
       );
+    } finally {
+      setDeactivating(false);
     }
   }
 
@@ -360,9 +391,11 @@ export function PermitTypeRequirementsPanel({
                     {[
                       req.training?.code ?? req.trainingCode,
                       req.documentType?.code,
-                      req.accreditationScope
-                        ? `Pack ${req.accreditationScope}`
-                        : null,
+                      req.accreditationScope === "company"
+                        ? "Pack empresa"
+                        : req.accreditationScope === "person"
+                          ? "Pack persona"
+                          : null,
                     ]
                       .filter(Boolean)
                       .join(" · ") || kindLabel(req.kind)}
@@ -390,9 +423,7 @@ export function PermitTypeRequirementsPanel({
                       <button
                         type="button"
                         className="text-[12px] font-medium text-[var(--color-status-danger-fg)] hover:underline"
-                        onClick={() => {
-                          void onDelete(req);
-                        }}
+                        onClick={() => setPendingDeactivate(req)}
                       >
                         Desactivar
                       </button>
@@ -508,14 +539,20 @@ export function PermitTypeRequirementsPanel({
           </div>
 
           {form.kind === "document" ? (
-            <>
+            <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] p-3">
+              <p className="m-0 text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
+                Elegí <strong>una</strong> opción: un documento suelto del
+                catálogo, o el pack completo de habilitación (los 8 de empresa
+                o los 8 de persona). No se pueden combinar.
+              </p>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                  Tipo de documento
+                  Tipo de documento (uno solo)
                 </span>
                 <select
                   className={selectClass}
                   value={form.documentTypeId}
+                  disabled={Boolean(form.accreditationScope)}
                   onChange={(e) =>
                     setForm((f) => ({
                       ...f,
@@ -536,11 +573,12 @@ export function PermitTypeRequirementsPanel({
               </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                  Pack habilitación
+                  Pack habilitación (los 8)
                 </span>
                 <select
                   className={selectClass}
                   value={form.accreditationScope}
+                  disabled={Boolean(form.documentTypeId)}
                   onChange={(e) =>
                     setForm((f) => ({
                       ...f,
@@ -551,11 +589,44 @@ export function PermitTypeRequirementsPanel({
                   }
                 >
                   <option value="">Ninguno</option>
-                  <option value="company">Empresa</option>
-                  <option value="person">Persona</option>
+                  <option value="company">
+                    Empresa — 8 docs de la organización
+                  </option>
+                  <option value="person">
+                    Persona — 8 docs del trabajador
+                  </option>
                 </select>
               </label>
-            </>
+              {form.accreditationScope ? (
+                <div className="rounded-[var(--radius-md)] bg-[var(--color-nachipa-bg-page)] px-3 py-2.5">
+                  <p className="m-0 text-[12px] font-medium text-[var(--color-nachipa-title)]">
+                    {form.accreditationScope === "company"
+                      ? `Pack empresa · ${packPreview.length} documento(s) del maestro:`
+                      : `Pack persona · ${packPreview.length} documento(s) del maestro:`}
+                  </p>
+                  {packPreview.length === 0 ? (
+                    <p className="m-0 mt-2 text-[12px] text-[var(--color-nachipa-secondary)]">
+                      Vacío. Configuralo en Prevención → Packs de habilitación
+                      (o en Catálogos → Tipos de documento).
+                    </p>
+                  ) : (
+                    <ul className="m-0 mt-2 list-none space-y-1 p-0">
+                      {packPreview.map((line) => (
+                        <li
+                          key={line.id}
+                          className="flex gap-2 text-[12px] text-[var(--color-nachipa-body)]"
+                        >
+                          <span className="w-8 shrink-0 font-semibold tabular-nums text-[var(--color-nachipa-title)]">
+                            {line.code}
+                          </span>
+                          <span>{line.name}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
+            </div>
           ) : null}
 
           {form.kind === "training" ? (
@@ -609,6 +680,46 @@ export function PermitTypeRequirementsPanel({
             </div>
           ) : null}
         </form>
+      </Modal>
+
+      <Modal
+        open={pendingDeactivate !== null}
+        onClose={() => {
+          if (!deactivating) setPendingDeactivate(null);
+        }}
+        title="Desactivar exigencia"
+        subtitle={
+          pendingDeactivate
+            ? `¿Desactivar «${pendingDeactivate.label}»? Dejará de pedirse en permisos nuevos.`
+            : undefined
+        }
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={deactivating}
+              onClick={() => setPendingDeactivate(null)}
+              className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={deactivating}
+              onClick={() => {
+                void confirmDeactivate();
+              }}
+            >
+              {deactivating ? "Desactivando…" : "Desactivar"}
+            </Button>
+          </div>
+        }
+      >
+        <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+          No se borra el historial; solo deja de estar activa en el catálogo.
+        </p>
       </Modal>
     </>
   );

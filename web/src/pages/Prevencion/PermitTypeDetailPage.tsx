@@ -74,6 +74,9 @@ export function PermitTypeDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState<EditForm | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  /** Confirmar desactivar tipo con Modal del sistema. */
+  const [deactivateOpen, setDeactivateOpen] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken || !id) return;
@@ -151,22 +154,22 @@ export function PermitTypeDetailPage() {
     }
   }
 
-  /** Soft-delete y vuelve al listado. */
-  async function onDeactivate() {
-    if (!accessToken || !id || !permitType) return;
-    const ok = window.confirm(
-      `¿Desactivar el tipo «${permitType.code}»? Quedará inactivo.`,
-    );
-    if (!ok) return;
+  /** Soft-delete y vuelve al listado (tras Modal). */
+  async function confirmDeactivate() {
+    if (!accessToken || !id || !permitType || deactivating) return;
+    setDeactivating(true);
     try {
       await deletePermitTypeRequest(accessToken, id);
       showToast("Tipo desactivado.", "success");
+      setDeactivateOpen(false);
       void navigate("/prevencion/tipos");
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo desactivar.",
         "danger",
       );
+    } finally {
+      setDeactivating(false);
     }
   }
 
@@ -211,9 +214,7 @@ export function PermitTypeDetailPage() {
                 </Button>
                 <button
                   type="button"
-                  onClick={() => {
-                    void onDeactivate();
-                  }}
+                  onClick={() => setDeactivateOpen(true)}
                   className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
                 >
                   Desactivar
@@ -439,6 +440,46 @@ export function PermitTypeDetailPage() {
             </div>
           </form>
         ) : null}
+      </Modal>
+
+      <Modal
+        open={deactivateOpen}
+        onClose={() => {
+          if (!deactivating) setDeactivateOpen(false);
+        }}
+        title="Desactivar tipo de permiso"
+        subtitle={
+          permitType
+            ? `¿Desactivar «${permitType.code}»? Quedará inactivo y no se ofrecerá en permisos nuevos.`
+            : undefined
+        }
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={deactivating}
+              onClick={() => setDeactivateOpen(false)}
+              className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={deactivating}
+              onClick={() => {
+                void confirmDeactivate();
+              }}
+            >
+              {deactivating ? "Desactivando…" : "Desactivar"}
+            </Button>
+          </div>
+        }
+      >
+        <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+          Las exigencias e historial se conservan; solo se desactiva el tipo.
+        </p>
       </Modal>
     </div>
   );

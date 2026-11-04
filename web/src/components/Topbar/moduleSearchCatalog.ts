@@ -150,6 +150,15 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     canShow: (u) => userHasPermission(u, "trainings", "read"),
   },
   {
+    id: "prevencion-packs",
+    label: "Packs de habilitación",
+    group: "Prevención",
+    to: "/prevencion/packs",
+    keywords: ["pack", "habilitación", "empresa", "persona", "acreditación"],
+    canShow: (u) =>
+      userHasPermission(u, "maestros.document_types", "read"),
+  },
+  {
     id: "notificaciones",
     label: "Notificaciones de vencimiento",
     group: "Cursos",

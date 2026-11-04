@@ -37,6 +37,12 @@ export const documentVisibilitySchema = z.enum([
   "supervisor",
 ]);
 
+/**
+ * Pack de habilitación (Anexo A): empresa o persona.
+ * null = no pertenece a ningún pack.
+ */
+export const documentAccreditationPackSchema = z.enum(["company", "person"]);
+
 /** Código HR: 2 a 4 letras (Figma D41). */
 const documentCodeSchema = z
   .string({ error: "Código es requerido" })
@@ -62,6 +68,8 @@ export const documentTypeFieldsSchema = z.object({
   crewCanView: z.boolean().optional(),
   /** Legacy opcional; si no viene, se deriva de crewCanView. */
   visibility: documentVisibilitySchema.optional(),
+  /** null saca el tipo del pack; omitido en update = no cambia. */
+  accreditationPack: documentAccreditationPackSchema.nullable().optional(),
   businessId: z.uuid().optional(),
   state: z.boolean().optional(),
 });
@@ -79,6 +87,7 @@ export const documentTypeResponseSchema = z
     viewBy: z.string(),
     crewCanView: z.boolean(),
     visibility: z.string(),
+    accreditationPack: documentAccreditationPackSchema.nullable(),
     businessId: z.uuid(),
     state: z.boolean(),
     deletedAt: z.string().datetime().nullable(),
@@ -98,6 +107,8 @@ export const listDocumentTypesQuerySchema = z.object({
   businessId: z.uuid().optional(),
   subtype: documentSubtypeSchema.optional(),
   appliesTo: documentAppliesToSchema.optional(),
+  /** Filtra por membresía de pack (company | person). */
+  accreditationPack: documentAccreditationPackSchema.optional(),
   search: z.string().trim().optional(),
   /**
    * Si true: solo tipos que el actor puede subir (uploadBy)

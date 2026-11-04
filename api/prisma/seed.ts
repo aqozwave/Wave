@@ -309,6 +309,8 @@ const PREVENCION_DOCUMENT_TYPES: ReadonlyArray<{
   /** crew | external | crew_and_external */
   appliesTo: "crew" | "external" | "crew_and_external";
   requiresExpiry: boolean;
+  /** Membresía del pack editable (null = fuera). */
+  accreditationPack: "company" | "person" | null;
 }> = [
   // Empresa externa — los «8»
   {
@@ -316,48 +318,56 @@ const PREVENCION_DOCUMENT_TYPES: ReadonlyArray<{
     name: "Nómina de trabajadores",
     appliesTo: "external",
     requiresExpiry: false,
+    accreditationPack: "company",
   },
   {
     code: "SA",
     name: "Certificado de siniestralidad",
     appliesTo: "external",
     requiresExpiry: true,
+    accreditationPack: "company",
   },
   {
     code: "RS",
     name: "RS (nombre por confirmar)",
     appliesTo: "external",
     requiresExpiry: true,
+    accreditationPack: "company",
   },
   {
     code: "RI",
     name: "RI · RIOHS (nombre por confirmar)",
     appliesTo: "external",
     requiresExpiry: true,
+    accreditationPack: "company",
   },
   {
     code: "MP",
     name: "Matriz de peligros (MIPER)",
     appliesTo: "external",
     requiresExpiry: true,
+    accreditationPack: "company",
   },
   {
     code: "AF",
     name: "AF · Afiliación (nombre por confirmar)",
     appliesTo: "external",
     requiresExpiry: true,
+    accreditationPack: "company",
   },
   {
     code: "PS",
     name: "Procedimiento de trabajo seguro",
     appliesTo: "external",
     requiresExpiry: false,
+    accreditationPack: "company",
   },
   {
     code: "PA",
     name: "PA (nombre por confirmar)",
     appliesTo: "external",
     requiresExpiry: true,
+    accreditationPack: "company",
   },
   // Persona — los «8»
   {
@@ -365,62 +375,72 @@ const PREVENCION_DOCUMENT_TYPES: ReadonlyArray<{
     name: "CD (nombre por confirmar)",
     appliesTo: "crew_and_external",
     requiresExpiry: true,
+    accreditationPack: "person",
   },
   {
     code: "CO",
     name: "CO (nombre por confirmar)",
     appliesTo: "crew_and_external",
     requiresExpiry: true,
+    accreditationPack: "person",
   },
   {
     code: "EN",
     name: "Entrega de EPP",
     appliesTo: "crew_and_external",
     requiresExpiry: false,
+    accreditationPack: "person",
   },
   {
     code: "CE",
     name: "CE (nombre por confirmar)",
     appliesTo: "crew_and_external",
     requiresExpiry: true,
+    accreditationPack: "person",
   },
   {
     code: "OD",
     name: "Informar los riesgos laborales (ODI)",
     appliesTo: "crew_and_external",
     requiresExpiry: true,
+    accreditationPack: "person",
   },
   {
     code: "DA",
     name: "DA (nombre por confirmar)",
     appliesTo: "crew_and_external",
     requiresExpiry: true,
+    accreditationPack: "person",
   },
   {
     code: "DE",
     name: "DE (nombre por confirmar)",
     appliesTo: "crew_and_external",
     requiresExpiry: true,
+    accreditationPack: "person",
   },
   {
     code: "EO",
     name: "Examen ocupacional",
     appliesTo: "crew_and_external",
     requiresExpiry: true,
+    accreditationPack: "person",
   },
-  // Acredita capacitaciones
+  // Acredita capacitaciones (fuera de pack)
   {
     code: "CA",
     name: "Certificado de capacitación",
     appliesTo: "crew_and_external",
     requiresExpiry: true,
+    accreditationPack: null,
   },
-  // Cierre de permiso
+  // Cierre de permiso (fuera de pack)
   {
     code: "PP",
     name: "Check list post permiso de trabajo",
     appliesTo: "external",
     requiresExpiry: false,
+    accreditationPack: null,
   },
 ];
 
@@ -444,13 +464,14 @@ async function seedPrevencionDocumentTypes(): Promise<number> {
       });
 
       if (existing) {
-        // No pisa nombres ETL ya cargados; solo asegura subtype prevencion.
+        // No pisa nombres ETL; asegura subtype + membresía de pack Anexo A.
         await prisma.documentType.update({
           where: { id: existing.id },
           data: {
             subtype: "prevencion",
             uploadBy: "prevention_or_admin",
             viewBy: "prevention_or_admin",
+            accreditationPack: doc.accreditationPack,
           },
         });
       } else {
@@ -466,6 +487,7 @@ async function seedPrevencionDocumentTypes(): Promise<number> {
             viewBy: "prevention_or_admin",
             crewCanView: true,
             visibility: "employee",
+            accreditationPack: doc.accreditationPack,
             state: true,
           },
         });

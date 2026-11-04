@@ -5,6 +5,7 @@ import {
   FileStack,
   GraduationCap,
   HardHat,
+  Package,
   type LucideIcon,
 } from "lucide-react";
 import { Link } from "react-router";
@@ -52,6 +53,14 @@ const HUB_GROUPS: HubGroup[] = [
         icon: GraduationCap,
         to: "/prevencion/capacitaciones",
         canShow: (u) => userHasPermission(u, "trainings", "read"),
+      },
+      {
+        label: "Packs de habilitación",
+        legend: "Qué documentos forman el pack empresa y el pack persona.",
+        icon: Package,
+        to: "/prevencion/packs",
+        canShow: (u) =>
+          userHasPermission(u, "maestros.document_types", "read"),
       },
     ],
   },
