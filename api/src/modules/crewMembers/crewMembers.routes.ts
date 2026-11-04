@@ -2,6 +2,7 @@ import { Router } from "express";
 import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { requirePermission } from "../../middlewares/requirePermission.js";
+import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createCrewMemberMuelleHandler,
@@ -46,24 +47,32 @@ import {
   listCrewMemberDocumentsRequestSchema,
 } from "../crewMemberDocuments/crewMemberDocuments.schemas.js";
 import {
+  changeCrewMemberAccessRoleHandler,
   createCrewMemberHandler,
   deleteCrewMemberHandler,
+  getCrewMemberAccessHandler,
   getCrewMemberHandler,
+  grantCrewMemberAccessHandler,
   listCrewMembersHandler,
+  revokeCrewMemberAccessHandler,
   updateCrewMemberHandler,
 } from "./crewMembers.controller.js";
 import {
+  changeCrewMemberAccessRoleRequestSchema,
   createCrewMemberRequestSchema,
   deleteCrewMemberRequestSchema,
+  getCrewMemberAccessRequestSchema,
   getCrewMemberRequestSchema,
+  grantCrewMemberAccessRequestSchema,
   listCrewMembersRequestSchema,
+  revokeCrewMemberAccessRequestSchema,
   updateCrewMemberRequestSchema,
 } from "./crewMembers.schemas.js";
 
 /**
  * Rutas de tripulantes bajo /api/v1/crew-members.
  * RBAC: embarcados.*; superadmin bypass.
- * Anidados: /:id/documents, /:id/courses, muelles, travesías.
+ * Anidados: /:id/documents, /:id/courses, muelles, travesías, access.
  */
 export const crewMembersRouter = Router();
 
@@ -234,6 +243,42 @@ crewMembersRouter.delete(
   ),
   validate(deleteCrewMemberTravesiaRequestSchema),
   deleteCrewMemberTravesiaHandler,
+);
+
+/** Acceso portal (P7 · Figma D44–D46): estado / otorgar / rol / desvincular. */
+crewMembersRouter.get(
+  "/:id/access",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.READ),
+  validate(getCrewMemberAccessRequestSchema),
+  getCrewMemberAccessHandler,
+);
+
+crewMembersRouter.post(
+  "/:id/access",
+  authenticate,
+  requireTenantManager,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.UPDATE),
+  validate(grantCrewMemberAccessRequestSchema),
+  grantCrewMemberAccessHandler,
+);
+
+crewMembersRouter.patch(
+  "/:id/access",
+  authenticate,
+  requireTenantManager,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.UPDATE),
+  validate(changeCrewMemberAccessRoleRequestSchema),
+  changeCrewMemberAccessRoleHandler,
+);
+
+crewMembersRouter.delete(
+  "/:id/access",
+  authenticate,
+  requireTenantManager,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.UPDATE),
+  validate(revokeCrewMemberAccessRequestSchema),
+  revokeCrewMemberAccessHandler,
 );
 
 crewMembersRouter.get(

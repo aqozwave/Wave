@@ -171,3 +171,103 @@ export async function deleteCrewMemberRequest(
   if (!res.ok) throw toApiError(res, body);
   return body as CrewMember;
 }
+
+/** Roles intercambiables en Acceso (User ↔ Colaborador). */
+export type CrewAccessRoleKey = "user" | "colaborador";
+
+/** Usuario vinculado en la pestaña Acceso. */
+export type CrewAccessUser = {
+  id: string;
+  email: string;
+  username: string;
+  firstName: string;
+  lastName: string;
+  run: string;
+  internalRol: string;
+  roleKey: string | null;
+  roleName: string | null;
+  dataScope: string | null;
+  locationId: string | null;
+  locationName: string | null;
+  lastLoginAt: string | null;
+  confirmed: boolean;
+  state: boolean;
+};
+
+/** Estado Acceso (GET/POST/PATCH/DELETE …/access). */
+export type CrewAccess = {
+  linked: boolean;
+  invitePending: boolean;
+  scopeSummary: string | null;
+  user: CrewAccessUser | null;
+};
+
+/** Body otorgar acceso. */
+export type GrantCrewAccessBody = {
+  email?: string;
+  roleKey?: CrewAccessRoleKey;
+};
+
+/** Body cambiar rol. */
+export type ChangeCrewAccessRoleBody = {
+  roleKey: CrewAccessRoleKey;
+};
+
+/** GET /api/v1/crew-members/:id/access */
+export async function getCrewMemberAccessRequest(
+  accessToken: string,
+  crewMemberId: string,
+): Promise<CrewAccess> {
+  const res = await fetch(`/api/v1/crew-members/${crewMemberId}/access`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as CrewAccess;
+}
+
+/** POST /api/v1/crew-members/:id/access */
+export async function grantCrewMemberAccessRequest(
+  accessToken: string,
+  crewMemberId: string,
+  data: GrantCrewAccessBody = {},
+): Promise<CrewAccess> {
+  const res = await fetch(`/api/v1/crew-members/${crewMemberId}/access`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as CrewAccess;
+}
+
+/** PATCH /api/v1/crew-members/:id/access */
+export async function changeCrewMemberAccessRoleRequest(
+  accessToken: string,
+  crewMemberId: string,
+  data: ChangeCrewAccessRoleBody,
+): Promise<CrewAccess> {
+  const res = await fetch(`/api/v1/crew-members/${crewMemberId}/access`, {
+    method: "PATCH",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as CrewAccess;
+}
+
+/** DELETE /api/v1/crew-members/:id/access */
+export async function revokeCrewMemberAccessRequest(
+  accessToken: string,
+  crewMemberId: string,
+): Promise<CrewAccess> {
+  const res = await fetch(`/api/v1/crew-members/${crewMemberId}/access`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as CrewAccess;
+}

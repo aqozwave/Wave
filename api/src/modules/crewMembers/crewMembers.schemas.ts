@@ -143,3 +143,81 @@ export type CreateCrewMemberBody = z.infer<typeof createCrewMemberBodySchema>;
 export type ListCrewMembersQuery = z.infer<typeof listCrewMembersQuerySchema>;
 export type CrewMemberResponse = z.infer<typeof crewMemberResponseSchema>;
 export type UpdateCrewMemberBody = z.infer<typeof updateCrewMemberBodySchema>;
+
+/** Roles permitidos en Acceso (Figma D45/D46: User ↔ Colaborador). */
+export const crewAccessRoleKeySchema = z.enum(["user", "colaborador"]);
+
+/** Usuario vinculado en la pestaña Acceso. */
+export const crewAccessUserSchema = z
+  .object({
+    id: z.uuid(),
+    email: z.email(),
+    username: z.string(),
+    firstName: z.string(),
+    lastName: z.string(),
+    run: z.string(),
+    internalRol: z.string(),
+    roleKey: z.string().nullable(),
+    roleName: z.string().nullable(),
+    dataScope: z.string().nullable(),
+    locationId: z.uuid().nullable(),
+    locationName: z.string().nullable(),
+    lastLoginAt: z.string().datetime().nullable(),
+    confirmed: z.boolean(),
+    state: z.boolean(),
+  })
+  .openapi("CrewAccessUser");
+
+/**
+ * Estado Acceso del tripulante (Figma D44 / D44b).
+ * linked=false → empty state; linked=true → ficha de cuenta.
+ */
+export const crewAccessResponseSchema = z
+  .object({
+    linked: z.boolean(),
+    /** true si hay cuenta pero aún no confirmó / no definió clave. */
+    invitePending: z.boolean(),
+    /** Resumen legible del alcance (ej. "User · Wellboat Aurora"). */
+    scopeSummary: z.string().nullable(),
+    user: crewAccessUserSchema.nullable(),
+  })
+  .openapi("CrewAccess");
+
+export const getCrewMemberAccessRequestSchema = z.object({
+  params: crewMemberIdParamsSchema,
+});
+
+/** Body otorgar acceso: invita o vincula cuenta existente. */
+export const grantCrewMemberAccessBodySchema = z.object({
+  /** Si se omite, usa el email del tripulante. */
+  email: z.email().trim().toLowerCase().optional(),
+  /** Rol inicial; por defecto User (tripulante de nave). */
+  roleKey: crewAccessRoleKeySchema.optional().default("user"),
+});
+
+export const grantCrewMemberAccessRequestSchema = z.object({
+  params: crewMemberIdParamsSchema,
+  body: grantCrewMemberAccessBodySchema,
+});
+
+/** Body cambiar rol User ↔ Colaborador (solo admin). */
+export const changeCrewMemberAccessRoleBodySchema = z.object({
+  roleKey: crewAccessRoleKeySchema,
+});
+
+export const changeCrewMemberAccessRoleRequestSchema = z.object({
+  params: crewMemberIdParamsSchema,
+  body: changeCrewMemberAccessRoleBodySchema,
+});
+
+export const revokeCrewMemberAccessRequestSchema = z.object({
+  params: crewMemberIdParamsSchema,
+});
+
+export type GrantCrewMemberAccessBody = z.infer<
+  typeof grantCrewMemberAccessBodySchema
+>;
+export type ChangeCrewMemberAccessRoleBody = z.infer<
+  typeof changeCrewMemberAccessRoleBodySchema
+>;
+export type CrewAccessResponse = z.infer<typeof crewAccessResponseSchema>;

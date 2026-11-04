@@ -1,6 +1,9 @@
-import { Prisma, type CrewMember } from "@prisma/client";
+import { randomBytes } from "node:crypto";
+import { Prisma, type CrewMember, type RoleDataScope } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
+import { hashPassword } from "../../lib/password.js";
 import { prisma } from "../../lib/prisma.js";
+import { requestPasswordReset } from "../auth/auth.service.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import {
   assignCertificateCoursesToCrewMember,
@@ -8,14 +11,21 @@ import {
   reconcileCrewMemberCertificateCourses,
 } from "../crewMemberCourses/crewMemberCourses.service.js";
 import type {
+  ChangeCrewMemberAccessRoleBody,
   CreateCrewMemberBody,
+  CrewAccessResponse,
   CrewMemberResponse,
+  GrantCrewMemberAccessBody,
   ListCrewMembersQuery,
   UpdateCrewMemberBody,
 } from "./crewMembers.schemas.js";
 
 /** Actor mínimo para reglas de tenant. */
 type Actor = Pick<AuthUser, "internalRol" | "businessId">;
+
+/** Claves de rol permitidas en Acceso (capitán / tripulante de nave). */
+const ACCESS_ROLE_KEYS = ["user", "colaborador"] as const;
+type AccessRoleKey = (typeof ACCESS_ROLE_KEYS)[number];
 
 /**
  * Serializa fila Prisma → contrato Zod.
@@ -597,4 +607,373 @@ export async function deleteCrewMemberById(
   });
 
   return toCrewMemberResponse(deleted);
+}
+
+/** Etiqueta corta del dataScope para UI Acceso. */
+function dataScopeLabel(scope: RoleDataScope | null | undefined): string {
+  switch (scope) {
+    case "all":
+      return "Sistema";
+    case "business":
+      return "Empresa";
+    case "location":
+      return "Nave / lugar";
+    case "area":
+      return "Área";
+    case "self":
+      return "Propio";
+    default:
+      return "—";
+  }
+}
+
+/**
+ * Serializa el estado Acceso a partir del tripulante + usuario vinculado.
+ * Si no hay userId, linked=false (empty state D44b).
+ */
+async function toCrewAccessResponse(
+  crew: CrewMember,
+): Promise<CrewAccessResponse> {
+  if (!crew.userId) {
+    return {
+      linked: false,
+      invitePending: false,
+      scopeSummary: null,
+      user: null,
+    };
+  }
+
+  const user = await prisma.user.findFirst({
+    where: { id: crew.userId, deletedAt: null },
+    include: {
+      role: true,
+      location: { select: { id: true, name: true } },
+    },
+  });
+
+  // FK huérfana: tratar como no vinculado para no romper la ficha.
+  if (!user) {
+    return {
+      linked: false,
+      invitePending: false,
+      scopeSummary: null,
+      user: null,
+    };
+  }
+
+  const roleKey = user.role?.key ?? null;
+  const roleName = user.role?.name ?? null;
+  const dataScope = user.role?.dataScope ?? null;
+  const locationName = user.location?.name ?? null;
+  const scopeParts = [
+    roleName ?? user.internalRol,
+    locationName ?? dataScopeLabel(dataScope),
+  ].filter(Boolean);
+  const scopeSummary = scopeParts.join(" · ") || null;
+
+  return {
+    linked: true,
+    invitePending: !user.confirmed,
+    scopeSummary,
+    user: {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      run: user.run,
+      internalRol: user.internalRol,
+      roleKey,
+      roleName,
+      dataScope,
+      locationId: user.locationId,
+      locationName,
+      lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
+      confirmed: user.confirmed,
+      state: user.state,
+    },
+  };
+}
+
+/** Carga tripulante activo con chequeo de tenant; 404 si no existe o sin acceso. */
+async function loadCrewForAccess(
+  actor: Actor,
+  crewMemberId: string,
+): Promise<CrewMember> {
+  const crew = await prisma.crewMember.findFirst({
+    where: { id: crewMemberId, deletedAt: null },
+  });
+  if (!crew) {
+    throw new AppError(
+      404,
+      "crew_member_not_found",
+      "Tripulante no encontrado",
+    );
+  }
+  assertCrewTenantAccess(actor, crew.businessId);
+  return crew;
+}
+
+/** Resuelve el Role de sistema user|colaborador por key. */
+async function resolveAccessRole(roleKey: AccessRoleKey) {
+  const role = await prisma.role.findFirst({
+    where: { key: roleKey, deletedAt: null, state: true },
+  });
+  if (!role) {
+    throw new AppError(
+      500,
+      "role_missing",
+      `Rol de sistema "${roleKey}" no encontrado`,
+    );
+  }
+  return role;
+}
+
+/**
+ * Username a partir del local-part del email; asegura unicidad con sufijo.
+ * Solo [a-z0-9._-] para no chocar con validaciones de alta admin.
+ */
+async function uniqueUsernameFromEmail(email: string): Promise<string> {
+  const local = email.split("@")[0] ?? "user";
+  const base = local
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, "")
+    .slice(0, 24) || "user";
+
+  for (let i = 0; i < 8; i += 1) {
+    const candidate = i === 0 ? base : `${base}${i}`;
+    const taken = await prisma.user.findFirst({
+      where: { username: candidate, deletedAt: null },
+      select: { id: true },
+    });
+    if (!taken) return candidate;
+  }
+
+  // Último recurso: base + hex corto.
+  return `${base}${randomBytes(3).toString("hex")}`;
+}
+
+/** Contraseña temporal fuerte; el usuario la cambia con el enlace de invitación. */
+function generateInvitePassword(): string {
+  // Prefijo fijo cumple mayúscula/minúscula/número; el hex aporta entropía.
+  return `Wave${randomBytes(9).toString("hex")}9a`;
+}
+
+/** GET Acceso: estado de vinculación tripulante ↔ usuario. */
+export async function getCrewMemberAccess(
+  actor: Actor,
+  crewMemberId: string,
+): Promise<CrewAccessResponse> {
+  const crew = await loadCrewForAccess(actor, crewMemberId);
+  return toCrewAccessResponse(crew);
+}
+
+/**
+ * POST Acceso: otorga acceso al portal (Figma D45).
+ * - Si el email ya tiene usuario en la empresa → vincula (1:1).
+ * - Si no → crea usuario confirmed=false, rol User/Colaborador, envía reset.
+ */
+export async function grantCrewMemberAccess(
+  actor: Actor,
+  crewMemberId: string,
+  body: GrantCrewMemberAccessBody,
+): Promise<CrewAccessResponse> {
+  const crew = await loadCrewForAccess(actor, crewMemberId);
+
+  if (crew.userId) {
+    throw new AppError(
+      409,
+      "already_linked",
+      "Este tripulante ya tiene una cuenta vinculada",
+    );
+  }
+
+  const email = (body.email ?? crew.email).trim().toLowerCase();
+  const roleKey = (body.roleKey ?? "user") as AccessRoleKey;
+  const role = await resolveAccessRole(roleKey);
+
+  const existing = await prisma.user.findFirst({
+    where: { email, deletedAt: null },
+  });
+
+  if (existing) {
+    // No vincular cuentas de otra empresa ni superadmin.
+    if (
+      existing.internalRol === "superadmin" ||
+      (existing.businessId && existing.businessId !== crew.businessId)
+    ) {
+      throw new AppError(
+        409,
+        "email_other_tenant",
+        "Ese correo ya pertenece a un usuario de otra empresa",
+      );
+    }
+
+    const linkedElsewhere = await prisma.crewMember.findFirst({
+      where: { userId: existing.id, deletedAt: null },
+      select: { id: true },
+    });
+    if (linkedElsewhere) {
+      throw new AppError(
+        409,
+        "user_already_linked",
+        "Ese usuario ya está vinculado a otro tripulante",
+      );
+    }
+
+    // Alinea tenant/rol de nave si faltaba; no pisa un rol admin existente.
+    const canDowngradeToAccessRole = ACCESS_ROLE_KEYS.includes(
+      existing.internalRol as AccessRoleKey,
+    );
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: existing.id },
+        data: {
+          businessId: existing.businessId ?? crew.businessId,
+          locationId: existing.locationId ?? crew.locationId,
+          ...(canDowngradeToAccessRole
+            ? { roleId: role.id, internalRol: role.key }
+            : {}),
+        },
+      });
+      await tx.crewMember.update({
+        where: { id: crew.id },
+        data: { userId: existing.id },
+      });
+    });
+
+    // Si aún no confirmó, reenvía el enlace de clave.
+    if (!existing.confirmed) {
+      await requestPasswordReset(existing.email);
+    }
+
+    const updated = await prisma.crewMember.findFirstOrThrow({
+      where: { id: crew.id },
+    });
+    return toCrewAccessResponse(updated);
+  }
+
+  // Alta nueva: RUN del tripulante no puede estar ya en users.
+  const runTaken = await prisma.user.findFirst({
+    where: { run: crew.run, deletedAt: null },
+    select: { id: true },
+  });
+  if (runTaken) {
+    throw new AppError(
+      409,
+      "duplicate_run",
+      "Ya existe un usuario con el RUN de este tripulante",
+    );
+  }
+
+  const username = await uniqueUsernameFromEmail(email);
+  const passwordHash = await hashPassword(generateInvitePassword());
+
+  await prisma.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: {
+        email,
+        username,
+        passwordHash,
+        firstName: crew.firstName,
+        lastName: crew.lastName,
+        run: crew.run,
+        confirmed: false,
+        state: true,
+        internalRol: role.key,
+        roleId: role.id,
+        businessId: crew.businessId,
+        locationId: crew.locationId,
+        areaId: crew.areaId,
+      },
+    });
+    await tx.crewMember.update({
+      where: { id: crew.id },
+      data: { userId: created.id },
+    });
+  });
+
+  await requestPasswordReset(email);
+
+  const updated = await prisma.crewMember.findFirstOrThrow({
+    where: { id: crew.id },
+  });
+  return toCrewAccessResponse(updated);
+}
+
+/**
+ * PATCH Acceso: cambia rol User ↔ Colaborador (Figma D46).
+ * Solo aplica si ya hay cuenta vinculada.
+ */
+export async function changeCrewMemberAccessRole(
+  actor: Actor,
+  crewMemberId: string,
+  body: ChangeCrewMemberAccessRoleBody,
+): Promise<CrewAccessResponse> {
+  const crew = await loadCrewForAccess(actor, crewMemberId);
+
+  if (!crew.userId) {
+    throw new AppError(
+      400,
+      "not_linked",
+      "Este tripulante no tiene cuenta vinculada",
+    );
+  }
+
+  const user = await prisma.user.findFirst({
+    where: { id: crew.userId, deletedAt: null },
+  });
+  if (!user) {
+    throw new AppError(404, "user_not_found", "Usuario vinculado no encontrado");
+  }
+
+  // Solo se puede rotar entre user y colaborador (no admin/rrhh/…).
+  if (!ACCESS_ROLE_KEYS.includes(user.internalRol as AccessRoleKey)) {
+    throw new AppError(
+      400,
+      "role_not_swappable",
+      "Solo se puede cambiar el rol entre User y Colaborador",
+    );
+  }
+
+  const role = await resolveAccessRole(body.roleKey);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      roleId: role.id,
+      internalRol: role.key,
+      // Colaborador/User operan a nivel nave: alinea location al tripulante.
+      locationId: user.locationId ?? crew.locationId,
+    },
+  });
+
+  return toCrewAccessResponse(crew);
+}
+
+/**
+ * DELETE Acceso: desvincula la cuenta (Figma D44m).
+ * No borra ni desactiva el usuario; solo quita crew.userId.
+ */
+export async function revokeCrewMemberAccess(
+  actor: Actor,
+  crewMemberId: string,
+): Promise<CrewAccessResponse> {
+  const crew = await loadCrewForAccess(actor, crewMemberId);
+
+  if (!crew.userId) {
+    throw new AppError(
+      400,
+      "not_linked",
+      "Este tripulante no tiene cuenta vinculada",
+    );
+  }
+
+  const updated = await prisma.crewMember.update({
+    where: { id: crew.id },
+    data: { user: { disconnect: true } },
+  });
+
+  return toCrewAccessResponse(updated);
 }

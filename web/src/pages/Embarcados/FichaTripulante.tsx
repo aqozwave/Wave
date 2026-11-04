@@ -47,6 +47,7 @@ import {
 } from "../../lib/boardingBook";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { isRutValid, normalizeRut } from "../../lib/rut";
+import { CrewAccessPanel } from "./CrewAccessPanel";
 import { CrewBoardingBookPanel } from "./CrewBoardingBookPanel";
 import { CrewCoursesPanel } from "./CrewCoursesPanel";
 import { CrewDocumentsPanel } from "./CrewDocumentsPanel";
@@ -85,13 +86,14 @@ function dateInputToIso(date: string): string {
 const selectClass =
   "h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-nachipa-primary)]";
 
-/** Tabs de la ficha (Figma D3). */
+/** Tabs de la ficha (Figma D3 + Acceso P7). */
 type FichaTab =
   | "cursos"
   | "capacitaciones"
   | "libreta"
   | "datos"
   | "documentos"
+  | "acceso"
   | "historial";
 
 /** Capitaliza para UI. */
@@ -541,6 +543,7 @@ export function FichaTripulante() {
     { id: "libreta", label: "Libreta de embarque" },
     { id: "datos", label: "Datos personales" },
     { id: "documentos", label: "Documentos" },
+    { id: "acceso", label: "Acceso" },
     { id: "historial", label: "Historial" },
   ];
 
@@ -738,6 +741,13 @@ export function FichaTripulante() {
             ) : null}
             {tab === "capacitaciones" ? (
               <PlaceholderCard text="Capacitaciones (Prevención) llegan con ese módulo." />
+            ) : null}
+            {tab === "acceso" && id && crew ? (
+              <CrewAccessPanel
+                crewMemberId={id}
+                crewEmail={crew.email}
+                crewDisplayName={fullName(crew)}
+              />
             ) : null}
             {tab === "historial" ? (
               <PlaceholderCard text="Bitácora / historial: Figma D31 — pendiente." />

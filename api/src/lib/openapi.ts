@@ -151,10 +151,13 @@ import {
   uploadUserPhotoResponseSchema,
 } from "../modules/users/users.schemas.js";
 import {
+  changeCrewMemberAccessRoleBodySchema,
   createCrewMemberBodySchema,
   createCrewMemberResponseSchema,
+  crewAccessResponseSchema,
   deleteCrewMemberResponseSchema,
   getCrewMemberResponseSchema,
+  grantCrewMemberAccessBodySchema,
   listCrewMembersResponseSchema,
   updateCrewMemberBodySchema,
   updateCrewMemberResponseSchema,
@@ -3259,6 +3262,103 @@ registry.registerPath({
       },
     },
     404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/crew-members/{id}/access",
+  tags: ["CrewMembers"],
+  summary: "Estado Acceso (tripulante ↔ usuario)",
+  description:
+    "Pestaña Acceso (Figma D44/D44b). linked=false → empty; linked=true → cuenta + alcance.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Estado Acceso",
+      content: {
+        "application/json": { schema: crewAccessResponseSchema },
+      },
+    },
+    404: { description: "Tripulante no encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/crew-members/{id}/access",
+  tags: ["CrewMembers"],
+  summary: "Otorgar acceso al portal",
+  description:
+    "Figma D45. Crea usuario (invite reset) o vincula uno existente por email. Solo admin/superadmin.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: grantCrewMemberAccessBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Acceso otorgado",
+      content: {
+        "application/json": { schema: crewAccessResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    403: { description: "Solo admin" },
+    409: { description: "Ya vinculado / email en otro tenant / RUN duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/crew-members/{id}/access",
+  tags: ["CrewMembers"],
+  summary: "Cambiar rol Acceso (User ↔ Colaborador)",
+  description: "Figma D46. Solo admin/superadmin; solo entre user y colaborador.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: changeCrewMemberAccessRoleBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Rol actualizado",
+      content: {
+        "application/json": { schema: crewAccessResponseSchema },
+      },
+    },
+    400: { description: "Sin vínculo o rol no intercambiable" },
+    403: { description: "Solo admin" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/crew-members/{id}/access",
+  tags: ["CrewMembers"],
+  summary: "Desvincular acceso",
+  description:
+    "Figma D44m. Quita crew.userId; no borra ni desactiva la cuenta de usuario.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Desvinculado",
+      content: {
+        "application/json": { schema: crewAccessResponseSchema },
+      },
+    },
+    400: { description: "Sin vínculo" },
+    403: { description: "Solo admin" },
   },
 });
 

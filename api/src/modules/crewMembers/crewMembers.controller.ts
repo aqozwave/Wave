@@ -6,19 +6,26 @@ import {
 } from "../activityLogs/activityLogs.service.js";
 import {
   createCrewMemberResponseSchema,
+  crewAccessResponseSchema,
   deleteCrewMemberResponseSchema,
   getCrewMemberResponseSchema,
   listCrewMembersResponseSchema,
   updateCrewMemberResponseSchema,
+  type ChangeCrewMemberAccessRoleBody,
   type CreateCrewMemberBody,
+  type GrantCrewMemberAccessBody,
   type ListCrewMembersQuery,
   type UpdateCrewMemberBody,
 } from "./crewMembers.schemas.js";
 import {
+  changeCrewMemberAccessRole,
   createCrewMember,
   deleteCrewMemberById,
+  getCrewMemberAccess,
   getCrewMemberById,
+  grantCrewMemberAccess,
   listCrewMembers,
+  revokeCrewMemberAccess,
   updateCrewMember,
 } from "./crewMembers.service.js";
 
@@ -114,4 +121,90 @@ export async function deleteCrewMemberHandler(
     targetLabel: crewLabel(deleted),
   });
   res.status(200).json(deleteCrewMemberResponseSchema.parse(deleted));
+}
+
+/** GET /crew-members/:id/access — estado Acceso (Figma D44). */
+export async function getCrewMemberAccessHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+  const { id } = req.params as { id: string };
+  const result = await getCrewMemberAccess(req.user, id);
+  res.status(200).json(crewAccessResponseSchema.parse(result));
+}
+
+/** POST /crew-members/:id/access — otorgar acceso / invitar (Figma D45). */
+export async function grantCrewMemberAccessHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+  const { id } = req.params as { id: string };
+  const body = req.body as GrantCrewMemberAccessBody;
+  const result = await grantCrewMemberAccess(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "crewMember",
+    resourceId: id,
+    targetLabel: result.user
+      ? `${result.user.firstName} ${result.user.lastName}`.trim()
+      : id,
+    metadata: {
+      fields: ["access.grant"],
+      email: result.user?.email,
+      roleKey: result.user?.roleKey,
+    },
+  });
+  res.status(201).json(crewAccessResponseSchema.parse(result));
+}
+
+/** PATCH /crew-members/:id/access — cambiar rol User ↔ Colaborador (D46). */
+export async function changeCrewMemberAccessRoleHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+  const { id } = req.params as { id: string };
+  const body = req.body as ChangeCrewMemberAccessRoleBody;
+  const result = await changeCrewMemberAccessRole(req.user, id, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "crewMember",
+    resourceId: id,
+    targetLabel: result.user
+      ? `${result.user.firstName} ${result.user.lastName}`.trim()
+      : id,
+    metadata: {
+      fields: ["access.role"],
+      roleKey: body.roleKey,
+    },
+  });
+  res.status(200).json(crewAccessResponseSchema.parse(result));
+}
+
+/** DELETE /crew-members/:id/access — desvincular cuenta (D44m). */
+export async function revokeCrewMemberAccessHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+  const { id } = req.params as { id: string };
+  const result = await revokeCrewMemberAccess(req.user, id);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "crewMember",
+    resourceId: id,
+    targetLabel: id,
+    metadata: { fields: ["access.revoke"] },
+  });
+  res.status(200).json(crewAccessResponseSchema.parse(result));
 }

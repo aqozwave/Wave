@@ -1,0 +1,48 @@
+meta {
+  name: Post crew member access
+  type: http
+  seq: 22
+}
+
+post {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/access
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "roleKey": "user"
+  }
+}
+
+docs {
+  Otorgar acceso (Figma D45). Solo admin/superadmin.
+  Sin email → usa el del tripulante. Crea usuario + invite o vincula existente.
+  Esperado: 201, linked=true, invitePending=true si alta nueva.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+}
+
+script:post-response {
+  if (res.status === 201 && res.body?.user?.id) {
+    bru.setVar("linkedUserId", res.body.user.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.linked: eq true
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
