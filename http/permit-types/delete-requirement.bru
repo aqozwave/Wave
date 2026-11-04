@@ -1,0 +1,38 @@
+meta {
+  name: Delete requirement
+  type: http
+  seq: 10
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/permit-types/{{permitTypeId}}/requirements/{{requirementId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Desactiva (active=false). No borra la fila.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const typeId = bru.getEnvVar("permitTypeId");
+  const reqId = bru.getEnvVar("requirementId");
+  if (!token || !typeId || !reqId) {
+    throw new Error("Definí accessToken, permitTypeId y requirementId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.active: eq false
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

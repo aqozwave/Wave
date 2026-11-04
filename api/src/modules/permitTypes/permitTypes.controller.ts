@@ -5,25 +5,41 @@ import {
   safeChangedFields,
 } from "../activityLogs/activityLogs.service.js";
 import {
+  createPermitChecklistItemResponseSchema,
+  createPermitTypeRequirementResponseSchema,
   createPermitTypeResponseSchema,
+  deletePermitChecklistItemResponseSchema,
+  deletePermitTypeRequirementResponseSchema,
   deletePermitTypeResponseSchema,
   getPermitTypeResponseSchema,
   listPermitChecklistItemsResponseSchema,
   listPermitTypeRequirementsResponseSchema,
   listPermitTypesResponseSchema,
+  updatePermitChecklistItemResponseSchema,
+  updatePermitTypeRequirementResponseSchema,
   updatePermitTypeResponseSchema,
+  type CreatePermitChecklistItemBody,
   type CreatePermitTypeBody,
+  type CreatePermitTypeRequirementBody,
   type ListPermitTypesQuery,
+  type UpdatePermitChecklistItemBody,
   type UpdatePermitTypeBody,
+  type UpdatePermitTypeRequirementBody,
 } from "./permitTypes.schemas.js";
 import {
+  createPermitChecklistItem,
   createPermitType,
+  createPermitTypeRequirement,
+  deletePermitChecklistItem,
   deletePermitType,
+  deletePermitTypeRequirement,
   getPermitTypeById,
   listPermitChecklistItems,
   listPermitTypeRequirements,
   listPermitTypes,
+  updatePermitChecklistItem,
   updatePermitType,
+  updatePermitTypeRequirement,
 } from "./permitTypes.service.js";
 
 /** GET /permit-types — listado paginado del catálogo. */
@@ -115,6 +131,75 @@ export async function listPermitTypeRequirementsHandler(
   res.status(200).json(listPermitTypeRequirementsResponseSchema.parse(result));
 }
 
+/** POST /permit-types/:id/requirements — alta exigencia. */
+export async function createPermitTypeRequirementHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as CreatePermitTypeRequirementBody;
+  const result = await createPermitTypeRequirement(
+    req.user,
+    req.params.id as string,
+    body,
+  );
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "permitType",
+    resourceId: result.permitTypeId,
+    targetLabel: `requirement · ${result.key}`,
+    metadata: { requirementId: result.id },
+  });
+  res.status(201).json(createPermitTypeRequirementResponseSchema.parse(result));
+}
+
+/** PATCH /permit-types/:id/requirements/:requirementId. */
+export async function updatePermitTypeRequirementHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as UpdatePermitTypeRequirementBody;
+  const result = await updatePermitTypeRequirement(
+    req.user,
+    req.params.id as string,
+    req.params.requirementId as string,
+    body,
+  );
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "permitType",
+    resourceId: result.permitTypeId,
+    targetLabel: `requirement · ${result.key}`,
+    metadata: {
+      requirementId: result.id,
+      fields: safeChangedFields(body),
+    },
+  });
+  res.status(200).json(updatePermitTypeRequirementResponseSchema.parse(result));
+}
+
+/** DELETE /permit-types/:id/requirements/:requirementId — active=false. */
+export async function deletePermitTypeRequirementHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await deletePermitTypeRequirement(
+    req.user,
+    req.params.id as string,
+    req.params.requirementId as string,
+  );
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "permitType",
+    resourceId: result.permitTypeId,
+    targetLabel: `requirement · ${result.key}`,
+    metadata: { requirementId: result.id },
+  });
+  res.status(200).json(deletePermitTypeRequirementResponseSchema.parse(result));
+}
+
 /** GET /permit-types/:id/checklist-items — ítems del checklist del tipo. */
 export async function listPermitChecklistItemsHandler(
   req: Request,
@@ -126,4 +211,73 @@ export async function listPermitChecklistItemsHandler(
     req.params.id as string,
   );
   res.status(200).json(listPermitChecklistItemsResponseSchema.parse(result));
+}
+
+/** POST /permit-types/:id/checklist-items. */
+export async function createPermitChecklistItemHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as CreatePermitChecklistItemBody;
+  const result = await createPermitChecklistItem(
+    req.user,
+    req.params.id as string,
+    body,
+  );
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "permitType",
+    resourceId: result.permitTypeId,
+    targetLabel: `checklist · #${result.order}`,
+    metadata: { checklistItemId: result.id },
+  });
+  res.status(201).json(createPermitChecklistItemResponseSchema.parse(result));
+}
+
+/** PATCH /permit-types/:id/checklist-items/:itemId. */
+export async function updatePermitChecklistItemHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as UpdatePermitChecklistItemBody;
+  const result = await updatePermitChecklistItem(
+    req.user,
+    req.params.id as string,
+    req.params.itemId as string,
+    body,
+  );
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "permitType",
+    resourceId: result.permitTypeId,
+    targetLabel: `checklist · #${result.order}`,
+    metadata: {
+      checklistItemId: result.id,
+      fields: safeChangedFields(body),
+    },
+  });
+  res.status(200).json(updatePermitChecklistItemResponseSchema.parse(result));
+}
+
+/** DELETE /permit-types/:id/checklist-items/:itemId — active=false. */
+export async function deletePermitChecklistItemHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await deletePermitChecklistItem(
+    req.user,
+    req.params.id as string,
+    req.params.itemId as string,
+  );
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "permitType",
+    resourceId: result.permitTypeId,
+    targetLabel: `checklist · #${result.order}`,
+    metadata: { checklistItemId: result.id },
+  });
+  res.status(200).json(deletePermitChecklistItemResponseSchema.parse(result));
 }

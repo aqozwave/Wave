@@ -5,27 +5,40 @@ import { requirePermission } from "../../middlewares/requirePermission.js";
 import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
 import { validate } from "../../middlewares/validate.js";
 import {
+  createPermitChecklistItemHandler,
   createPermitTypeHandler,
+  createPermitTypeRequirementHandler,
+  deletePermitChecklistItemHandler,
   deletePermitTypeHandler,
+  deletePermitTypeRequirementHandler,
   getPermitTypeHandler,
   listPermitChecklistItemsHandler,
   listPermitTypeRequirementsHandler,
   listPermitTypesHandler,
+  updatePermitChecklistItemHandler,
   updatePermitTypeHandler,
+  updatePermitTypeRequirementHandler,
 } from "./permitTypes.controller.js";
 import {
+  createPermitChecklistItemRequestSchema,
   createPermitTypeRequestSchema,
+  createPermitTypeRequirementRequestSchema,
+  deletePermitChecklistItemRequestSchema,
   deletePermitTypeRequestSchema,
+  deletePermitTypeRequirementRequestSchema,
   getPermitTypeRequestSchema,
   listPermitChecklistItemsRequestSchema,
   listPermitTypeRequirementsRequestSchema,
   listPermitTypesRequestSchema,
+  updatePermitChecklistItemRequestSchema,
   updatePermitTypeRequestSchema,
+  updatePermitTypeRequirementRequestSchema,
 } from "./permitTypes.schemas.js";
 
 /**
  * Catálogo tipos de permiso bajo /api/v1/permit-types.
  * Lectura: permit_types.read. Mutaciones: admin/superadmin + create/update/deactivate.
+ * Nested: requirements y checklist-items (mismas reglas).
  */
 export const permitTypesRouter = Router();
 
@@ -52,7 +65,7 @@ permitTypesRouter.post(
   createPermitTypeHandler,
 );
 
-/** Antes de /:id para no confundir el path (Express matchea en orden). */
+/** Nested requirements — antes de /:id plano. */
 permitTypesRouter.get(
   "/:id/requirements",
   authenticate,
@@ -64,6 +77,43 @@ permitTypesRouter.get(
   listPermitTypeRequirementsHandler,
 );
 
+permitTypesRouter.post(
+  "/:id/requirements",
+  authenticate,
+  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.PERMIT_TYPES,
+    PERMISSION_ACTION.CREATE,
+  ),
+  validate(createPermitTypeRequirementRequestSchema),
+  createPermitTypeRequirementHandler,
+);
+
+permitTypesRouter.patch(
+  "/:id/requirements/:requirementId",
+  authenticate,
+  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.PERMIT_TYPES,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(updatePermitTypeRequirementRequestSchema),
+  updatePermitTypeRequirementHandler,
+);
+
+permitTypesRouter.delete(
+  "/:id/requirements/:requirementId",
+  authenticate,
+  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.PERMIT_TYPES,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
+  validate(deletePermitTypeRequirementRequestSchema),
+  deletePermitTypeRequirementHandler,
+);
+
+/** Nested checklist — antes de /:id plano. */
 permitTypesRouter.get(
   "/:id/checklist-items",
   authenticate,
@@ -73,6 +123,42 @@ permitTypesRouter.get(
   ),
   validate(listPermitChecklistItemsRequestSchema),
   listPermitChecklistItemsHandler,
+);
+
+permitTypesRouter.post(
+  "/:id/checklist-items",
+  authenticate,
+  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.PERMIT_TYPES,
+    PERMISSION_ACTION.CREATE,
+  ),
+  validate(createPermitChecklistItemRequestSchema),
+  createPermitChecklistItemHandler,
+);
+
+permitTypesRouter.patch(
+  "/:id/checklist-items/:itemId",
+  authenticate,
+  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.PERMIT_TYPES,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(updatePermitChecklistItemRequestSchema),
+  updatePermitChecklistItemHandler,
+);
+
+permitTypesRouter.delete(
+  "/:id/checklist-items/:itemId",
+  authenticate,
+  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.PERMIT_TYPES,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
+  validate(deletePermitChecklistItemRequestSchema),
+  deletePermitChecklistItemHandler,
 );
 
 permitTypesRouter.get(

@@ -1,0 +1,43 @@
+meta {
+  name: Patch checklist item
+  type: http
+  seq: 12
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/permit-types/{{permitTypeId}}/checklist-items/{{checklistItemId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "text": "Ítem de prueba (editado)"
+  }
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const typeId = bru.getEnvVar("permitTypeId");
+  const itemId = bru.getEnvVar("checklistItemId");
+  if (!token || !typeId || !itemId) {
+    throw new Error("Definí accessToken, permitTypeId y checklistItemId");
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

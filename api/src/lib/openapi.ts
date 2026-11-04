@@ -209,14 +209,24 @@ import {
   updateDocumentTypeResponseSchema,
 } from "../modules/documentTypes/documentTypes.schemas.js";
 import {
+  createPermitChecklistItemBodySchema,
+  createPermitChecklistItemResponseSchema,
   createPermitTypeBodySchema,
+  createPermitTypeRequirementBodySchema,
+  createPermitTypeRequirementResponseSchema,
   createPermitTypeResponseSchema,
+  deletePermitChecklistItemResponseSchema,
+  deletePermitTypeRequirementResponseSchema,
   deletePermitTypeResponseSchema,
   getPermitTypeResponseSchema,
   listPermitChecklistItemsResponseSchema,
   listPermitTypeRequirementsResponseSchema,
   listPermitTypesResponseSchema,
+  updatePermitChecklistItemBodySchema,
+  updatePermitChecklistItemResponseSchema,
   updatePermitTypeBodySchema,
+  updatePermitTypeRequirementBodySchema,
+  updatePermitTypeRequirementResponseSchema,
   updatePermitTypeResponseSchema,
 } from "../modules/permitTypes/permitTypes.schemas.js";
 import {
@@ -1779,6 +1789,95 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/api/v1/permit-types/{id}/requirements",
+  tags: ["PermitTypes"],
+  summary: "Crear exigencia de un tipo",
+  description:
+    "Admin/superadmin + permit_types.create. Key única por tipo.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createPermitTypeRequirementBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creada",
+      content: {
+        "application/json": {
+          schema: createPermitTypeRequirementResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación o FK inválida" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Tipo no encontrado" },
+    409: { description: "Key duplicada" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/permit-types/{id}/requirements/{requirementId}",
+  tags: ["PermitTypes"],
+  summary: "Actualizar exigencia",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), requirementId: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updatePermitTypeRequirementBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizada",
+      content: {
+        "application/json": {
+          schema: updatePermitTypeRequirementResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrada" },
+    409: { description: "Key duplicada" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/permit-types/{id}/requirements/{requirementId}",
+  tags: ["PermitTypes"],
+  summary: "Desactivar exigencia",
+  description: "active=false (sin deletedAt en el modelo).",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), requirementId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Desactivada",
+      content: {
+        "application/json": {
+          schema: deletePermitTypeRequirementResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrada" },
+  },
+});
+
+registry.registerPath({
   method: "get",
   path: "/api/v1/permit-types/{id}/checklist-items",
   tags: ["PermitTypes"],
@@ -1801,6 +1900,94 @@ registry.registerPath({
     401: { description: "Sin token" },
     403: { description: "Sin permiso o módulo work_permits apagado" },
     404: { description: "Tipo no encontrado o otra empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/permit-types/{id}/checklist-items",
+  tags: ["PermitTypes"],
+  summary: "Crear ítem de checklist",
+  description: "Si no mandás order, se asigna max+1.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createPermitChecklistItemBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": {
+          schema: createPermitChecklistItemResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Tipo no encontrado" },
+    409: { description: "Orden duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/permit-types/{id}/checklist-items/{itemId}",
+  tags: ["PermitTypes"],
+  summary: "Actualizar ítem de checklist",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), itemId: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updatePermitChecklistItemBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizado",
+      content: {
+        "application/json": {
+          schema: updatePermitChecklistItemResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrado" },
+    409: { description: "Orden duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/permit-types/{id}/checklist-items/{itemId}",
+  tags: ["PermitTypes"],
+  summary: "Desactivar ítem de checklist",
+  description: "active=false.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), itemId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Desactivado",
+      content: {
+        "application/json": {
+          schema: deletePermitChecklistItemResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrado" },
   },
 });
 

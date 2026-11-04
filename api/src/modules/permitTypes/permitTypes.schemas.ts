@@ -213,6 +213,152 @@ export const listPermitTypeRequirementsResponseSchema = z
   })
   .openapi("ListPermitTypeRequirementsResponse");
 
+/** Clave estable tipo `cal.docs_company_pack`. */
+const requirementKeySchema = z
+  .string({ error: "key es requerido" })
+  .trim()
+  .transform((v) => v.toLowerCase())
+  .refine((v) => /^[a-z][a-z0-9_.]{1,63}$/.test(v), {
+    message: "key: letras/dígitos/._ (ej. cal.training_ext01)",
+  });
+
+/**
+ * Shape base de exigencia (sin refine) para create/update parcial.
+ * Reglas por kind en create/update.
+ */
+const requirementFieldsObjectSchema = z.object({
+  key: requirementKeySchema,
+  kind: permitRequirementKindSchema,
+  scope: permitRequirementScopeSchema,
+  moment: permitRequirementMomentSchema.optional(),
+  mandatory: z.boolean().optional(),
+  documentTypeId: z.uuid().nullable().optional(),
+  accreditationScope: accreditationScopeSchema.nullable().optional(),
+  trainingCode: z
+    .string()
+    .trim()
+    .transform((v) => v.toUpperCase())
+    .nullable()
+    .optional(),
+  trainingId: z.uuid().nullable().optional(),
+  label: z
+    .string({ error: "label es requerido" })
+    .trim()
+    .min(1, "label es requerido"),
+  active: z.boolean().optional(),
+});
+
+/** Valida coherencia kind ↔ FKs / packs. */
+function refineRequirementFields(
+  body: {
+    kind?: "document" | "training" | "checklist";
+    documentTypeId?: string | null;
+    accreditationScope?: "company" | "person" | null;
+    trainingCode?: string | null;
+    trainingId?: string | null;
+  },
+  ctx: z.RefinementCtx,
+  /** En create kind siempre viene; en update solo si lo mandan. */
+  kindRequired: boolean,
+): void {
+  const kind = body.kind;
+  if (kindRequired && !kind) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["kind"],
+      message: "kind es requerido",
+    });
+    return;
+  }
+  if (!kind) return;
+
+  if (kind === "document") {
+    const hasDoc = body.documentTypeId != null;
+    const hasPack = body.accreditationScope != null;
+    if (!hasDoc && !hasPack) {
+      // Permitido: exigencia genérica (ej. «habilitación vigente» sin FK).
+      return;
+    }
+    if (hasDoc && hasPack) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["documentTypeId"],
+        message: "No combines documentTypeId y accreditationScope",
+      });
+    }
+  }
+
+  if (kind === "training") {
+    if (body.trainingId == null && !body.trainingCode) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["trainingId"],
+        message: "trainingId o trainingCode es requerido para kind=training",
+      });
+    }
+  }
+
+  if (kind === "checklist") {
+    if (body.documentTypeId != null || body.accreditationScope != null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["documentTypeId"],
+        message: "kind=checklist no lleva documento ni pack",
+      });
+    }
+    if (body.trainingId != null || body.trainingCode) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["trainingId"],
+        message: "kind=checklist no lleva capacitación",
+      });
+    }
+  }
+}
+
+export const createPermitTypeRequirementBodySchema =
+  requirementFieldsObjectSchema.superRefine((body, ctx) => {
+    refineRequirementFields(body, ctx, true);
+  });
+
+export const createPermitTypeRequirementRequestSchema = z.object({
+  params: permitTypeIdParamsSchema,
+  body: createPermitTypeRequirementBodySchema,
+});
+
+export const createPermitTypeRequirementResponseSchema =
+  permitTypeRequirementResponseSchema;
+
+export const updatePermitTypeRequirementBodySchema =
+  requirementFieldsObjectSchema
+    .partial()
+    .refine((body) => Object.keys(body).length > 0, {
+      message: "Debe enviar al menos un campo para actualizar",
+    })
+    .superRefine((body, ctx) => {
+      refineRequirementFields(body, ctx, false);
+    });
+
+export const requirementIdParamsSchema = z.object({
+  id: z.uuid(),
+  requirementId: z.uuid(),
+});
+
+export const updatePermitTypeRequirementRequestSchema = z.object({
+  params: requirementIdParamsSchema,
+  body: updatePermitTypeRequirementBodySchema,
+});
+
+export const updatePermitTypeRequirementResponseSchema =
+  permitTypeRequirementResponseSchema;
+
+export const deletePermitTypeRequirementRequestSchema = z.object({
+  params: requirementIdParamsSchema,
+});
+
+export const deletePermitTypeRequirementResponseSchema =
+  permitTypeRequirementResponseSchema;
+
 /** Un ítem del checklist del tipo. */
 export const permitChecklistItemResponseSchema = z
   .object({
@@ -237,6 +383,52 @@ export const listPermitChecklistItemsResponseSchema = z
   })
   .openapi("ListPermitChecklistItemsResponse");
 
+const checklistFieldsObjectSchema = z.object({
+  /** Si se omite en create, se asigna al final (max+1). */
+  order: z.number().int().positive().optional(),
+  text: z
+    .string({ error: "text es requerido" })
+    .trim()
+    .min(1, "text es requerido"),
+  active: z.boolean().optional(),
+});
+
+export const createPermitChecklistItemBodySchema = checklistFieldsObjectSchema;
+
+export const createPermitChecklistItemRequestSchema = z.object({
+  params: permitTypeIdParamsSchema,
+  body: createPermitChecklistItemBodySchema,
+});
+
+export const createPermitChecklistItemResponseSchema =
+  permitChecklistItemResponseSchema;
+
+export const updatePermitChecklistItemBodySchema = checklistFieldsObjectSchema
+  .partial()
+  .refine((body) => Object.keys(body).length > 0, {
+    message: "Debe enviar al menos un campo para actualizar",
+  });
+
+export const checklistItemIdParamsSchema = z.object({
+  id: z.uuid(),
+  itemId: z.uuid(),
+});
+
+export const updatePermitChecklistItemRequestSchema = z.object({
+  params: checklistItemIdParamsSchema,
+  body: updatePermitChecklistItemBodySchema,
+});
+
+export const updatePermitChecklistItemResponseSchema =
+  permitChecklistItemResponseSchema;
+
+export const deletePermitChecklistItemRequestSchema = z.object({
+  params: checklistItemIdParamsSchema,
+});
+
+export const deletePermitChecklistItemResponseSchema =
+  permitChecklistItemResponseSchema;
+
 export type ListPermitTypesQuery = z.infer<typeof listPermitTypesQuerySchema>;
 export type PermitTypeResponse = z.infer<typeof permitTypeResponseSchema>;
 export type CreatePermitTypeBody = z.infer<typeof createPermitTypeBodySchema>;
@@ -244,6 +436,18 @@ export type UpdatePermitTypeBody = z.infer<typeof updatePermitTypeBodySchema>;
 export type PermitTypeRequirementResponse = z.infer<
   typeof permitTypeRequirementResponseSchema
 >;
+export type CreatePermitTypeRequirementBody = z.infer<
+  typeof createPermitTypeRequirementBodySchema
+>;
+export type UpdatePermitTypeRequirementBody = z.infer<
+  typeof updatePermitTypeRequirementBodySchema
+>;
 export type PermitChecklistItemResponse = z.infer<
   typeof permitChecklistItemResponseSchema
+>;
+export type CreatePermitChecklistItemBody = z.infer<
+  typeof createPermitChecklistItemBodySchema
+>;
+export type UpdatePermitChecklistItemBody = z.infer<
+  typeof updatePermitChecklistItemBodySchema
 >;
