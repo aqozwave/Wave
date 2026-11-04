@@ -204,3 +204,159 @@ export async function deletePermitTypeRequest(
   if (!res.ok) throw toApiError(res, body);
   return body as PermitType;
 }
+
+/** Kind de exigencia. */
+export type PermitRequirementKind = "document" | "training" | "checklist";
+
+/** Scope de exigencia. */
+export type PermitRequirementScope = "company" | "person" | "permit";
+
+/** Momento de exigencia. */
+export type PermitRequirementMoment = "before" | "closure";
+
+/** Pack habilitación. */
+export type AccreditationScope = "company" | "person";
+
+/** Body alta exigencia. */
+export type CreatePermitTypeRequirementBody = {
+  key: string;
+  kind: PermitRequirementKind;
+  scope: PermitRequirementScope;
+  moment?: PermitRequirementMoment;
+  mandatory?: boolean;
+  documentTypeId?: string | null;
+  accreditationScope?: AccreditationScope | null;
+  trainingCode?: string | null;
+  trainingId?: string | null;
+  label: string;
+  active?: boolean;
+};
+
+/** Body patch exigencia. */
+export type UpdatePermitTypeRequirementBody =
+  Partial<CreatePermitTypeRequirementBody>;
+
+/** Body alta ítem checklist. */
+export type CreatePermitChecklistItemBody = {
+  order?: number;
+  text: string;
+  active?: boolean;
+};
+
+/** Body patch ítem checklist. */
+export type UpdatePermitChecklistItemBody =
+  Partial<CreatePermitChecklistItemBody>;
+
+/** POST /api/v1/permit-types/:id/requirements */
+export async function createPermitTypeRequirementRequest(
+  accessToken: string,
+  permitTypeId: string,
+  data: CreatePermitTypeRequirementBody,
+): Promise<PermitTypeRequirement> {
+  const res = await fetch(
+    `/api/v1/permit-types/${permitTypeId}/requirements`,
+    {
+      method: "POST",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(data),
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as PermitTypeRequirement;
+}
+
+/** PATCH /api/v1/permit-types/:id/requirements/:requirementId */
+export async function updatePermitTypeRequirementRequest(
+  accessToken: string,
+  permitTypeId: string,
+  requirementId: string,
+  data: UpdatePermitTypeRequirementBody,
+): Promise<PermitTypeRequirement> {
+  const res = await fetch(
+    `/api/v1/permit-types/${permitTypeId}/requirements/${requirementId}`,
+    {
+      method: "PATCH",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(data),
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as PermitTypeRequirement;
+}
+
+/** DELETE /api/v1/permit-types/:id/requirements/:requirementId */
+export async function deletePermitTypeRequirementRequest(
+  accessToken: string,
+  permitTypeId: string,
+  requirementId: string,
+): Promise<PermitTypeRequirement> {
+  const res = await fetch(
+    `/api/v1/permit-types/${permitTypeId}/requirements/${requirementId}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as PermitTypeRequirement;
+}
+
+/** POST /api/v1/permit-types/:id/checklist-items */
+export async function createPermitChecklistItemRequest(
+  accessToken: string,
+  permitTypeId: string,
+  data: CreatePermitChecklistItemBody,
+): Promise<PermitChecklistItem> {
+  const res = await fetch(
+    `/api/v1/permit-types/${permitTypeId}/checklist-items`,
+    {
+      method: "POST",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(data),
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as PermitChecklistItem;
+}
+
+/** PATCH /api/v1/permit-types/:id/checklist-items/:itemId */
+export async function updatePermitChecklistItemRequest(
+  accessToken: string,
+  permitTypeId: string,
+  itemId: string,
+  data: UpdatePermitChecklistItemBody,
+): Promise<PermitChecklistItem> {
+  const res = await fetch(
+    `/api/v1/permit-types/${permitTypeId}/checklist-items/${itemId}`,
+    {
+      method: "PATCH",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(data),
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as PermitChecklistItem;
+}
+
+/** DELETE /api/v1/permit-types/:id/checklist-items/:itemId */
+export async function deletePermitChecklistItemRequest(
+  accessToken: string,
+  permitTypeId: string,
+  itemId: string,
+): Promise<PermitChecklistItem> {
+  const res = await fetch(
+    `/api/v1/permit-types/${permitTypeId}/checklist-items/${itemId}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as PermitChecklistItem;
+}

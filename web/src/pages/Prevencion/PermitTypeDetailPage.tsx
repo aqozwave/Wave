@@ -28,18 +28,8 @@ import {
   type PermitTypeRequirement,
 } from "../../lib/api/permitTypes";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
-
-/** Etiqueta de momento. */
-function momentLabel(m: "before" | "closure"): string {
-  return m === "before" ? "Antes" : "Cierre";
-}
-
-/** Etiqueta de kind. */
-function kindLabel(k: PermitTypeRequirement["kind"]): string {
-  if (k === "document") return "Documento";
-  if (k === "training") return "Capacitación";
-  return "Checklist";
-}
+import { PermitTypeChecklistPanel } from "./PermitTypeChecklistPanel";
+import { PermitTypeRequirementsPanel } from "./PermitTypeRequirementsPanel";
 
 /** Etiqueta de criticidad. */
 function criticalityLabel(c: PermitCriticality): string {
@@ -64,7 +54,7 @@ const selectClass =
 
 /**
  * Ficha de tipo: datos + exigencias (P15) + checklist.
- * Encabezado editable (admin); nested sigue solo lectura en este slice.
+ * Encabezado y nested editables (admin/superadmin).
  */
 export function PermitTypeDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -287,75 +277,25 @@ export function PermitTypeDetailPage() {
               </dl>
             </section>
 
-            <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white">
-              <div className="border-b border-[var(--color-tremor-border)] px-4 py-3">
-                <h2 className="m-0 text-[14px] font-semibold text-[var(--color-nachipa-title)]">
-                  Exigencias ({requirements.length})
-                </h2>
-                <p className="m-0 mt-0.5 text-[12px] text-[var(--color-nachipa-secondary)]">
-                  Documentos, capacitaciones y checklist requeridos.
-                </p>
-              </div>
-              {requirements.length === 0 ? (
-                <p className="m-0 px-4 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
-                  Sin exigencias activas.
-                </p>
-              ) : (
-                <ul className="m-0 list-none divide-y divide-[var(--color-tremor-border)] p-0">
-                  {requirements.map((req) => (
-                    <li
-                      key={req.id}
-                      className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0">
-                        <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                          {req.label}
-                        </p>
-                        <p className="m-0 mt-0.5 text-[11px] text-[var(--color-nachipa-secondary)]">
-                          {req.key}
-                          {req.trainingCode
-                            ? ` · ${req.trainingCode}`
-                            : null}
-                          {req.documentType
-                            ? ` · ${req.documentType.code}`
-                            : null}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        <StatusChip tone="info">{kindLabel(req.kind)}</StatusChip>
-                        <StatusChip tone="neutral">
-                          {momentLabel(req.moment)}
-                        </StatusChip>
-                        {req.mandatory ? (
-                          <StatusChip tone="warning">Obligatorio</StatusChip>
-                        ) : (
-                          <StatusChip tone="neutral">Opcional</StatusChip>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            <PermitTypeRequirementsPanel
+              permitTypeId={permitType.id}
+              permitTypeCode={permitType.code}
+              businessId={permitType.businessId}
+              items={requirements}
+              canManage={canManage}
+              onChanged={() => {
+                void load();
+              }}
+            />
 
-            <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white">
-              <div className="border-b border-[var(--color-tremor-border)] px-4 py-3">
-                <h2 className="m-0 text-[14px] font-semibold text-[var(--color-nachipa-title)]">
-                  Checklist ({checklist.length})
-                </h2>
-              </div>
-              {checklist.length === 0 ? (
-                <p className="m-0 px-4 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
-                  Sin ítems de checklist.
-                </p>
-              ) : (
-                <ol className="m-0 list-decimal space-y-2 px-4 py-3 pl-8 text-[13px] text-[var(--color-nachipa-title)]">
-                  {checklist.map((item) => (
-                    <li key={item.id}>{item.text}</li>
-                  ))}
-                </ol>
-              )}
-            </section>
+            <PermitTypeChecklistPanel
+              permitTypeId={permitType.id}
+              items={checklist}
+              canManage={canManage}
+              onChanged={() => {
+                void load();
+              }}
+            />
           </div>
         )}
       </div>
