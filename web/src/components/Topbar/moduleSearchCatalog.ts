@@ -38,9 +38,19 @@ function canSeeCatalogos(user: AuthUser | null): boolean {
   );
 }
 
+/** ¿Puede ver el módulo Prevención? */
+function canSeePrevencionModule(user: AuthUser | null): boolean {
+  return (
+    userHasPermission(user, "permit_types", "read") ||
+    userHasPermission(user, "trainings", "read") ||
+    userHasPermission(user, "work_permits", "read") ||
+    userHasPermission(user, "contractors", "read")
+  );
+}
+
 /**
  * Catálogo de módulos/pantallas buscables.
- * Solo rutas existentes; Prevención se agrega cuando tenga home propia.
+ * Solo rutas existentes.
  */
 export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
   {
@@ -114,6 +124,30 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     to: "/cursos/vencimientos",
     keywords: ["libreta", "embarcación", "vigencia"],
     canShow: (u) => userHasPermission(u, "cursos.libretas", "read"),
+  },
+  {
+    id: "prevencion-home",
+    label: "Prevención — Presentación",
+    group: "Prevención",
+    to: "/prevencion",
+    keywords: ["riesgos", "permisos", "hub", "hard hat"],
+    canShow: (u) => canSeePrevencionModule(u),
+  },
+  {
+    id: "prevencion-tipos",
+    label: "Tipos de permiso",
+    group: "Prevención",
+    to: "/prevencion/tipos",
+    keywords: ["cal", "alt", "ecf", "permit types", "checklist"],
+    canShow: (u) => userHasPermission(u, "permit_types", "read"),
+  },
+  {
+    id: "prevencion-capacitaciones",
+    label: "Capacitaciones",
+    group: "Prevención",
+    to: "/prevencion/capacitaciones",
+    keywords: ["trainings", "ext-01", "odi", "inducción"],
+    canShow: (u) => userHasPermission(u, "trainings", "read"),
   },
   {
     id: "notificaciones",

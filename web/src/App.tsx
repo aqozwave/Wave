@@ -28,6 +28,10 @@ import { Embarcados } from "./pages/Embarcados/Embarcados";
 import { FichaTripulante } from "./pages/Embarcados/FichaTripulante";
 import { NotificacionesVencimiento } from "./pages/Notificaciones/NotificacionesVencimiento";
 import { OutboxNotificaciones } from "./pages/Notificaciones/OutboxNotificaciones";
+import { PermitTypeDetailPage } from "./pages/Prevencion/PermitTypeDetailPage";
+import { PermitTypesPage } from "./pages/Prevencion/PermitTypesPage";
+import { PrevencionHome } from "./pages/Prevencion/PrevencionHome";
+import { TrainingsPage } from "./pages/Prevencion/TrainingsPage";
 import { Ubicaciones } from "./pages/Ubicaciones/Ubicaciones";
 import { Usuarios } from "./pages/Usuarios/Usuarios";
 
@@ -136,6 +140,16 @@ export function App() {
           <Route path="cursos" element={<CursosHome />} />
           <Route path="cursos/tripulacion" element={<CursosTripulacion />} />
           <Route path="cursos/vencimientos" element={<Vencimientos />} />
+          <Route path="prevencion" element={<PrevencionHome />} />
+          <Route path="prevencion/tipos" element={<PermitTypesPage />} />
+          <Route
+            path="prevencion/tipos/:id"
+            element={<PermitTypeDetailPage />}
+          />
+          <Route
+            path="prevencion/capacitaciones"
+            element={<TrainingsPage />}
+          />
           <Route path="empresas" element={<Empresas />} />
           <Route path="ubicaciones" element={<Ubicaciones />} />
           <Route path="catalogos" element={<Catalogos />} />

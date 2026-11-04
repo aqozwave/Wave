@@ -110,7 +110,7 @@ function canSeeCatalogos(user: AuthUser | null): boolean {
 }
 
 /**
- * Recursos de Prevención con read → mostrar ítem del menú.
+ * Recursos de Prevención con read → mostrar el grupo.
  * Stub viejo prevencion / prevencion.docs reemplazado por recursos finos (P0).
  */
 const PREVENCION_MENU_RESOURCES = [
@@ -122,11 +122,46 @@ const PREVENCION_MENU_RESOURCES = [
   "trainings",
 ] as const;
 
-/** ¿Puede ver el ítem Prevención? RR.HH. sin estos checks → oculto. */
+/** ¿Puede ver el grupo Prevención? */
 function canSeePrevencion(user: AuthUser | null): boolean {
   return PREVENCION_MENU_RESOURCES.some((resource) =>
     userHasPermission(user, resource, "read"),
   );
+}
+
+/**
+ * Subítems de Prevención (P1 catálogos).
+ * Permisos de trabajo / contratistas llegan en P2+.
+ */
+const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
+  {
+    label: "Presentación",
+    to: "/prevencion",
+    icon: HardHat,
+    canShow: (u) => canSeePrevencion(u),
+  },
+  {
+    label: "Tipos de permiso",
+    to: "/prevencion/tipos",
+    icon: ClipboardList,
+    canShow: (u) => userHasPermission(u, "permit_types", "read"),
+  },
+  {
+    label: "Capacitaciones",
+    to: "/prevencion/capacitaciones",
+    icon: GraduationCap,
+    canShow: (u) => userHasPermission(u, "trainings", "read"),
+  },
+];
+
+/** Activo exacto en Presentación; prefijo en subrutas. */
+function isPrevencionNavActive(
+  to: string | null,
+  pathname: string,
+): boolean {
+  if (!to) return false;
+  if (to === "/prevencion") return pathname === "/prevencion";
+  return pathname === to || pathname.startsWith(`${to}/`);
 }
 
 /** Subítems de Configuración (sin Notificaciones: viven bajo Cursos). */
@@ -219,6 +254,8 @@ export function Sidebar() {
   const onCursosSection =
     location.pathname.startsWith("/cursos") ||
     location.pathname.startsWith("/notificaciones");
+  /** Grupo Prevención: /prevencion/*. */
+  const onPrevencionSection = location.pathname.startsWith("/prevencion");
   /** Rutas bajo Sistema (solo superadmin). */
   const onSystemSection =
     location.pathname.startsWith("/roles") ||
@@ -226,11 +263,15 @@ export function Sidebar() {
   const onPanel = location.pathname === "/";
   const [crewOpen, setCrewOpen] = useState(onCrewSection);
   const [cursosOpen, setCursosOpen] = useState(onCursosSection);
+  const [prevencionOpen, setPrevencionOpen] = useState(onPrevencionSection);
   const [configOpen, setConfigOpen] = useState(onConfigSection);
   const [systemOpen, setSystemOpen] = useState(onSystemSection);
 
   const visibleCrewLinks = CREW_LINKS.filter((item) => item.canShow(user));
   const visibleCursosLinks = CURSOS_LINKS.filter((item) => item.canShow(user));
+  const visiblePrevencionLinks = PREVENCION_LINKS.filter((item) =>
+    item.canShow(user),
+  );
   const visibleConfigLinks = CONFIG_LINKS.filter((item) => item.canShow(user));
   const showCrewGroup = visibleCrewLinks.length > 0;
   const showCursosGroup = visibleCursosLinks.length > 0;
@@ -263,6 +304,12 @@ export function Sidebar() {
       setCursosOpen(true);
     }
   }, [onCursosSection]);
+
+  useEffect(() => {
+    if (onPrevencionSection) {
+      setPrevencionOpen(true);
+    }
+  }, [onPrevencionSection]);
 
   useEffect(() => {
     if (onConfigSection) {
@@ -349,7 +396,13 @@ export function Sidebar() {
               />
             ) : null}
             {showPrevencion ? (
-              <SidebarItem label="Prevención" icon={HardHat} collapsed />
+              <SidebarItem
+                label="Prevención"
+                icon={HardHat}
+                to="/prevencion"
+                active={onPrevencionSection}
+                collapsed
+              />
             ) : null}
             {showConfigGroup ? (
               <SidebarItem
@@ -608,7 +661,99 @@ export function Sidebar() {
             ) : null}
 
             {showPrevencion ? (
-              <SidebarItem label="Prevención" icon={HardHat} expandable />
+            <div className="flex w-full flex-col">
+              <button
+                type="button"
+                onClick={() => setPrevencionOpen((v) => !v)}
+                className={[
+                  "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
+                  onPrevencionSection || prevencionOpen
+                    ? "font-medium text-[var(--color-nav-item-active-fg)]"
+                    : "font-normal text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
+                ].join(" ")}
+                aria-expanded={prevencionOpen}
+              >
+                <HardHat
+                  size={18}
+                  strokeWidth={1.5}
+                  className="text-[var(--color-nav-icon)]"
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1 truncate">Prevención</span>
+                <span
+                  className={[
+                    "inline-flex size-3.5 shrink-0 text-[var(--color-nav-icon)] transition-transform",
+                    prevencionOpen ? "rotate-90" : "",
+                  ].join(" ")}
+                  aria-hidden
+                >
+                  <svg viewBox="0 0 14 14" className="size-3.5" fill="none">
+                    <path
+                      d="M5 3.5 8.5 7 5 10.5"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+              </button>
+              {prevencionOpen ? (
+                <div className="animate-submenu-enter mb-1 ml-[18px] flex flex-col gap-0.5 border-l border-[var(--color-nav-border)] pl-1.5">
+                  {visiblePrevencionLinks.map((item) => {
+                    const Icon = item.icon;
+                    const active = isPrevencionNavActive(
+                      item.to,
+                      location.pathname,
+                    );
+                    const rowClass = [
+                      "relative flex h-8 items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px]",
+                      active
+                        ? "bg-[var(--color-nav-item-active-bg)] font-medium text-[var(--color-nav-item-active-fg)]"
+                        : "text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
+                    ].join(" ");
+                    const content = (
+                      <>
+                        {active ? (
+                          <span
+                            className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--color-nachipa-primary)]"
+                            aria-hidden
+                          />
+                        ) : null}
+                        <Icon
+                          size={14}
+                          strokeWidth={1.5}
+                          className="shrink-0 text-[var(--color-nav-icon)]"
+                          aria-hidden
+                        />
+                        <span className="min-w-0 truncate">{item.label}</span>
+                      </>
+                    );
+                    if (item.to) {
+                      return (
+                        <Link
+                          key={item.label}
+                          to={item.to}
+                          aria-current={active ? "page" : undefined}
+                          className={rowClass}
+                        >
+                          {content}
+                        </Link>
+                      );
+                    }
+                    return (
+                      <span
+                        key={item.label}
+                        className={`${rowClass} cursor-default text-[var(--color-nachipa-muted)]`}
+                        title="Próximamente"
+                      >
+                        {content}
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
             ) : null}
 
             {/* Grupo Configuración (Figma): Empresas es subítem. */}
