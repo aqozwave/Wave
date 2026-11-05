@@ -35,6 +35,7 @@ import {
   type ListContractorsQuery,
   type UpdateContractorBody,
   type UpdateContractorPersonBody,
+  type UpdateMyContractorOrganizationBody,
 } from "./contractors.schemas.js";
 import {
   createContractor,
@@ -48,6 +49,7 @@ import {
   getContractorById,
   getContractorPortalSummary,
   getMyContractorAccreditation,
+  getMyContractorOrganization,
   inviteContractorUser,
   listContractorPeople,
   listContractorUsers,
@@ -60,6 +62,7 @@ import {
   submitMyContractorAccreditation,
   updateContractor,
   updateContractorPerson,
+  updateMyContractorOrganization,
   updateMyContractorPerson,
 } from "./contractors.service.js";
 
@@ -161,6 +164,34 @@ export async function submitMyContractorAccreditationHandler(
     metadata: { status: result.status, via: "portal" },
   });
   res.status(200).json(getAccreditationResponseSchema.parse(result));
+}
+
+/** GET /contractors/me — org del portal (E19 antecedentes). */
+export async function getMyContractorOrganizationHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await getMyContractorOrganization(req.user);
+  res.status(200).json(getContractorResponseSchema.parse(result));
+}
+
+/** PATCH /contractors/me — guardar antecedentes del portal. */
+export async function updateMyContractorOrganizationHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as UpdateMyContractorOrganizationBody;
+  const result = await updateMyContractorOrganization(req.user, body);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "contractorOrganization",
+    resourceId: result.id,
+    targetLabel: `${result.rut} · antecedentes`,
+    metadata: { fields: safeChangedFields(body), via: "portal" },
+  });
+  res.status(200).json(updateContractorResponseSchema.parse(result));
 }
 
 /** GET /contractors/me/people — personal del portal (E5). */

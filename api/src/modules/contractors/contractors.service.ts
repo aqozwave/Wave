@@ -35,6 +35,7 @@ import type {
   ListContractorsQuery,
   UpdateContractorBody,
   UpdateContractorPersonBody,
+  UpdateMyContractorOrganizationBody,
 } from "./contractors.schemas.js";
 
 /** Actor mínimo para reglas de tenant. */
@@ -1316,4 +1317,58 @@ export async function resolveMyContractorPersonDocumentFile(
     personId,
     documentId,
   );
+}
+
+/** Portal E19: org del actor (antecedentes). */
+export async function getMyContractorOrganization(
+  actor: PortalActor,
+): Promise<ContractorOrganizationResponse> {
+  const organizationId = requirePortalOrgId(actor);
+  return getContractorById(actor, organizationId);
+}
+
+/** Portal E19: actualiza antecedentes (sin RUT/rol/active). */
+export async function updateMyContractorOrganization(
+  actor: PortalActor,
+  body: UpdateMyContractorOrganizationBody,
+): Promise<ContractorOrganizationResponse> {
+  const organizationId = requirePortalOrgId(actor);
+  /** Null del portal limpia el campo; UpdateContractorBody tipa undefined. */
+  const payload = {
+    ...(body.name !== undefined ? { name: body.name } : {}),
+    ...(body.specialty !== undefined ? { specialty: body.specialty } : {}),
+    ...(body.contactName !== undefined
+      ? { contactName: body.contactName }
+      : {}),
+    ...(body.contactEmail !== undefined
+      ? { contactEmail: body.contactEmail }
+      : {}),
+    ...(body.contactPhone !== undefined
+      ? { contactPhone: body.contactPhone }
+      : {}),
+    ...(body.legalRepresentative !== undefined
+      ? { legalRepresentative: body.legalRepresentative }
+      : {}),
+    ...(body.address !== undefined ? { address: body.address } : {}),
+    ...(body.mutual !== undefined ? { mutual: body.mutual } : {}),
+    ...(body.supervisorName !== undefined
+      ? { supervisorName: body.supervisorName }
+      : {}),
+    ...(body.supervisorEmail !== undefined
+      ? { supervisorEmail: body.supervisorEmail }
+      : {}),
+    ...(body.prevencionistName !== undefined
+      ? { prevencionistName: body.prevencionistName }
+      : {}),
+    ...(body.prevencionistEmail !== undefined
+      ? { prevencionistEmail: body.prevencionistEmail }
+      : {}),
+    ...(body.subcontractors !== undefined
+      ? { subcontractors: body.subcontractors }
+      : {}),
+    ...(body.workDescription !== undefined
+      ? { workDescription: body.workDescription }
+      : {}),
+  } as UpdateContractorBody;
+  return updateContractor(actor, organizationId, payload);
 }

@@ -413,6 +413,48 @@ export async function getContractorPortalSummaryRequest(
   return body as ContractorPortalSummary;
 }
 
+/** GET /api/v1/contractors/me — org del portal (E19). */
+export async function getContractorPortalOrganizationRequest(
+  accessToken: string,
+): Promise<ContractorOrganization> {
+  const res = await fetch("/api/v1/contractors/me", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorOrganization;
+}
+
+/** PATCH /api/v1/contractors/me — antecedentes. */
+export async function updateContractorPortalOrganizationRequest(
+  accessToken: string,
+  data: {
+    name?: string;
+    specialty?: string | null;
+    contactName?: string | null;
+    contactEmail?: string | null;
+    contactPhone?: string | null;
+    legalRepresentative?: string | null;
+    address?: string | null;
+    mutual?: string | null;
+    supervisorName?: string | null;
+    supervisorEmail?: string | null;
+    prevencionistName?: string | null;
+    prevencionistEmail?: string | null;
+    subcontractors?: string | null;
+    workDescription?: string | null;
+  },
+): Promise<ContractorOrganization> {
+  const res = await fetch("/api/v1/contractors/me", {
+    method: "PATCH",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorOrganization;
+}
+
 /** HAB del portal (mismo shape que ContractorAccreditation interno). */
 export type ContractorPortalAccreditation = {
   id: string;

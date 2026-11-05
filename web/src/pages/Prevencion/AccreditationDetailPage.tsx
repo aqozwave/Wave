@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
-import { ClipboardCheck } from "lucide-react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  Check,
+  ClipboardCheck,
+  Download,
+  Eye,
+  MessageSquareWarning,
+} from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router";
 import { Button } from "../../components/Button/Button";
 import {
@@ -28,6 +34,8 @@ import {
   listAccreditationDocumentsRequest,
   listAccreditationHistoryRequest,
   listAccreditationPersonDocumentsRequest,
+  previewAccreditationDocumentRequest,
+  previewAccreditationPersonDocumentRequest,
   rejectAccreditationRequest,
   returnAccreditationRequest,
   submitAccreditationRequest,
@@ -161,6 +169,45 @@ function docStatusTone(
 
 /** Tabs de revisión P5. */
 type TabId = "documentos" | "antecedentes" | "personal" | "historial";
+
+/** Botón de acción solo ícono (mismo patrón que ficha tripulante). */
+function DocIconButton({
+  title,
+  disabled,
+  onClick,
+  tone = "default",
+  children,
+}: {
+  title: string;
+  disabled?: boolean;
+  onClick?: () => void;
+  tone?: "default" | "success" | "warning" | "danger";
+  children: ReactNode;
+}) {
+  const toneClass =
+    tone === "success"
+      ? "text-[var(--color-status-success-fg,#15803d)]"
+      : tone === "warning"
+        ? "text-[var(--color-status-warning-fg,#b45309)]"
+        : tone === "danger"
+          ? "text-[var(--color-status-danger-fg)]"
+          : "text-[var(--color-nachipa-primary)]";
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onClick={onClick}
+      className={[
+        "inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60",
+        toneClass,
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  );
+}
 
 /** Fila de dato en antecedentes. */
 function DataRow({ label, value }: { label: string; value: string }) {
@@ -821,44 +868,72 @@ export function AccreditationDetailPage() {
                           </StatusChip>
                         ) : null}
                         {doc && accessToken ? (
-                          <button
-                            type="button"
-                            className="text-[12px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
-                            onClick={() =>
-                              void downloadAccreditationDocumentRequest(
-                                accessToken,
-                                hab.id,
-                                doc.id,
-                                doc.originalName,
-                              ).catch((err) =>
-                                showToast(
-                                  err instanceof ApiError
-                                    ? err.message
-                                    : "No se pudo descargar.",
-                                  "danger",
-                                ),
-                              )
-                            }
-                          >
-                            Descargar
-                          </button>
+                          <>
+                            <DocIconButton
+                              title="Visualizar"
+                              onClick={() =>
+                                void previewAccreditationDocumentRequest(
+                                  accessToken,
+                                  hab.id,
+                                  doc.id,
+                                ).catch((err) =>
+                                  showToast(
+                                    err instanceof ApiError
+                                      ? err.message
+                                      : "No se pudo abrir.",
+                                    "danger",
+                                  ),
+                                )
+                              }
+                            >
+                              <Eye className="size-4" strokeWidth={1.5} aria-hidden />
+                            </DocIconButton>
+                            <DocIconButton
+                              title="Descargar"
+                              onClick={() =>
+                                void downloadAccreditationDocumentRequest(
+                                  accessToken,
+                                  hab.id,
+                                  doc.id,
+                                  doc.originalName,
+                                ).catch((err) =>
+                                  showToast(
+                                    err instanceof ApiError
+                                      ? err.message
+                                      : "No se pudo descargar.",
+                                    "danger",
+                                  ),
+                                )
+                              }
+                            >
+                              <Download
+                                className="size-4"
+                                strokeWidth={1.5}
+                                aria-hidden
+                              />
+                            </DocIconButton>
+                          </>
                         ) : null}
                         {canUpdate &&
                         doc &&
                         (doc.status === "pending_validation" ||
                           doc.status === "observed") ? (
                           <>
-                            <button
-                              type="button"
-                              className="text-[12px] font-medium text-[var(--color-status-success-fg,#15803d)] hover:underline"
+                            <DocIconButton
+                              title="Validar"
+                              tone="success"
                               disabled={acting}
                               onClick={() => void onValidateDoc(doc.id)}
                             >
-                              Validar
-                            </button>
-                            <button
-                              type="button"
-                              className="text-[12px] font-medium text-[var(--color-status-warning-fg,#b45309)] hover:underline"
+                              <Check
+                                className="size-4"
+                                strokeWidth={1.5}
+                                aria-hidden
+                              />
+                            </DocIconButton>
+                            <DocIconButton
+                              title="Observar"
+                              tone="warning"
                               disabled={acting}
                               onClick={() => {
                                 setObserveDocId(doc.id);
@@ -866,14 +941,18 @@ export function AccreditationDetailPage() {
                                 setObserveNote(doc.observation ?? "");
                               }}
                             >
-                              Observar
-                            </button>
+                              <MessageSquareWarning
+                                className="size-4"
+                                strokeWidth={1.5}
+                                aria-hidden
+                              />
+                            </DocIconButton>
                           </>
                         ) : null}
                         {canUpdate &&
                         hab.status !== "approved" &&
                         hab.status !== "rejected" ? (
-                          <label className="cursor-pointer text-[12px] font-medium text-[var(--color-nachipa-title)] hover:underline">
+                          <label className="cursor-pointer px-1 text-[12px] font-medium text-[var(--color-nachipa-title)] hover:underline">
                             {uploadingTypeId === item.documentType.id
                               ? "Subiendo…"
                               : doc
@@ -1019,37 +1098,66 @@ export function AccreditationDetailPage() {
                                         </StatusChip>
                                       ) : null}
                                       {doc && accessToken ? (
-                                        <button
-                                          type="button"
-                                          className="text-[11px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
-                                          onClick={() =>
-                                            void downloadAccreditationPersonDocumentRequest(
-                                              accessToken,
-                                              hab.id,
-                                              p.id,
-                                              doc.id,
-                                              doc.originalName,
-                                            ).catch((err) =>
-                                              showToast(
-                                                err instanceof ApiError
-                                                  ? err.message
-                                                  : "No se pudo descargar.",
-                                                "danger",
-                                              ),
-                                            )
-                                          }
-                                        >
-                                          Descargar
-                                        </button>
+                                        <>
+                                          <DocIconButton
+                                            title="Visualizar"
+                                            onClick={() =>
+                                              void previewAccreditationPersonDocumentRequest(
+                                                accessToken,
+                                                hab.id,
+                                                p.id,
+                                                doc.id,
+                                              ).catch((err) =>
+                                                showToast(
+                                                  err instanceof ApiError
+                                                    ? err.message
+                                                    : "No se pudo abrir.",
+                                                  "danger",
+                                                ),
+                                              )
+                                            }
+                                          >
+                                            <Eye
+                                              className="size-4"
+                                              strokeWidth={1.5}
+                                              aria-hidden
+                                            />
+                                          </DocIconButton>
+                                          <DocIconButton
+                                            title="Descargar"
+                                            onClick={() =>
+                                              void downloadAccreditationPersonDocumentRequest(
+                                                accessToken,
+                                                hab.id,
+                                                p.id,
+                                                doc.id,
+                                                doc.originalName,
+                                              ).catch((err) =>
+                                                showToast(
+                                                  err instanceof ApiError
+                                                    ? err.message
+                                                    : "No se pudo descargar.",
+                                                  "danger",
+                                                ),
+                                              )
+                                            }
+                                          >
+                                            <Download
+                                              className="size-4"
+                                              strokeWidth={1.5}
+                                              aria-hidden
+                                            />
+                                          </DocIconButton>
+                                        </>
                                       ) : null}
                                       {canUpdate &&
                                       doc &&
                                       (doc.status === "pending_validation" ||
                                         doc.status === "observed") ? (
                                         <>
-                                          <button
-                                            type="button"
-                                            className="text-[11px] font-medium text-[var(--color-status-success-fg,#15803d)] hover:underline"
+                                          <DocIconButton
+                                            title="Validar"
+                                            tone="success"
                                             disabled={acting}
                                             onClick={() =>
                                               void (async () => {
@@ -1081,11 +1189,15 @@ export function AccreditationDetailPage() {
                                               })()
                                             }
                                           >
-                                            Validar
-                                          </button>
-                                          <button
-                                            type="button"
-                                            className="text-[11px] font-medium text-[var(--color-status-warning-fg,#b45309)] hover:underline"
+                                            <Check
+                                              className="size-4"
+                                              strokeWidth={1.5}
+                                              aria-hidden
+                                            />
+                                          </DocIconButton>
+                                          <DocIconButton
+                                            title="Observar"
+                                            tone="warning"
                                             disabled={acting}
                                             onClick={() => {
                                               setObserveDocId(doc.id);
@@ -1095,14 +1207,18 @@ export function AccreditationDetailPage() {
                                               );
                                             }}
                                           >
-                                            Observar
-                                          </button>
+                                            <MessageSquareWarning
+                                              className="size-4"
+                                              strokeWidth={1.5}
+                                              aria-hidden
+                                            />
+                                          </DocIconButton>
                                         </>
                                       ) : null}
                                       {canUpdate &&
                                       hab.status !== "approved" &&
                                       hab.status !== "rejected" ? (
-                                        <label className="cursor-pointer text-[11px] font-medium text-[var(--color-nachipa-title)] hover:underline">
+                                        <label className="cursor-pointer px-1 text-[11px] font-medium text-[var(--color-nachipa-title)] hover:underline">
                                           {uploadingTypeId ===
                                           item.documentType.id
                                             ? "Subiendo…"

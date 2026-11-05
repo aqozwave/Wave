@@ -26,6 +26,7 @@ import { Toggle } from "../../components/Toggle/Toggle";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { useToast } from "../../components/Toast/ToastProvider";
+import { ContractorFichaModal } from "./ContractorFichaModal";
 import {
   listBusinessesRequest,
   type Business,
@@ -209,6 +210,7 @@ const outlineBtnClass =
 /**
  * Listado Organizaciones (Figma P2 · P1).
  * Tabs con Habilitaciones; columnas RUT, razón, rol, personal, revisión, HAB.
+ * Clic en org → ficha en modal (prototipo); página completa sigue disponible.
  */
 export function ContractorsPage() {
   const { accessToken, user } = useAuth();
@@ -240,6 +242,8 @@ export function ContractorsPage() {
   const [pendingDeactivate, setPendingDeactivate] =
     useState<ContractorOrganization | null>(null);
   const [deactivating, setDeactivating] = useState(false);
+  /** Prototipo: ficha de org abierta en modal (id o null). */
+  const [fichaOrgId, setFichaOrgId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!accessToken || !canRead) return;
@@ -379,6 +383,12 @@ export function ContractorsPage() {
     if (submitting) return;
     setModalOpen(false);
     setEditing(null);
+  }
+
+  /** Abre la ficha en modal (prototipo) en lugar de navegar. */
+  function openFichaModal(orgId: string) {
+    setMenuId(null);
+    setFichaOrgId(orgId);
   }
 
   async function onSubmit(e: FormEvent) {
@@ -683,17 +693,19 @@ export function ContractorsPage() {
                         />
                       </td>
                       <td className="px-3 py-2.5 font-medium tabular-nums text-[var(--color-nachipa-title)]">
-                        <Link
-                          to={`/prevencion/contratistas/${row.id}`}
+                        <button
+                          type="button"
                           className="hover:underline"
+                          onClick={() => openFichaModal(row.id)}
                         >
                           {row.rut}
-                        </Link>
+                        </button>
                       </td>
                       <td className="px-3 py-2.5">
-                        <Link
-                          to={`/prevencion/contratistas/${row.id}`}
-                          className="flex items-center gap-2.5 hover:opacity-90"
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2.5 text-left hover:opacity-90"
+                          onClick={() => openFichaModal(row.id)}
                         >
                           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-status-info-bg,#e0f2fe)] text-[11px] font-semibold text-[var(--color-status-info-fg,#0369a1)]">
                             {orgInitials(row.name)}
@@ -708,7 +720,7 @@ export function ContractorsPage() {
                               </span>
                             ) : null}
                           </span>
-                        </Link>
+                        </button>
                       </td>
                       <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
                         {roleLabel(row.role)}
@@ -752,13 +764,13 @@ export function ContractorsPage() {
                             </button>
                             {menuId === row.id ? (
                               <div className="absolute right-3 z-10 mt-1 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-sm">
-                                <Link
-                                  to={`/prevencion/contratistas/${row.id}`}
+                                <button
+                                  type="button"
                                   className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                                  onClick={() => setMenuId(null)}
+                                  onClick={() => openFichaModal(row.id)}
                                 >
                                   Ver ficha
-                                </Link>
+                                </button>
                                 <button
                                   type="button"
                                   className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
@@ -777,12 +789,13 @@ export function ContractorsPage() {
                             ) : null}
                           </>
                         ) : (
-                          <Link
-                            to={`/prevencion/contratistas/${row.id}`}
+                          <button
+                            type="button"
                             className="text-[12px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                            onClick={() => openFichaModal(row.id)}
                           >
                             Ver
-                          </Link>
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -1076,6 +1089,11 @@ export function ContractorsPage() {
           Soft delete: queda fuera del listado activo.
         </p>
       </Modal>
+
+      <ContractorFichaModal
+        organizationId={fichaOrgId}
+        onClose={() => setFichaOrgId(null)}
+      />
     </div>
   );
 }

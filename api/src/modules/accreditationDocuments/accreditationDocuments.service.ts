@@ -387,16 +387,43 @@ export async function validateAccreditationDocument(
     );
   }
 
-  const updated = await prisma.contractorOrgDocument.update({
-    where: { id: existing.id },
-    data: {
-      status: body.status,
-      observation,
-      validatedById: actor.id,
-      validatedAt: new Date(),
-    },
-    include: { documentType: true },
+  const updated = await prisma.$transaction(async (tx) => {
+    const doc = await tx.contractorOrgDocument.update({
+      where: { id: existing.id },
+      data: {
+        status: body.status,
+        observation,
+        validatedById: actor.id,
+        validatedAt: new Date(),
+      },
+      include: { documentType: true },
+    });
+
+    /**
+     * Observar un doc en revisión = devolver la HAB al contratista.
+     * Si no, el portal sigue en in_review y no puede reemplazar.
+     */
+    if (body.status === "observed") {
+      const hab = await tx.contractorAccreditation.findFirst({
+        where: { id: accreditationId },
+        select: { status: true },
+      });
+      if (hab?.status === "in_review") {
+        await tx.contractorAccreditation.update({
+          where: { id: accreditationId },
+          data: {
+            status: "observed",
+            reviewNote: observation,
+            reviewedAt: new Date(),
+            reviewedById: actor.id,
+          },
+        });
+      }
+    }
+
+    return doc;
   });
+
   return toDocResponse(updated);
 }
 
@@ -769,16 +796,40 @@ export async function validateAccreditationPersonDocument(
     );
   }
 
-  const updated = await prisma.contractorPersonDocument.update({
-    where: { id: existing.id },
-    data: {
-      status: body.status,
-      observation,
-      validatedById: actor.id,
-      validatedAt: new Date(),
-    },
-    include: { documentType: true },
+  const updated = await prisma.$transaction(async (tx) => {
+    const doc = await tx.contractorPersonDocument.update({
+      where: { id: existing.id },
+      data: {
+        status: body.status,
+        observation,
+        validatedById: actor.id,
+        validatedAt: new Date(),
+      },
+      include: { documentType: true },
+    });
+
+    // Misma regla que docs de empresa: observar → HAB observed.
+    if (body.status === "observed") {
+      const hab = await tx.contractorAccreditation.findFirst({
+        where: { id: accreditationId },
+        select: { status: true },
+      });
+      if (hab?.status === "in_review") {
+        await tx.contractorAccreditation.update({
+          where: { id: accreditationId },
+          data: {
+            status: "observed",
+            reviewNote: observation,
+            reviewedAt: new Date(),
+            reviewedById: actor.id,
+          },
+        });
+      }
+    }
+
+    return doc;
   });
+
   return toPersonDocResponse(updated);
 }
 

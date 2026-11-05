@@ -523,3 +523,45 @@ export const downloadMyContractorPersonDocumentRequestSchema = z.object({
 export type ContractorPortalPersonResponse = z.infer<
   typeof contractorPortalPersonResponseSchema
 >;
+
+/**
+ * PATCH /contractors/me — antecedentes del portal (E19).
+ * No permite cambiar RUT, rol, business ni active.
+ */
+export const updateMyContractorOrganizationBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    specialty: z.string().trim().max(200).nullable().optional(),
+    contactName: z.string().trim().max(200).nullable().optional(),
+    contactEmail: z
+      .union([z.string().email("Email inválido"), z.literal(""), z.null()])
+      .optional()
+      .transform((v) => (v === "" ? null : v)),
+    contactPhone: z.string().trim().max(50).nullable().optional(),
+    legalRepresentative: z.string().trim().max(200).nullable().optional(),
+    address: z.string().trim().max(300).nullable().optional(),
+    mutual: z.string().trim().max(200).nullable().optional(),
+    supervisorName: z.string().trim().max(200).nullable().optional(),
+    supervisorEmail: z
+      .union([z.string().email("Email inválido"), z.literal(""), z.null()])
+      .optional()
+      .transform((v) => (v === "" ? null : v)),
+    prevencionistName: z.string().trim().max(200).nullable().optional(),
+    prevencionistEmail: z
+      .union([z.string().email("Email inválido"), z.literal(""), z.null()])
+      .optional()
+      .transform((v) => (v === "" ? null : v)),
+    subcontractors: z.string().trim().max(500).nullable().optional(),
+    workDescription: z.string().trim().max(2000).nullable().optional(),
+  })
+  .refine((body) => Object.keys(body).length > 0, {
+    message: "Enviá al menos un campo para actualizar",
+  });
+
+export const updateMyContractorOrganizationRequestSchema = z.object({
+  body: updateMyContractorOrganizationBodySchema,
+});
+
+export type UpdateMyContractorOrganizationBody = z.infer<
+  typeof updateMyContractorOrganizationBodySchema
+>;

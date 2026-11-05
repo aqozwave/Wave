@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ClipboardCheck } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { Button } from "../../components/Button/Button";
 import { Modal } from "../../components/Modal/Modal";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
@@ -14,8 +14,11 @@ import {
   createContractorPortalDocumentRequest,
   downloadContractorPortalDocumentRequest,
   getContractorPortalAccreditationRequest,
+  getContractorPortalOrganizationRequest,
   listContractorPortalDocumentsRequest,
   submitContractorPortalAccreditationRequest,
+  updateContractorPortalOrganizationRequest,
+  type ContractorOrganization,
   type ContractorPortalAccreditation,
   type ContractorPortalDocChecklistItem,
 } from "../../lib/api/contractors";
@@ -114,14 +117,61 @@ function formatDate(iso: string | null): string {
 const outlineBtnClass =
   "inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60";
 
+type TabId = "antecedentes" | "documentos";
+
+/** Formulario de antecedentes (E19). */
+type AntecedentesForm = {
+  name: string;
+  specialty: string;
+  mutual: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  legalRepresentative: string;
+  address: string;
+  supervisorName: string;
+  supervisorEmail: string;
+  prevencionistName: string;
+  prevencionistEmail: string;
+  subcontractors: string;
+  workDescription: string;
+};
+
+/** Mapea org → form. */
+function orgToForm(org: ContractorOrganization): AntecedentesForm {
+  return {
+    name: displayName(org.name),
+    specialty: org.specialty ?? "",
+    mutual: org.mutual ?? "",
+    contactName: org.contactName ?? "",
+    contactEmail: org.contactEmail ?? "",
+    contactPhone: org.contactPhone ?? "",
+    legalRepresentative: org.legalRepresentative ?? "",
+    address: org.address ?? "",
+    supervisorName: org.supervisorName ?? "",
+    supervisorEmail: org.supervisorEmail ?? "",
+    prevencionistName: org.prevencionistName ?? "",
+    prevencionistEmail: org.prevencionistEmail ?? "",
+    subcontractors: org.subcontractors ?? "",
+    workDescription: org.workDescription ?? "",
+  };
+}
+
 /**
- * Habilitación del portal contratista (P2 · E4).
- * Checklist pack company + upload + enviar a revisión.
+ * Habilitación del portal (P2 · E4 docs + E19 antecedentes).
+ * Tabs: Antecedentes generales · Documentos de la empresa.
  */
 export function ContractorPortalAccreditationPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const tab: TabId =
+    tabParam === "documentos" ? "documentos" : "antecedentes";
+
   const [hab, setHab] = useState<ContractorPortalAccreditation | null>(null);
+  const [org, setOrg] = useState<ContractorOrganization | null>(null);
+  const [form, setForm] = useState<AntecedentesForm | null>(null);
   const [items, setItems] = useState<ContractorPortalDocChecklistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
@@ -132,21 +182,53 @@ export function ContractorPortalAccreditationPage() {
   } | null>(null);
   const [expiryDate, setExpiryDate] = useState("");
 
+  const canEditAntecedentes =
+    !hab ||
+    hab.status === "pending" ||
+    hab.status === "observed" ||
+    hab.status === "invited";
+  /**
+   * Subir/reemplazar solo con HAB editable.
+   * Observar un doc (API) pasa la HAB a observed; si quedó in_review
+   * con docs observados (datos viejos), igual desbloqueamos.
+   */
+  const hasObservedDoc = items.some((i) => i.document?.status === "observed");
   const canUpload =
-    hab?.status === "pending" || hab?.status === "observed";
+    hab?.status === "pending" ||
+    hab?.status === "observed" ||
+    (hab?.status === "in_review" && hasObservedDoc);
   const canSubmit =
     hab?.status === "pending" || hab?.status === "observed";
+
+  /** Cambia tab sin perder el resto de query. */
+  function setTab(next: TabId) {
+    setSearchParams(next === "antecedentes" ? {} : { tab: next });
+  }
 
   const load = useCallback(async () => {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [habRow, docs] = await Promise.all([
-        getContractorPortalAccreditationRequest(accessToken),
-        listContractorPortalDocumentsRequest(accessToken),
-      ]);
-      setHab(habRow);
-      setItems(docs.items);
+      const orgRow = await getContractorPortalOrganizationRequest(accessToken);
+      setOrg(orgRow);
+      setForm(orgToForm(orgRow));
+
+      try {
+        const [habRow, docs] = await Promise.all([
+          getContractorPortalAccreditationRequest(accessToken),
+          listContractorPortalDocumentsRequest(accessToken),
+        ]);
+        setHab(habRow);
+        setItems(docs.items);
+      } catch (err) {
+        // Sin HAB abierta: antecedentes igual se editan.
+        if (err instanceof ApiError && err.status === 404) {
+          setHab(null);
+          setItems([]);
+        } else {
+          throw err;
+        }
+      }
     } catch (err) {
       showToast(
         err instanceof ApiError
@@ -154,6 +236,8 @@ export function ContractorPortalAccreditationPage() {
           : "No se pudo cargar la habilitación",
         "danger",
       );
+      setOrg(null);
+      setForm(null);
       setHab(null);
       setItems([]);
     } finally {
@@ -164,6 +248,48 @@ export function ContractorPortalAccreditationPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** Guarda antecedentes E19. */
+  async function onSaveAntecedentes(e: React.FormEvent) {
+    e.preventDefault();
+    if (!accessToken || !form || acting || !canEditAntecedentes) return;
+    if (!form.name.trim()) {
+      showToast("La razón social es obligatoria.", "warning");
+      return;
+    }
+    setActing(true);
+    try {
+      const updated = await updateContractorPortalOrganizationRequest(
+        accessToken,
+        {
+          name: form.name.trim(),
+          specialty: form.specialty.trim() || null,
+          mutual: form.mutual.trim() || null,
+          contactName: form.contactName.trim() || null,
+          contactEmail: form.contactEmail.trim() || null,
+          contactPhone: form.contactPhone.trim() || null,
+          legalRepresentative: form.legalRepresentative.trim() || null,
+          address: form.address.trim() || null,
+          supervisorName: form.supervisorName.trim() || null,
+          supervisorEmail: form.supervisorEmail.trim() || null,
+          prevencionistName: form.prevencionistName.trim() || null,
+          prevencionistEmail: form.prevencionistEmail.trim() || null,
+          subcontractors: form.subcontractors.trim() || null,
+          workDescription: form.workDescription.trim() || null,
+        },
+      );
+      setOrg(updated);
+      setForm(orgToForm(updated));
+      showToast("Antecedentes guardados.", "success");
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo guardar.",
+        "danger",
+      );
+    } finally {
+      setActing(false);
+    }
+  }
 
   /** Sube archivo con vencimiento ya resuelto. */
   async function uploadFile(
@@ -233,6 +359,11 @@ export function ContractorPortalAccreditationPage() {
     }
   }
 
+  /** Actualiza un campo del form. */
+  function patchForm(field: keyof AntecedentesForm, value: string) {
+    setForm((prev) => (prev ? { ...prev, [field]: value } : prev));
+  }
+
   const uploaded = items.filter((i) => i.document).length;
   const required = items.length;
 
@@ -262,22 +393,35 @@ export function ContractorPortalAccreditationPage() {
           ]}
           title="Habilitación"
           description={
-            hab
-              ? `${displayName(hab.organization.name)} · RUT ${hab.organization.rut} · ${hab.code}`
-              : "Documentos de tu empresa para la habilitación."
+            org
+              ? `${displayName(org.name)} · RUT ${org.rut}${hab ? ` · ${hab.code}` : ""}`
+              : "Antecedentes y documentos de tu empresa."
           }
           actions={
-            canSubmit ? (
-              <Button
-                type="button"
-                size="medium"
-                className="!w-auto"
-                disabled={acting || loading}
-                onClick={() => void onSubmit()}
-              >
-                {acting ? "Enviando…" : "Enviar a revisión"}
-              </Button>
-            ) : null
+            <div className="flex flex-wrap gap-2">
+              {tab === "antecedentes" && canEditAntecedentes ? (
+                <Button
+                  type="submit"
+                  form="portal-antecedentes-form"
+                  size="medium"
+                  className="!w-auto"
+                  disabled={acting || loading || !form}
+                >
+                  {acting ? "Guardando…" : "Guardar antecedentes"}
+                </Button>
+              ) : null}
+              {canSubmit ? (
+                <Button
+                  type="button"
+                  size="medium"
+                  className="!w-auto"
+                  disabled={acting || loading}
+                  onClick={() => void onSubmit()}
+                >
+                  {acting ? "Enviando…" : "Enviar a revisión"}
+                </Button>
+              ) : null}
+            </div>
           }
         />
 
@@ -285,127 +429,285 @@ export function ContractorPortalAccreditationPage() {
           <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
             Cargando…
           </p>
-        ) : !hab ? (
-          <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
-            Todavía no hay una habilitación abierta. Prevención debe solicitarte
-            la documentación.
-          </p>
         ) : (
           <>
-            <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white px-4 py-3">
-              <StatusChip tone={habTone(hab.status)}>
-                {habStatusLabel(hab.status)}
-              </StatusChip>
-              <span className="text-[13px] text-[var(--color-nachipa-body)]">
-                {uploaded} de {required} documentos cargados
-              </span>
-              {hab.reviewNote ? (
-                <span className="w-full text-[12px] text-[var(--color-status-warning-fg,#b45309)]">
-                  Observación: {hab.reviewNote}
+            {hab ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white px-4 py-3">
+                <StatusChip tone={habTone(hab.status)}>
+                  {habStatusLabel(hab.status)}
+                </StatusChip>
+                <span className="text-[13px] text-[var(--color-nachipa-body)]">
+                  {uploaded} de {required} documentos cargados
                 </span>
-              ) : null}
-            </div>
+                {hab.reviewNote ? (
+                  <span className="w-full text-[12px] text-[var(--color-status-warning-fg,#b45309)]">
+                    Observación: {hab.reviewNote}
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <div className="rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white px-4 py-3 text-[13px] text-[var(--color-nachipa-body)]">
+                Todavía no hay una habilitación abierta. Podés completar
+                antecedentes; los documentos se habilitan cuando Prevención
+                solicite la HAB.
+              </div>
+            )}
 
-            <div className="flex gap-2 border-b border-[var(--color-tremor-border)]">
-              <span className="border-b-2 border-[var(--color-nachipa-primary)] px-1 pb-2 text-[13px] font-medium text-[var(--color-nachipa-primary)]">
-                Documentos de la empresa ({required})
-              </span>
+            <div className="flex flex-wrap gap-2 border-b border-[var(--color-tremor-border)]">
+              <TabButton
+                active={tab === "antecedentes"}
+                onClick={() => setTab("antecedentes")}
+                label="Antecedentes generales"
+              />
+              <TabButton
+                active={tab === "documentos"}
+                onClick={() => setTab("documentos")}
+                label={`Documentos de la empresa (${required})`}
+              />
               <Link
-                to="/"
+                to="/portal/personal"
                 className="px-3 pb-2 text-[13px] text-[var(--color-nachipa-secondary)] hover:text-[var(--color-nachipa-title)]"
               >
-                Volver al panel
+                Personal
               </Link>
             </div>
 
-            <ul className="m-0 list-none divide-y divide-[var(--color-tremor-border)] rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-0">
-              {items.length === 0 ? (
-                <li className="px-4 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
-                  Pack empresa vacío. Pedile a Prevención que configure los
-                  tipos.
-                </li>
+            {tab === "antecedentes" ? (
+              form && org ? (
+                <form
+                  id="portal-antecedentes-form"
+                  className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-6"
+                  onSubmit={(e) => void onSaveAntecedentes(e)}
+                >
+                  <div>
+                    <h2 className="m-0 text-[15px] font-semibold text-[var(--color-nachipa-title)]">
+                      Antecedentes generales
+                    </h2>
+                    <p className="m-0 mt-1 text-[13px] text-[var(--color-nachipa-secondary)]">
+                      Lo que Prevención pide antes de habilitar a una empresa.
+                      Si cambia algo, se envía de nuevo a revisión.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <TextField
+                      label="Razón social"
+                      value={form.name}
+                      onChange={(e) => patchForm("name", e.target.value)}
+                      disabled={!canEditAntecedentes || acting}
+                      required
+                    />
+                    <TextField
+                      label="RUT"
+                      value={org.rut}
+                      disabled
+                    />
+                    <TextField
+                      label="Especialidad"
+                      value={form.specialty}
+                      onChange={(e) => patchForm("specialty", e.target.value)}
+                      disabled={!canEditAntecedentes || acting}
+                    />
+                    <TextField
+                      label="Mutualidad adherida"
+                      value={form.mutual}
+                      onChange={(e) => patchForm("mutual", e.target.value)}
+                      disabled={!canEditAntecedentes || acting}
+                      placeholder="ACHS, Mutual de Seguridad…"
+                    />
+                    <TextField
+                      label="Contacto de la empresa"
+                      value={form.contactName}
+                      onChange={(e) => patchForm("contactName", e.target.value)}
+                      disabled={!canEditAntecedentes || acting}
+                    />
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:col-span-1">
+                      <TextField
+                        label="Correo de contacto"
+                        type="email"
+                        value={form.contactEmail}
+                        onChange={(e) =>
+                          patchForm("contactEmail", e.target.value)
+                        }
+                        disabled={!canEditAntecedentes || acting}
+                      />
+                      <TextField
+                        label="Teléfono"
+                        value={form.contactPhone}
+                        onChange={(e) =>
+                          patchForm("contactPhone", e.target.value)
+                        }
+                        disabled={!canEditAntecedentes || acting}
+                      />
+                    </div>
+                    <TextField
+                      label="Representante legal"
+                      value={form.legalRepresentative}
+                      onChange={(e) =>
+                        patchForm("legalRepresentative", e.target.value)
+                      }
+                      disabled={!canEditAntecedentes || acting}
+                    />
+                    <TextField
+                      label="Dirección de la empresa"
+                      value={form.address}
+                      onChange={(e) => patchForm("address", e.target.value)}
+                      disabled={!canEditAntecedentes || acting}
+                    />
+                    <TextField
+                      label="Supervisor (nombre)"
+                      value={form.supervisorName}
+                      onChange={(e) =>
+                        patchForm("supervisorName", e.target.value)
+                      }
+                      disabled={!canEditAntecedentes || acting}
+                    />
+                    <TextField
+                      label="Supervisor (correo)"
+                      type="email"
+                      value={form.supervisorEmail}
+                      onChange={(e) =>
+                        patchForm("supervisorEmail", e.target.value)
+                      }
+                      disabled={!canEditAntecedentes || acting}
+                    />
+                    <TextField
+                      label="Prevencionista (nombre)"
+                      value={form.prevencionistName}
+                      onChange={(e) =>
+                        patchForm("prevencionistName", e.target.value)
+                      }
+                      disabled={!canEditAntecedentes || acting}
+                    />
+                    <TextField
+                      label="Prevencionista (correo)"
+                      type="email"
+                      value={form.prevencionistEmail}
+                      onChange={(e) =>
+                        patchForm("prevencionistEmail", e.target.value)
+                      }
+                      disabled={!canEditAntecedentes || acting}
+                    />
+                  </div>
+
+                  <TextField
+                    label="Subcontratistas (si corresponde)"
+                    value={form.subcontractors}
+                    onChange={(e) =>
+                      patchForm("subcontractors", e.target.value)
+                    }
+                    disabled={!canEditAntecedentes || acting}
+                    placeholder="Ninguno declarado"
+                  />
+                  <TextField
+                    label="Descripción de los trabajos a realizar"
+                    value={form.workDescription}
+                    onChange={(e) =>
+                      patchForm("workDescription", e.target.value)
+                    }
+                    disabled={!canEditAntecedentes || acting}
+                  />
+                </form>
               ) : (
-                items.map((item) => {
-                  const doc = item.document;
-                  return (
-                    <li
-                      key={item.documentType.id}
-                      className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <span className="mr-2 text-[12px] font-semibold tabular-nums text-[var(--color-nachipa-title)]">
-                          {item.documentType.code}
-                        </span>
-                        <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                          {item.documentType.name}
-                        </span>
-                        <div className="text-[12px] text-[var(--color-nachipa-secondary)]">
-                          {doc
-                            ? `${doc.originalName}${doc.expiresAt ? ` · vence ${formatDate(doc.expiresAt)}` : ""}`
-                            : "Sin archivo"}
-                          {doc?.status === "observed" && doc.observation
-                            ? ` · ${doc.observation}`
-                            : ""}
+                <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+                  No se pudo cargar la organización.
+                </p>
+              )
+            ) : !hab ? (
+              <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+                Todavía no hay una habilitación abierta. Prevención debe
+                solicitarte la documentación.
+              </p>
+            ) : (
+              <ul className="m-0 list-none divide-y divide-[var(--color-tremor-border)] rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-0">
+                {items.length === 0 ? (
+                  <li className="px-4 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
+                    Pack empresa vacío. Pedile a Prevención que configure los
+                    tipos.
+                  </li>
+                ) : (
+                  items.map((item) => {
+                    const doc = item.document;
+                    return (
+                      <li
+                        key={item.documentType.id}
+                        className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <span className="mr-2 text-[12px] font-semibold tabular-nums text-[var(--color-nachipa-title)]">
+                            {item.documentType.code}
+                          </span>
+                          <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                            {item.documentType.name}
+                          </span>
+                          <div className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                            {doc
+                              ? `${doc.originalName}${doc.expiresAt ? ` · vence ${formatDate(doc.expiresAt)}` : ""}`
+                              : "Sin archivo"}
+                            {doc?.status === "observed" && doc.observation
+                              ? ` · ${doc.observation}`
+                              : ""}
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {doc ? (
-                          <StatusChip tone={docTone(doc.status)}>
-                            {docLabel(doc.status)}
-                          </StatusChip>
-                        ) : null}
-                        {doc && accessToken ? (
-                          <button
-                            type="button"
-                            className="text-[12px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
-                            onClick={() =>
-                              void downloadContractorPortalDocumentRequest(
-                                accessToken,
-                                doc.id,
-                                doc.originalName,
-                              ).catch((err) =>
-                                showToast(
-                                  err instanceof ApiError
-                                    ? err.message
-                                    : "No se pudo descargar.",
-                                  "danger",
-                                ),
-                              )
-                            }
-                          >
-                            Descargar
-                          </button>
-                        ) : null}
-                        {canUpload ? (
-                          <label className="cursor-pointer text-[12px] font-medium text-[var(--color-nachipa-title)] hover:underline">
-                            {uploadingTypeId === item.documentType.id
-                              ? "Subiendo…"
-                              : doc
-                                ? "Reemplazar"
-                                : "Subir"}
-                            <input
-                              type="file"
-                              className="hidden"
-                              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
-                              disabled={acting}
-                              onChange={(e) => {
-                                const f = e.target.files?.[0] ?? null;
-                                e.target.value = "";
-                                onPickFile(
-                                  item.documentType.id,
-                                  f,
-                                  item.documentType.requiresExpiry,
-                                );
-                              }}
-                            />
-                          </label>
-                        ) : null}
-                      </div>
-                    </li>
-                  );
-                })
-              )}
-            </ul>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {doc ? (
+                            <StatusChip tone={docTone(doc.status)}>
+                              {docLabel(doc.status)}
+                            </StatusChip>
+                          ) : null}
+                          {doc && accessToken ? (
+                            <button
+                              type="button"
+                              className="text-[12px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                              onClick={() =>
+                                void downloadContractorPortalDocumentRequest(
+                                  accessToken,
+                                  doc.id,
+                                  doc.originalName,
+                                ).catch((err) =>
+                                  showToast(
+                                    err instanceof ApiError
+                                      ? err.message
+                                      : "No se pudo descargar.",
+                                    "danger",
+                                  ),
+                                )
+                              }
+                            >
+                              Descargar
+                            </button>
+                          ) : null}
+                          {canUpload ? (
+                            <label className="cursor-pointer text-[12px] font-medium text-[var(--color-nachipa-title)] hover:underline">
+                              {uploadingTypeId === item.documentType.id
+                                ? "Subiendo…"
+                                : doc
+                                  ? "Reemplazar"
+                                  : "Subir"}
+                              <input
+                                type="file"
+                                className="hidden"
+                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
+                                disabled={acting}
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0] ?? null;
+                                  e.target.value = "";
+                                  onPickFile(
+                                    item.documentType.id,
+                                    f,
+                                    item.documentType.requiresExpiry,
+                                  );
+                                }}
+                              />
+                            </label>
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })
+                )}
+              </ul>
+            )}
           </>
         )}
       </div>
@@ -464,5 +766,30 @@ export function ContractorPortalAccreditationPage() {
         />
       </Modal>
     </div>
+  );
+}
+
+/** Botón de tab estilo Figma. */
+function TabButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        active
+          ? "border-b-2 border-[var(--color-nachipa-primary)] px-1 pb-2 text-[13px] font-medium text-[var(--color-nachipa-primary)]"
+          : "px-3 pb-2 text-[13px] text-[var(--color-nachipa-secondary)] hover:text-[var(--color-nachipa-title)]"
+      }
+    >
+      {label}
+    </button>
   );
 }

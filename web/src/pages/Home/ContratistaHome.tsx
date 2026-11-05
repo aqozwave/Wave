@@ -295,11 +295,13 @@ export function ContratistaHome() {
               <ul className="m-0 list-none divide-y divide-[var(--color-tremor-border)] p-0">
                 {steps.map((step, idx) => {
                   const goTo =
-                    step.id === "docs" || step.id === "antecedentes"
+                    step.id === "antecedentes"
                       ? "/portal/habilitacion"
-                      : step.id === "people"
-                        ? "/portal/personal"
-                        : null;
+                      : step.id === "docs"
+                        ? "/portal/habilitacion?tab=documentos"
+                        : step.id === "people"
+                          ? "/portal/personal"
+                          : null;
                   return (
                     <li
                       key={step.id}

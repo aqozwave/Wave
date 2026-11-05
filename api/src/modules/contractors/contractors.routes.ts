@@ -18,6 +18,7 @@ import {
   getContractorHandler,
   getContractorPortalSummaryHandler,
   getMyContractorAccreditationHandler,
+  getMyContractorOrganizationHandler,
   inviteContractorUserHandler,
   listContractorPeopleHandler,
   listContractorUsersHandler,
@@ -28,6 +29,7 @@ import {
   submitMyContractorAccreditationHandler,
   updateContractorHandler,
   updateContractorPersonHandler,
+  updateMyContractorOrganizationHandler,
   updateMyContractorPersonHandler,
 } from "./contractors.controller.js";
 import {
@@ -51,6 +53,7 @@ import {
   listMyContractorPersonDocumentsRequestSchema,
   updateContractorPersonRequestSchema,
   updateContractorRequestSchema,
+  updateMyContractorOrganizationRequestSchema,
   updateMyContractorPersonRequestSchema,
 } from "./contractors.schemas.js";
 
@@ -62,6 +65,20 @@ import {
 export const contractorsRouter = Router();
 
 /** Portal E*: usuario externo (organizationId). Sin requirePermission. */
+contractorsRouter.get(
+  "/me",
+  authenticate,
+  validate(getContractorPortalSummaryRequestSchema),
+  getMyContractorOrganizationHandler,
+);
+
+contractorsRouter.patch(
+  "/me",
+  authenticate,
+  validate(updateMyContractorOrganizationRequestSchema),
+  updateMyContractorOrganizationHandler,
+);
+
 contractorsRouter.get(
   "/me/summary",
   authenticate,

@@ -264,6 +264,7 @@ import {
   updateContractorPersonBodySchema,
   updateContractorPersonResponseSchema,
   updateContractorResponseSchema,
+  updateMyContractorOrganizationBodySchema,
 } from "../modules/contractors/contractors.schemas.js";
 import {
   accreditationReviewNoteBodySchema,
@@ -2187,6 +2188,51 @@ registry.registerPath({
     401: { description: "Sin token" },
     403: { description: "No es usuario contratista" },
     404: { description: "Org no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/me",
+  tags: ["Contractors"],
+  summary: "Organización del portal (E19 antecedentes)",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Org del usuario externo",
+      content: {
+        "application/json": { schema: getContractorResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/contractors/me",
+  tags: ["Contractors"],
+  summary: "Actualizar antecedentes desde el portal (E19)",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: updateMyContractorOrganizationBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizada",
+      content: {
+        "application/json": { schema: updateContractorResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
   },
 });
 

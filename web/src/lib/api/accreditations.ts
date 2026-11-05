@@ -309,16 +309,15 @@ export function accreditationDocumentDownloadUrl(
   return `/api/v1/accreditations/${accreditationId}/documents/${documentId}/download${q}`;
 }
 
-/** Descarga autenticada → dispara save/open. */
+/** Descarga autenticada → dispara save al disco. */
 export async function downloadAccreditationDocumentRequest(
   accessToken: string,
   accreditationId: string,
   documentId: string,
   fileName: string,
-  inline = false,
 ): Promise<void> {
   const res = await fetch(
-    accreditationDocumentDownloadUrl(accreditationId, documentId, inline),
+    accreditationDocumentDownloadUrl(accreditationId, documentId, false),
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   if (!res.ok) {
@@ -332,6 +331,36 @@ export async function downloadAccreditationDocumentRequest(
   a.download = fileName;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Abre el doc de empresa en pestaña nueva (PDF/imagen, disposition inline).
+ */
+export async function previewAccreditationDocumentRequest(
+  accessToken: string,
+  accreditationId: string,
+  documentId: string,
+): Promise<void> {
+  const res = await fetch(
+    accreditationDocumentDownloadUrl(accreditationId, documentId, true),
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    throw toApiError(res, body);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, "_blank", "noopener,noreferrer");
+  if (!opened) {
+    URL.revokeObjectURL(url);
+    throw new ApiError(
+      0,
+      "popup_blocked",
+      "El navegador bloqueó la vista previa. Permití ventanas emergentes.",
+    );
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** Documento de persona en HAB. */
@@ -428,7 +457,18 @@ export async function validateAccreditationPersonDocumentRequest(
   return body as ContractorPersonDocument;
 }
 
-/** Descarga doc de persona. */
+/** URL descarga doc de persona (inline opcional para preview). */
+export function accreditationPersonDocumentDownloadUrl(
+  accreditationId: string,
+  personId: string,
+  documentId: string,
+  inline = false,
+): string {
+  const q = inline ? "?inline=1" : "";
+  return `/api/v1/accreditations/${accreditationId}/people/${personId}/documents/${documentId}/download${q}`;
+}
+
+/** Descarga doc de persona al disco. */
 export async function downloadAccreditationPersonDocumentRequest(
   accessToken: string,
   accreditationId: string,
@@ -437,7 +477,12 @@ export async function downloadAccreditationPersonDocumentRequest(
   fileName: string,
 ): Promise<void> {
   const res = await fetch(
-    `/api/v1/accreditations/${accreditationId}/people/${personId}/documents/${documentId}/download`,
+    accreditationPersonDocumentDownloadUrl(
+      accreditationId,
+      personId,
+      documentId,
+      false,
+    ),
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   if (!res.ok) {
@@ -451,6 +496,40 @@ export async function downloadAccreditationPersonDocumentRequest(
   a.download = fileName;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/** Abre doc de persona en pestaña nueva. */
+export async function previewAccreditationPersonDocumentRequest(
+  accessToken: string,
+  accreditationId: string,
+  personId: string,
+  documentId: string,
+): Promise<void> {
+  const res = await fetch(
+    accreditationPersonDocumentDownloadUrl(
+      accreditationId,
+      personId,
+      documentId,
+      true,
+    ),
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    throw toApiError(res, body);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, "_blank", "noopener,noreferrer");
+  if (!opened) {
+    URL.revokeObjectURL(url);
+    throw new ApiError(
+      0,
+      "popup_blocked",
+      "El navegador bloqueó la vista previa. Permití ventanas emergentes.",
+    );
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** Evento del historial HAB (P5h). */
