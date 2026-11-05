@@ -4,6 +4,28 @@ import { z } from "../../lib/zod.js";
 /** Relación laboral con el tenant (permanente / ocasional). */
 export const contractorRoleSchema = z.enum(["permanent", "occasional"]);
 
+/** Estados de HAB (mismo set que accreditations). */
+export const contractorAccreditationStatusSchema = z.enum([
+  "invited",
+  "pending",
+  "in_review",
+  "observed",
+  "approved",
+  "rejected",
+]);
+
+/** Resumen de la HAB más reciente (columna Habilitación / Última revisión). */
+export const contractorLatestAccreditationSchema = z
+  .object({
+    id: z.uuid(),
+    code: z.string(),
+    status: contractorAccreditationStatusSchema,
+    requestedAt: z.string().datetime().nullable(),
+    submittedAt: z.string().datetime().nullable(),
+    reviewedAt: z.string().datetime().nullable(),
+  })
+  .nullable();
+
 /** Organización contratista en respuestas API. */
 export const contractorOrganizationResponseSchema = z
   .object({
@@ -29,6 +51,15 @@ export const contractorOrganizationResponseSchema = z
     deletedAt: z.string().datetime().nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
+    /**
+     * HAB más reciente (por createdAt). null = nunca solicitada.
+     * UI Figma: columna Habilitación + Última revisión.
+     */
+    latestAccreditation: contractorLatestAccreditationSchema,
+    /**
+     * Conteo de personal externo. 0 hasta existir ContractorPerson (P2 personas).
+     */
+    personCount: z.number().int().nonnegative(),
   })
   .openapi("ContractorOrganization");
 
@@ -42,6 +73,13 @@ export const listContractorsQuerySchema = z.object({
     .optional()
     .transform((v) => (v === undefined ? undefined : v === "true")),
   role: contractorRoleSchema.optional(),
+  /**
+   * Filtra por estado de alguna HAB (aprox. columna Habilitación).
+   * `none` = sin ninguna habilitación.
+   */
+  accreditationStatus: z
+    .union([contractorAccreditationStatusSchema, z.literal("none")])
+    .optional(),
   search: z.string().trim().optional(),
 });
 

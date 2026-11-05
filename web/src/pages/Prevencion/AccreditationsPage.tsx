@@ -6,6 +6,7 @@ import {
   type FormEvent,
 } from "react";
 import { ClipboardCheck, MoreVertical, Plus } from "lucide-react";
+import { Link } from "react-router";
 import { Button } from "../../components/Button/Button";
 import {
   DataTableCard,
@@ -311,8 +312,8 @@ export function AccreditationsPage() {
             { label: "Prevención", to: "/prevencion" },
             { label: "Habilitaciones" },
           ]}
-          title="Habilitaciones"
-          description="Solicitar y revisar documentación de organizaciones contratistas (HAB). La carga de archivos llega en el siguiente paso."
+          title="Contratistas"
+          description="Empresas externas que trabajan en la flota. Solo las habilitadas pueden recibir permisos de trabajo."
           actions={
             canCreate ? (
               <Button
@@ -327,6 +328,29 @@ export function AccreditationsPage() {
             ) : null
           }
         />
+
+        <div
+          role="tablist"
+          className="flex gap-1 border-b border-[var(--color-tremor-border)]"
+        >
+          <Link
+            to="/prevencion/contratistas"
+            role="tab"
+            className="px-3 py-2 text-[13px] font-medium text-[var(--color-nachipa-secondary)] hover:text-[var(--color-nachipa-title)]"
+          >
+            Organizaciones
+          </Link>
+          <span
+            role="tab"
+            aria-selected
+            className="border-b-2 border-[var(--color-nachipa-primary)] px-3 py-2 text-[13px] font-medium text-[var(--color-nachipa-title)]"
+          >
+            Habilitaciones
+            <span className="ml-1.5 text-[var(--color-nachipa-secondary)]">
+              {items.length}
+            </span>
+          </span>
+        </div>
 
         <DataTableCard
           toolbar={

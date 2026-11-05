@@ -30,6 +30,7 @@ import { NotificacionesVencimiento } from "./pages/Notificaciones/Notificaciones
 import { OutboxNotificaciones } from "./pages/Notificaciones/OutboxNotificaciones";
 import { AccreditationPacksPage } from "./pages/Prevencion/AccreditationPacksPage";
 import { AccreditationsPage } from "./pages/Prevencion/AccreditationsPage";
+import { ContractorDetailPage } from "./pages/Prevencion/ContractorDetailPage";
 import { ContractorsPage } from "./pages/Prevencion/ContractorsPage";
 import { PermitTypeDetailPage } from "./pages/Prevencion/PermitTypeDetailPage";
 import { PermitTypesPage } from "./pages/Prevencion/PermitTypesPage";
@@ -160,6 +161,10 @@ export function App() {
           <Route
             path="prevencion/contratistas"
             element={<ContractorsPage />}
+          />
+          <Route
+            path="prevencion/contratistas/:id"
+            element={<ContractorDetailPage />}
           />
           <Route
             path="prevencion/habilitaciones"

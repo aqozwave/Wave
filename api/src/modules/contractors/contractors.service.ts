@@ -13,6 +13,22 @@ import type {
 /** Actor mínimo para reglas de tenant. */
 type Actor = Pick<AuthUser, "internalRol" | "businessId">;
 
+/** HAB más reciente incluida en lecturas de org. */
+type LatestAccreditationRow = {
+  id: string;
+  code: string;
+  status:
+    | "invited"
+    | "pending"
+    | "in_review"
+    | "observed"
+    | "approved"
+    | "rejected";
+  requestedAt: Date | null;
+  submittedAt: Date | null;
+  reviewedAt: Date | null;
+};
+
 /** Serializa fila Prisma → contrato Zod. */
 function toContractorResponse(row: {
   id: string;
@@ -37,7 +53,9 @@ function toContractorResponse(row: {
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  accreditations?: LatestAccreditationRow[];
 }): ContractorOrganizationResponse {
+  const latest = row.accreditations?.[0] ?? null;
   return {
     id: row.id,
     businessId: row.businessId,
@@ -61,8 +79,42 @@ function toContractorResponse(row: {
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    latestAccreditation: latest
+      ? {
+          id: latest.id,
+          code: latest.code,
+          status: latest.status,
+          requestedAt: latest.requestedAt
+            ? latest.requestedAt.toISOString()
+            : null,
+          submittedAt: latest.submittedAt
+            ? latest.submittedAt.toISOString()
+            : null,
+          reviewedAt: latest.reviewedAt
+            ? latest.reviewedAt.toISOString()
+            : null,
+        }
+      : null,
+    /** Hasta existir contractor_people. */
+    personCount: 0,
   };
 }
+
+/** Include HAB más reciente (1) por createdAt desc. */
+const latestAccreditationInclude = {
+  accreditations: {
+    orderBy: { createdAt: "desc" as const },
+    take: 1,
+    select: {
+      id: true,
+      code: true,
+      status: true,
+      requestedAt: true,
+      submittedAt: true,
+      reviewedAt: true,
+    },
+  },
+} as const;
 
 /**
  * Filtro de listado: superadmin ve todas (o filtra businessId);
@@ -79,6 +131,12 @@ function listWhere(
   }
   if (query.role) {
     base.role = query.role;
+  }
+  if (query.accreditationStatus === "none") {
+    base.accreditations = { none: {} };
+  } else if (query.accreditationStatus) {
+    // Tiene al menos una HAB en ese estado (aprox. filtro Figma).
+    base.accreditations = { some: { status: query.accreditationStatus } };
   }
   if (query.search && query.search.length > 0) {
     base.OR = [
@@ -172,6 +230,7 @@ export async function listContractors(
   const [rows, total] = await Promise.all([
     prisma.contractorOrganization.findMany({
       where,
+      include: latestAccreditationInclude,
       orderBy: [{ name: "asc" }],
       skip,
       take: query.limit,
@@ -194,6 +253,7 @@ export async function getContractorById(
 ): Promise<ContractorOrganizationResponse> {
   const row = await prisma.contractorOrganization.findFirst({
     where: { id, deletedAt: null },
+    include: latestAccreditationInclude,
   });
   if (!row) {
     throw new AppError(
@@ -243,6 +303,7 @@ export async function createContractor(
         workDescription: body.workDescription ?? null,
         active: body.active ?? true,
       },
+      include: latestAccreditationInclude,
     });
     return toContractorResponse(row);
   } catch (err) {
@@ -347,6 +408,7 @@ export async function updateContractor(
     const updated = await prisma.contractorOrganization.update({
       where: { id },
       data,
+      include: latestAccreditationInclude,
     });
     return toContractorResponse(updated);
   } catch (err) {
@@ -385,6 +447,7 @@ export async function deleteContractor(
   const updated = await prisma.contractorOrganization.update({
     where: { id },
     data: { deletedAt: new Date(), active: false },
+    include: latestAccreditationInclude,
   });
   return toContractorResponse(updated);
 }

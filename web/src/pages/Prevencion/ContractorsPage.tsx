@@ -6,9 +6,11 @@ import {
   type FormEvent,
 } from "react";
 import { Building2, MoreVertical, Plus } from "lucide-react";
+import { Link } from "react-router";
 import { Button } from "../../components/Button/Button";
 import {
   DataTableCard,
+  DataTableOutlineButton,
   DataTableSearch,
 } from "../../components/DataTableCard/DataTableCard";
 import { Modal } from "../../components/Modal/Modal";
@@ -32,11 +34,13 @@ import {
   deleteContractorRequest,
   listContractorsRequest,
   updateContractorRequest,
+  type ContractorAccreditationStatus,
   type ContractorOrganization,
   type ContractorRole,
 } from "../../lib/api/contractors";
 import { userHasPermission } from "../../lib/api/auth";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { downloadXls } from "../../lib/exportXls";
 
 /** Capitaliza nombre guardado en minúsculas. */
 function displayName(value: string): string {
@@ -52,6 +56,89 @@ function roleLabel(role: ContractorRole): string {
   return role === "permanent" ? "Permanente" : "Ocasional";
 }
 
+/** Chip de habilitación (Figma). */
+function habLabel(status: ContractorAccreditationStatus | null): string {
+  if (!status) return "Sin solicitud";
+  switch (status) {
+    case "approved":
+      return "Habilitada";
+    case "in_review":
+      return "Por revisar";
+    case "observed":
+      return "Observada";
+    case "rejected":
+      return "Rechazada";
+    case "invited":
+      return "Invitada";
+    case "pending":
+      return "Pendiente";
+    default:
+      return status;
+  }
+}
+
+/** Tono del chip HAB. */
+function habTone(
+  status: ContractorAccreditationStatus | null,
+): "success" | "warning" | "danger" | "info" | "neutral" {
+  if (!status) return "neutral";
+  switch (status) {
+    case "approved":
+      return "success";
+    case "in_review":
+      return "info";
+    case "observed":
+    case "pending":
+    case "invited":
+      return "warning";
+    case "rejected":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+/**
+ * Texto «Última revisión» al estilo Figma
+ * (fecha, «enviada hace N d», «invitación enviada», —).
+ */
+function lastReviewLabel(row: ContractorOrganization): string {
+  const hab = row.latestAccreditation;
+  if (!hab) return "—";
+  if (hab.status === "invited") return "invitación enviada";
+  if (hab.reviewedAt) {
+    try {
+      return new Date(hab.reviewedAt).toLocaleDateString("es-CL");
+    } catch {
+      return "—";
+    }
+  }
+  if (hab.submittedAt) {
+    const days = Math.max(
+      0,
+      Math.floor(
+        (Date.now() - new Date(hab.submittedAt).getTime()) / 86_400_000,
+      ),
+    );
+    if (days === 0) return "enviada hoy";
+    return `enviada hace ${days} d`;
+  }
+  if (hab.requestedAt) {
+    try {
+      return new Date(hab.requestedAt).toLocaleDateString("es-CL");
+    } catch {
+      return "—";
+    }
+  }
+  return "—";
+}
+
+/** Personal: «N personas» o — (sin catálogo de personas aún). */
+function personalLabel(count: number): string {
+  if (count <= 0) return "—";
+  return `${count} ${count === 1 ? "persona" : "personas"}`;
+}
+
 /** Form create / edit. */
 type FormState = {
   name: string;
@@ -65,7 +152,6 @@ type FormState = {
   active: boolean;
 };
 
-/** Form vacío. */
 const EMPTY_FORM: FormState = {
   name: "",
   rut: "",
@@ -78,23 +164,25 @@ const EMPTY_FORM: FormState = {
   active: true,
 };
 
-/** Clase de selects del modal. */
 const selectClass =
   "h-[42px] w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-brand-sky)_25%,transparent)]";
 
-/** Botón outline Cancelar. */
+const filterSelectClass =
+  "h-8 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-2.5 text-[12px] text-[var(--color-nachipa-body)] outline-none";
+
 const outlineBtnClass =
   "inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60";
 
 /**
- * Listado de organizaciones contratistas (P2).
- * Mutaciones: admin/superadmin. Lectura: contractors.read.
+ * Listado Organizaciones (Figma P2 · P1).
+ * Tabs con Habilitaciones; columnas RUT, razón, rol, personal, revisión, HAB.
  */
 export function ContractorsPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const isSuperadmin = user?.internalRol === "superadmin";
   const canRead = userHasPermission(user, "contractors", "read");
+  const canReadHab = userHasPermission(user, "accreditations", "read");
   const canManage =
     user?.internalRol === "admin" || user?.internalRol === "superadmin";
 
@@ -102,6 +190,10 @@ export function ContractorsPage() {
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"" | ContractorRole>("");
+  const [habFilter, setHabFilter] = useState<
+    "" | ContractorAccreditationStatus | "none"
+  >("");
   const [menuId, setMenuId] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -116,7 +208,10 @@ export function ContractorsPage() {
     if (!accessToken || !canRead) return;
     setLoading(true);
     try {
-      const result = await listContractorsRequest(accessToken, 1, 100);
+      const result = await listContractorsRequest(accessToken, 1, 100, {
+        role: roleFilter || undefined,
+        accreditationStatus: habFilter || undefined,
+      });
       setItems(result.items);
     } catch (err) {
       showToast(
@@ -128,7 +223,7 @@ export function ContractorsPage() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, canRead, showToast]);
+  }, [accessToken, canRead, roleFilter, habFilter, showToast]);
 
   useEffect(() => {
     void load();
@@ -148,7 +243,7 @@ export function ContractorsPage() {
       (row) =>
         row.name.toLowerCase().includes(q) ||
         row.rut.toLowerCase().includes(q) ||
-        (row.specialty ?? "").toLowerCase().includes(q) ||
+        (row.contactEmail ?? "").toLowerCase().includes(q) ||
         (row.contactName ?? "").toLowerCase().includes(q),
     );
   }, [items, search]);
@@ -163,17 +258,40 @@ export function ContractorsPage() {
     total,
   } = useClientTablePagination(filtered);
 
-  /** Abre modal de alta. */
+  /** Export XLS del listado filtrado. */
+  function onExport() {
+    if (filtered.length === 0) {
+      showToast("No hay filas para exportar.", "info");
+      return;
+    }
+    downloadXls(
+      filtered,
+      [
+        { header: "RUT", value: (row) => row.rut },
+        { header: "Razón social", value: (row) => displayName(row.name) },
+        { header: "Rol", value: (row) => roleLabel(row.role) },
+        {
+          header: "Personal",
+          value: (row) => personalLabel(row.personCount),
+        },
+        {
+          header: "Habilitación",
+          value: (row) =>
+            habLabel(row.latestAccreditation?.status ?? null),
+        },
+        { header: "Última revisión", value: (row) => lastReviewLabel(row) },
+        { header: "Email", value: (row) => row.contactEmail ?? "" },
+      ],
+      "contratistas",
+    );
+  }
+
   function openCreate() {
     setEditing(null);
-    setForm({
-      ...EMPTY_FORM,
-      businessId: user?.businessId ?? "",
-    });
+    setForm({ ...EMPTY_FORM, businessId: user?.businessId ?? "" });
     setModalOpen(true);
   }
 
-  /** Abre modal de edición. */
   function openEdit(row: ContractorOrganization) {
     setMenuId(null);
     setEditing(row);
@@ -191,18 +309,15 @@ export function ContractorsPage() {
     setModalOpen(true);
   }
 
-  /** Cierra modal si no está enviando. */
   function closeModal() {
     if (submitting) return;
     setModalOpen(false);
     setEditing(null);
   }
 
-  /** POST o PATCH. */
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!accessToken || submitting) return;
-
     if (!form.name.trim()) {
       showToast("El nombre es requerido.", "danger");
       return;
@@ -215,7 +330,6 @@ export function ContractorsPage() {
       showToast("Elegí la empresa.", "danger");
       return;
     }
-
     setSubmitting(true);
     try {
       const payload = {
@@ -250,13 +364,11 @@ export function ContractorsPage() {
     }
   }
 
-  /** Abre Modal de confirmación para desactivar. */
   function askDeactivate(row: ContractorOrganization) {
     setMenuId(null);
     setPendingDeactivate(row);
   }
 
-  /** Soft-delete tras Modal. */
   async function confirmDeactivate() {
     if (!accessToken || !canManage || !pendingDeactivate || deactivating) {
       return;
@@ -308,30 +420,103 @@ export function ContractorsPage() {
             { label: "Prevención", to: "/prevencion" },
             { label: "Contratistas" },
           ]}
-          title="Organizaciones contratistas"
-          description="Empresas externas del tenant. La habilitación y el personal llegan en el siguiente micro-paso."
+          title="Contratistas"
+          description="Empresas externas que trabajan en la flota. Solo las habilitadas pueden recibir permisos de trabajo."
           actions={
-            canManage ? (
-              <Button
-                type="button"
-                size="medium"
-                className="!w-auto"
-                onClick={openCreate}
+            <div className="flex flex-wrap items-center gap-2">
+              <DataTableOutlineButton
+                onClick={() =>
+                  showToast("Importar llega en un paso siguiente.", "info")
+                }
               >
-                <Plus className="size-4" strokeWidth={1.5} aria-hidden />
-                Nueva organización
-              </Button>
-            ) : null
+                Importar
+              </DataTableOutlineButton>
+              {canManage ? (
+                <Button
+                  type="button"
+                  size="medium"
+                  className="!w-auto"
+                  onClick={openCreate}
+                >
+                  <Plus className="size-4" strokeWidth={1.5} aria-hidden />
+                  Nueva organización
+                </Button>
+              ) : null}
+            </div>
           }
         />
 
+        {/* Tabs Figma: Organizaciones | Habilitaciones */}
+        <div
+          role="tablist"
+          className="flex gap-1 border-b border-[var(--color-tremor-border)]"
+        >
+          <span
+            role="tab"
+            aria-selected
+            className="border-b-2 border-[var(--color-nachipa-primary)] px-3 py-2 text-[13px] font-medium text-[var(--color-nachipa-title)]"
+          >
+            Organizaciones
+            <span className="ml-1.5 text-[var(--color-nachipa-secondary)]">
+              {items.length}
+            </span>
+          </span>
+          {canReadHab ? (
+            <Link
+              to="/prevencion/habilitaciones"
+              role="tab"
+              className="px-3 py-2 text-[13px] font-medium text-[var(--color-nachipa-secondary)] hover:text-[var(--color-nachipa-title)]"
+            >
+              Habilitaciones
+            </Link>
+          ) : null}
+        </div>
+
         <DataTableCard
           toolbar={
-            <DataTableSearch
-              value={search}
-              onChange={setSearch}
-              placeholder="Buscar nombre, RUT o contacto…"
-            />
+            <div className="flex w-full flex-wrap items-center gap-2">
+              <div className="min-w-[200px] flex-1">
+                <DataTableSearch
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Buscar por RUT o razón social…"
+                />
+              </div>
+              <select
+                className={filterSelectClass}
+                value={habFilter}
+                aria-label="Filtro habilitación"
+                onChange={(e) =>
+                  setHabFilter(
+                    e.target.value as "" | ContractorAccreditationStatus | "none",
+                  )
+                }
+              >
+                <option value="">Habilitación: todas</option>
+                <option value="approved">Habilitada</option>
+                <option value="in_review">Por revisar</option>
+                <option value="observed">Observada</option>
+                <option value="pending">Pendiente</option>
+                <option value="invited">Invitada</option>
+                <option value="rejected">Rechazada</option>
+                <option value="none">Sin solicitud</option>
+              </select>
+              <select
+                className={filterSelectClass}
+                value={roleFilter}
+                aria-label="Filtro rol"
+                onChange={(e) =>
+                  setRoleFilter(e.target.value as "" | ContractorRole)
+                }
+              >
+                <option value="">Rol: todos</option>
+                <option value="permanent">Permanente</option>
+                <option value="occasional">Ocasional</option>
+              </select>
+              <DataTableOutlineButton onClick={onExport}>
+                Exportar
+              </DataTableOutlineButton>
+            </div>
           }
           footer={
             <TablePagination
@@ -348,15 +533,15 @@ export function ContractorsPage() {
             />
           }
         >
-          <table className="w-full min-w-[720px] border-collapse text-left text-[13px]">
+          <table className="w-full min-w-[880px] border-collapse text-left text-[13px]">
             <thead>
               <tr className="bg-[var(--color-table-head-bg,#f8f9fb)] text-[12px] font-medium text-[var(--color-nachipa-secondary)]">
                 <th className="px-3 py-2.5">RUT</th>
-                <th className="px-3 py-2.5">Nombre</th>
+                <th className="px-3 py-2.5">Razón social</th>
                 <th className="px-3 py-2.5">Rol</th>
-                <th className="px-3 py-2.5">Especialidad</th>
-                <th className="px-3 py-2.5">Contacto</th>
-                <th className="px-3 py-2.5">Estado</th>
+                <th className="px-3 py-2.5">Personal</th>
+                <th className="px-3 py-2.5">Última revisión</th>
+                <th className="px-3 py-2.5">Habilitación</th>
                 <th className="px-3 py-2.5 text-right">Acciones</th>
               </tr>
             </thead>
@@ -376,88 +561,109 @@ export function ContractorsPage() {
                     colSpan={7}
                     className="px-3 py-8 text-[var(--color-nachipa-secondary)]"
                   >
-                    No hay organizaciones. Creá la primera o activá el módulo
-                    contractors en la empresa.
+                    No hay organizaciones con esos filtros.
                   </td>
                 </tr>
               ) : (
-                pageItems.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-t border-[var(--color-tremor-border)] hover:bg-[var(--color-nachipa-bg-page)]"
-                  >
-                    <td className="px-3 py-2.5 font-medium tabular-nums text-[var(--color-nachipa-title)]">
-                      {row.rut}
-                    </td>
-                    <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
-                      {displayName(row.name)}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <StatusChip
-                        tone={
-                          row.role === "permanent" ? "info" : "neutral"
-                        }
-                      >
+                pageItems.map((row) => {
+                  const habStatus = row.latestAccreditation?.status ?? null;
+                  return (
+                    <tr
+                      key={row.id}
+                      className="border-t border-[var(--color-tremor-border)] hover:bg-[var(--color-nachipa-bg-page)]"
+                    >
+                      <td className="px-3 py-2.5 font-medium tabular-nums text-[var(--color-nachipa-title)]">
+                        <Link
+                          to={`/prevencion/contratistas/${row.id}`}
+                          className="hover:underline"
+                        >
+                          {row.rut}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <Link
+                          to={`/prevencion/contratistas/${row.id}`}
+                          className="block font-medium text-[var(--color-nachipa-title)] hover:underline"
+                        >
+                          {displayName(row.name)}
+                        </Link>
+                        {row.contactEmail ? (
+                          <span className="block text-[12px] text-[var(--color-nachipa-secondary)]">
+                            {row.contactEmail}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
                         {roleLabel(row.role)}
-                      </StatusChip>
-                    </td>
-                    <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
-                      {row.specialty ?? "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
-                      {row.contactName ?? "—"}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <StatusChip tone={row.active ? "success" : "neutral"}>
-                        {row.active ? "Activa" : "Inactiva"}
-                      </StatusChip>
-                    </td>
-                    <td className="relative px-3 py-2.5 text-right">
-                      {canManage ? (
-                        <>
-                          <button
-                            type="button"
-                            className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-nachipa-secondary)] hover:bg-white hover:text-[var(--color-nachipa-title)]"
-                            aria-label="Acciones"
-                            onClick={() =>
-                              setMenuId((id) =>
-                                id === row.id ? null : row.id,
-                              )
-                            }
+                      </td>
+                      <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                        {personalLabel(row.personCount)}
+                      </td>
+                      <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                        {lastReviewLabel(row)}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <StatusChip tone={habTone(habStatus)}>
+                          {habLabel(habStatus)}
+                        </StatusChip>
+                      </td>
+                      <td className="relative px-3 py-2.5 text-right">
+                        {canManage ? (
+                          <>
+                            <button
+                              type="button"
+                              className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-nachipa-secondary)] hover:bg-white hover:text-[var(--color-nachipa-title)]"
+                              aria-label="Acciones"
+                              onClick={() =>
+                                setMenuId((id) =>
+                                  id === row.id ? null : row.id,
+                                )
+                              }
+                            >
+                              <MoreVertical
+                                className="size-4"
+                                strokeWidth={1.5}
+                                aria-hidden
+                              />
+                            </button>
+                            {menuId === row.id ? (
+                              <div className="absolute right-3 z-10 mt-1 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-sm">
+                                <Link
+                                  to={`/prevencion/contratistas/${row.id}`}
+                                  className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                  onClick={() => setMenuId(null)}
+                                >
+                                  Ver ficha
+                                </Link>
+                                <button
+                                  type="button"
+                                  className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                  onClick={() => openEdit(row)}
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                  onClick={() => askDeactivate(row)}
+                                >
+                                  Desactivar
+                                </button>
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <Link
+                            to={`/prevencion/contratistas/${row.id}`}
+                            className="text-[12px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
                           >
-                            <MoreVertical
-                              className="size-4"
-                              strokeWidth={1.5}
-                              aria-hidden
-                            />
-                          </button>
-                          {menuId === row.id ? (
-                            <div className="absolute right-3 z-10 mt-1 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-sm">
-                              <button
-                                type="button"
-                                className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                                onClick={() => openEdit(row)}
-                              >
-                                Editar
-                              </button>
-                              <button
-                                type="button"
-                                className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-nachipa-bg-page)]"
-                                onClick={() => askDeactivate(row)}
-                              >
-                                Desactivar
-                              </button>
-                            </div>
-                          ) : null}
-                        </>
-                      ) : (
-                        <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
-                          —
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                            Ver
+                          </Link>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -521,7 +727,6 @@ export function ContractorsPage() {
               </select>
             </label>
           ) : null}
-
           <TextField
             label="Razón social"
             value={form.name}
@@ -606,7 +811,7 @@ export function ContractorsPage() {
         title="Desactivar organización"
         subtitle={
           pendingDeactivate
-            ? `¿Desactivar «${displayName(pendingDeactivate.name)}» (${pendingDeactivate.rut})? Quedará inactiva (soft delete).`
+            ? `¿Desactivar «${displayName(pendingDeactivate.name)}» (${pendingDeactivate.rut})?`
             : undefined
         }
         footer={
@@ -632,8 +837,7 @@ export function ContractorsPage() {
         }
       >
         <p className="m-0 text-[13px] text-[var(--color-nachipa-body)]">
-          No borra historial futuro de habilitaciones; solo saca la org del
-          listado activo.
+          Soft delete: queda fuera del listado activo.
         </p>
       </Modal>
     </div>

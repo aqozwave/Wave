@@ -3,6 +3,25 @@ import { ApiError, type ApiErrorBody } from "./auth";
 /** Relación laboral con el tenant. */
 export type ContractorRole = "permanent" | "occasional";
 
+/** Estado HAB (mismo set que accreditations). */
+export type ContractorAccreditationStatus =
+  | "invited"
+  | "pending"
+  | "in_review"
+  | "observed"
+  | "approved"
+  | "rejected";
+
+/** HAB más reciente embebida en la org. */
+export type ContractorLatestAccreditation = {
+  id: string;
+  code: string;
+  status: ContractorAccreditationStatus;
+  requestedAt: string | null;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+};
+
 /** Organización contratista (P2). */
 export type ContractorOrganization = {
   id: string;
@@ -27,6 +46,8 @@ export type ContractorOrganization = {
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  latestAccreditation: ContractorLatestAccreditation | null;
+  personCount: number;
 };
 
 /** Listado paginado. */
@@ -86,6 +107,7 @@ export async function listContractorsRequest(
     businessId?: string;
     active?: boolean;
     role?: ContractorRole;
+    accreditationStatus?: ContractorAccreditationStatus | "none";
     search?: string;
   },
 ): Promise<ListContractorsResult> {
@@ -98,6 +120,9 @@ export async function listContractorsRequest(
     params.set("active", filters.active ? "true" : "false");
   }
   if (filters?.role) params.set("role", filters.role);
+  if (filters?.accreditationStatus) {
+    params.set("accreditationStatus", filters.accreditationStatus);
+  }
   if (filters?.search) params.set("search", filters.search);
   const res = await fetch(`/api/v1/contractors?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
