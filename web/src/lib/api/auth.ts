@@ -26,6 +26,10 @@ export type AuthUser = {
   locationId: string | null;
   /** Nombre de la nave para el Panel C1. */
   locationName: string | null;
+  /** Org contratista si es usuario externo (portal E*). */
+  organizationId: string | null;
+  /** Resumen de la org (login/me). */
+  organization: { id: string; name: string; rut: string } | null;
   /** Alcance del rol: all | business | location | area | self. */
   dataScope: "all" | "business" | "location" | "area" | "self" | null;
   confirmed: boolean;

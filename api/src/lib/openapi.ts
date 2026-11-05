@@ -242,6 +242,7 @@ import {
   updateTrainingResponseSchema,
 } from "../modules/trainings/trainings.schemas.js";
 import {
+  contractorPortalSummaryResponseSchema,
   createContractorBodySchema,
   createContractorPersonBodySchema,
   createContractorPersonResponseSchema,
@@ -2163,6 +2164,27 @@ registry.registerPath({
     401: { description: "Sin token" },
     403: { description: "Sin permiso" },
     404: { description: "No encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/me/summary",
+  tags: ["Contractors"],
+  summary: "Resumen portal contratista (E3b)",
+  description:
+    "Usuario con organizationId: org, HAB vigente, conteo docs empresa y personal. Sin permiso contractors.read.",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Resumen",
+      content: {
+        "application/json": { schema: contractorPortalSummaryResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+    404: { description: "Org no encontrada" },
   },
 });
 

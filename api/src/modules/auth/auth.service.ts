@@ -159,6 +159,18 @@ async function toAuthUser(user: User): Promise<AuthUser> {
     locationName = location?.name ?? null;
   }
 
+  /** Org contratista embebida para el portal E*. */
+  let organization: AuthUser["organization"] = null;
+  if (user.organizationId) {
+    const org = await prisma.contractorOrganization.findFirst({
+      where: { id: user.organizationId, deletedAt: null },
+      select: { id: true, name: true, rut: true },
+    });
+    organization = org
+      ? { id: org.id, name: org.name, rut: org.rut }
+      : null;
+  }
+
   const modules = await listBusinessModuleStates(user.businessId);
 
   return {
@@ -173,6 +185,8 @@ async function toAuthUser(user: User): Promise<AuthUser> {
     businessId: user.businessId,
     locationId: user.locationId,
     locationName,
+    organizationId: user.organizationId,
+    organization,
     dataScope,
     confirmed: user.confirmed,
     state: user.state,

@@ -5,6 +5,7 @@ import {
   safeChangedFields,
 } from "../activityLogs/activityLogs.service.js";
 import {
+  contractorPortalSummaryResponseSchema,
   createContractorPersonResponseSchema,
   createContractorResponseSchema,
   deleteContractorPersonResponseSchema,
@@ -31,6 +32,7 @@ import {
   deleteContractor,
   deleteContractorPerson,
   getContractorById,
+  getContractorPortalSummary,
   inviteContractorUser,
   listContractorPeople,
   listContractorUsers,
@@ -48,6 +50,16 @@ export async function listContractorsHandler(
   const query = req.query as unknown as ListContractorsQuery;
   const result = await listContractors(req.user, query);
   res.status(200).json(listContractorsResponseSchema.parse(result));
+}
+
+/** GET /contractors/me/summary — portal E3b del usuario externo. */
+export async function getContractorPortalSummaryHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await getContractorPortalSummary(req.user);
+  res.status(200).json(contractorPortalSummaryResponseSchema.parse(result));
 }
 
 /** POST /contractors — alta. */

@@ -1,0 +1,34 @@
+meta {
+  name: Get contractor portal summary
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{baseUrl}}/api/v1/contractors/me/summary
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  E3b: resumen del portal para usuario con organizationId.
+  Con usuario interno (sin org) → 403 not_contractor_user.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+}
+
+assert {
+  res.status: in [200, 403]
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

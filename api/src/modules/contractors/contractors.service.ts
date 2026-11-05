@@ -9,6 +9,7 @@ import { requestPasswordReset } from "../auth/auth.service.js";
 import type {
   ContractorOrganizationResponse,
   ContractorPersonResponse,
+  ContractorPortalSummaryResponse,
   ContractorUserResponse,
   CreateContractorBody,
   CreateContractorPersonBody,
@@ -946,4 +947,96 @@ export async function deleteContractorPerson(
     data: { deletedAt: new Date(), active: false },
   });
   return toContractorPersonResponse(updated);
+}
+
+/**
+ * Portal E3b: resumen de la org del usuario autenticado.
+ * Requiere organizationId en el actor (usuario externo invitado).
+ */
+export async function getContractorPortalSummary(
+  actor: Pick<AuthUser, "id" | "organizationId" | "businessId">,
+): Promise<ContractorPortalSummaryResponse> {
+  if (!actor.organizationId) {
+    throw new AppError(
+      403,
+      "not_contractor_user",
+      "Esta cuenta no pertenece a una organización contratista",
+    );
+  }
+
+  const org = await prisma.contractorOrganization.findFirst({
+    where: { id: actor.organizationId, deletedAt: null },
+  });
+  if (!org) {
+    throw new AppError(
+      404,
+      "contractor_not_found",
+      "Organización contratista no encontrada",
+    );
+  }
+
+  const hab = await prisma.contractorAccreditation.findFirst({
+    where: { organizationId: org.id },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const requiredCompanyTypes = await prisma.documentType.count({
+    where: {
+      businessId: org.businessId,
+      accreditationPack: "company",
+      state: true,
+      deletedAt: null,
+    },
+  });
+
+  let uploadedCompany = 0;
+  if (hab) {
+    uploadedCompany = await prisma.contractorOrgDocument.count({
+      where: {
+        accreditationId: hab.id,
+        deletedAt: null,
+      },
+    });
+  }
+
+  const peopleTotal = await prisma.contractorPerson.count({
+    where: {
+      organizationId: org.id,
+      deletedAt: null,
+      active: true,
+    },
+  });
+
+  return {
+    organization: {
+      id: org.id,
+      name: org.name,
+      rut: org.rut,
+      specialty: org.specialty,
+      role: org.role,
+    },
+    accreditation: hab
+      ? {
+          id: hab.id,
+          code: hab.code,
+          status: hab.status,
+          message: hab.message,
+          dueAt: hab.dueAt ? hab.dueAt.toISOString() : null,
+          requestedAt: hab.requestedAt
+            ? hab.requestedAt.toISOString()
+            : null,
+          submittedAt: hab.submittedAt
+            ? hab.submittedAt.toISOString()
+            : null,
+          reviewedAt: hab.reviewedAt
+            ? hab.reviewedAt.toISOString()
+            : null,
+        }
+      : null,
+    companyDocuments: {
+      uploaded: uploadedCompany,
+      required: requiredCompanyTypes,
+    },
+    people: { total: peopleTotal },
+  };
 }

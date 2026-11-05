@@ -264,6 +264,56 @@ export type InviteContractorUserBody = z.infer<
   typeof inviteContractorUserBodySchema
 >;
 
+/**
+ * Resumen del portal contratista (E3 / E3b).
+ * Solo para usuarios con organizationId (sin permiso contractors.read).
+ */
+export const contractorPortalSummaryResponseSchema = z
+  .object({
+    organization: z.object({
+      id: z.uuid(),
+      name: z.string(),
+      rut: z.string(),
+      specialty: z.string().nullable(),
+      role: z.string(),
+    }),
+    accreditation: z
+      .object({
+        id: z.uuid(),
+        code: z.string(),
+        status: z.enum([
+          "invited",
+          "pending",
+          "in_review",
+          "observed",
+          "approved",
+          "rejected",
+        ]),
+        message: z.string().nullable(),
+        dueAt: z.string().datetime().nullable(),
+        requestedAt: z.string().datetime().nullable(),
+        submittedAt: z.string().datetime().nullable(),
+        reviewedAt: z.string().datetime().nullable(),
+      })
+      .nullable(),
+    /** Docs pack company: cargados / exigidos. */
+    companyDocuments: z.object({
+      uploaded: z.number().int().nonnegative(),
+      required: z.number().int().nonnegative(),
+    }),
+    /** Personas activas de la org. */
+    people: z.object({
+      total: z.number().int().nonnegative(),
+    }),
+  })
+  .openapi("ContractorPortalSummary");
+
+export const getContractorPortalSummaryRequestSchema = z.object({});
+
+export type ContractorPortalSummaryResponse = z.infer<
+  typeof contractorPortalSummaryResponseSchema
+>;
+
 /** Persona externa de la org (P2 personal). */
 export const contractorPersonResponseSchema = z
   .object({

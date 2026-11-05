@@ -10,6 +10,7 @@ import {
   deleteContractorHandler,
   deleteContractorPersonHandler,
   getContractorHandler,
+  getContractorPortalSummaryHandler,
   inviteContractorUserHandler,
   listContractorPeopleHandler,
   listContractorUsersHandler,
@@ -22,6 +23,7 @@ import {
   createContractorRequestSchema,
   deleteContractorPersonRequestSchema,
   deleteContractorRequestSchema,
+  getContractorPortalSummaryRequestSchema,
   getContractorRequestSchema,
   inviteContractorUserRequestSchema,
   listContractorPeopleRequestSchema,
@@ -37,6 +39,14 @@ import {
  * Módulo contractors on se valida en el service (por businessId de la org).
  */
 export const contractorsRouter = Router();
+
+/** Portal E*: usuario externo (organizationId). Sin requirePermission. */
+contractorsRouter.get(
+  "/me/summary",
+  authenticate,
+  validate(getContractorPortalSummaryRequestSchema),
+  getContractorPortalSummaryHandler,
+);
 
 contractorsRouter.get(
   "/",

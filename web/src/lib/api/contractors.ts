@@ -377,3 +377,38 @@ export async function deleteContractorPersonRequest(
   if (!res.ok) throw toApiError(res, body);
   return body as ContractorPerson;
 }
+
+/** Resumen portal contratista (E3b). */
+export type ContractorPortalSummary = {
+  organization: {
+    id: string;
+    name: string;
+    rut: string;
+    specialty: string | null;
+    role: string;
+  };
+  accreditation: {
+    id: string;
+    code: string;
+    status: ContractorAccreditationStatus;
+    message: string | null;
+    dueAt: string | null;
+    requestedAt: string | null;
+    submittedAt: string | null;
+    reviewedAt: string | null;
+  } | null;
+  companyDocuments: { uploaded: number; required: number };
+  people: { total: number };
+};
+
+/** GET /api/v1/contractors/me/summary */
+export async function getContractorPortalSummaryRequest(
+  accessToken: string,
+): Promise<ContractorPortalSummary> {
+  const res = await fetch("/api/v1/contractors/me/summary", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorPortalSummary;
+}

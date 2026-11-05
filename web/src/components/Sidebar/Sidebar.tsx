@@ -294,20 +294,22 @@ export function Sidebar() {
     item.canShow(user),
   );
   const visibleConfigLinks = CONFIG_LINKS.filter((item) => item.canShow(user));
-  const showCrewGroup = visibleCrewLinks.length > 0;
-  const showCursosGroup = visibleCursosLinks.length > 0;
-  const showConfigGroup = visibleConfigLinks.length > 0;
-  const showPrevencion = canSeePrevencion(user);
-  const showSystemGroup = user?.internalRol === "superadmin";
+  /** Usuario externo (P9b): menú portal E*, no el de la naviera. */
+  const isContractorPortal = Boolean(user?.organizationId);
+  const showCrewGroup = !isContractorPortal && visibleCrewLinks.length > 0;
+  const showCursosGroup = !isContractorPortal && visibleCursosLinks.length > 0;
+  const showConfigGroup = !isContractorPortal && visibleConfigLinks.length > 0;
+  const showPrevencion = !isContractorPortal && canSeePrevencion(user);
+  const showSystemGroup =
+    !isContractorPortal && user?.internalRol === "superadmin";
   /** Etiqueta del home según rol (Figma C1 / T* / E3). */
-  const panelLabel =
-    user?.internalRol === "colaborador"
+  const panelLabel = isContractorPortal
+    ? "Panel"
+    : user?.internalRol === "colaborador"
       ? "Panel de mi nave"
       : user?.internalRol === "user"
         ? "Inicio"
-        : user?.internalRol === "contratista"
-          ? "Panel"
-          : "Panel";
+        : "Panel";
 
   useEffect(() => {
     setCollapsed(readCollapsed());
@@ -359,7 +361,11 @@ export function Sidebar() {
   const displayName = user
     ? `${user.firstName} ${user.lastName}`.trim()
     : "Usuario";
-  const displayMeta = user ? `${user.internalRol} · v2.0` : "…";
+  const displayMeta = user
+    ? isContractorPortal
+      ? `Contratista · ${user.organization?.name ?? "org"}`
+      : `${user.internalRol} · v2.0`
+    : "…";
   const initials = user ? initialsOf(user.firstName, user.lastName) : "?";
   const width = collapsed ? WIDTH_COLLAPSED : WIDTH_OPEN;
 

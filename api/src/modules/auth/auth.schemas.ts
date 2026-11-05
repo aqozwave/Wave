@@ -40,6 +40,19 @@ export const authUserSchema = z
     /** Nombre de la nave/lugar para el Panel C1. */
     locationName: z.string().nullable(),
     /**
+     * Org contratista si es usuario externo (P2 · P9b / portal E*).
+     * Null = usuario del tenant (interno).
+     */
+    organizationId: z.uuid().nullable(),
+    /** Resumen de la org (solo si organizationId). */
+    organization: z
+      .object({
+        id: z.uuid(),
+        name: z.string(),
+        rut: z.string(),
+      })
+      .nullable(),
+    /**
      * Alcance de datos del rol (`all` | `business` | `location` | `area` | `self`).
      * Null si no hay rol (p. ej. superadmin sin fila Role).
      */
