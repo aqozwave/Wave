@@ -242,6 +242,16 @@ import {
   updateTrainingResponseSchema,
 } from "../modules/trainings/trainings.schemas.js";
 import {
+  createContractorBodySchema,
+  createContractorResponseSchema,
+  deleteContractorResponseSchema,
+  getContractorResponseSchema,
+  listContractorsQuerySchema,
+  listContractorsResponseSchema,
+  updateContractorBodySchema,
+  updateContractorResponseSchema,
+} from "../modules/contractors/contractors.schemas.js";
+import {
   expiryNotificationSettingsSchema,
   updateExpiryNotificationSettingsBodySchema,
 } from "../modules/notificationSettings/notificationSettings.schemas.js";
@@ -2116,6 +2126,134 @@ registry.registerPath({
       description: "Soft-deleted",
       content: {
         "application/json": { schema: deleteTrainingResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors",
+  tags: ["Contractors"],
+  summary: "Listar organizaciones contratistas",
+  description:
+    "P2 orgs externas del tenant. Superadmin: filtro businessId. Permiso contractors.read + módulo contractors.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: listContractorsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listContractorsResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo contractors apagado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors",
+  tags: ["Contractors"],
+  summary: "Crear organización contratista",
+  description:
+    "Admin/superadmin + contractors.create. Superadmin: businessId obligatorio. RUT único por empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createContractorBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creada",
+      content: {
+        "application/json": { schema: createContractorResponseSchema },
+      },
+    },
+    400: { description: "Validación o módulo apagado" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o MODULE_DISABLED" },
+    409: { description: "RUT duplicado en la empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/{id}",
+  tags: ["Contractors"],
+  summary: "Obtener organización contratista",
+  description: "Detalle. 404 si no existe o es de otra empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Organización",
+      content: {
+        "application/json": { schema: getContractorResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrada o otra empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/contractors/{id}",
+  tags: ["Contractors"],
+  summary: "Actualizar organización contratista",
+  description: "Editar ficha o active. Admin/superadmin + contractors.update.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateContractorBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizada",
+      content: {
+        "application/json": { schema: updateContractorResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o MODULE_DISABLED" },
+    404: { description: "No encontrada" },
+    409: { description: "RUT duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/contractors/{id}",
+  tags: ["Contractors"],
+  summary: "Eliminar (soft) organización contratista",
+  description: "deletedAt + active=false. Permiso contractors.deactivate.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteContractorResponseSchema },
       },
     },
     401: { description: "Sin token" },

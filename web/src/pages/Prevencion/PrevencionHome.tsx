@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   ArrowRight,
+  Building2,
   ClipboardList,
   FileStack,
   GraduationCap,
@@ -32,8 +33,8 @@ type HubGroup = {
 };
 
 /**
- * Mapa del módulo Prevención (P1 catálogos).
- * Permisos de trabajo y contratistas llegan en P2+.
+ * Mapa del módulo Prevención (P1 catálogos + P2 orgs).
+ * Habilitación / PT llegan en micro-pasos siguientes.
  */
 const HUB_GROUPS: HubGroup[] = [
   {
@@ -66,8 +67,15 @@ const HUB_GROUPS: HubGroup[] = [
   },
   {
     title: "Operación",
-    legend: "Flujos de emisión y contratistas (siguientes slices).",
+    legend: "Contratistas y flujos de emisión.",
     items: [
+      {
+        label: "Contratistas",
+        legend: "Organizaciones externas del tenant (alta, ficha, estado).",
+        icon: Building2,
+        to: "/prevencion/contratistas",
+        canShow: (u) => userHasPermission(u, "contractors", "read"),
+      },
       {
         label: "Permisos de trabajo",
         legend: "Solicitar, validar y cerrar (flujo Estándar 5 etapas).",

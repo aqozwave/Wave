@@ -160,6 +160,12 @@ const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
     canShow: (u) =>
       userHasPermission(u, "maestros.document_types", "read"),
   },
+  {
+    label: "Contratistas",
+    to: "/prevencion/contratistas",
+    icon: Building2,
+    canShow: (u) => userHasPermission(u, "contractors", "read"),
+  },
 ];
 
 /** Activo exacto en Presentación; prefijo en subrutas. */

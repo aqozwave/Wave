@@ -29,6 +29,15 @@ enum BusinessModuleKey {
 }
 
 /**
+ * Relación laboral de la org contratista con el tenant (P2 · P1/P10).
+ * permanent = habitual; occasional = por faena.
+ */
+enum ContractorRole {
+  permanent
+  occasional
+}
+
+/**
  * Criticidad del tipo de permiso (P1 · P14/P15).
  * UI: chips Activo + Criticidad alta/media/baja.
  */
@@ -200,6 +209,8 @@ enum ActivityResource {
   permitType
   /// Catálogo capacitaciones Prevención (P1).
   training
+  /// Organización contratista (P2).
+  contractorOrganization
   system
 }
 
@@ -405,6 +416,8 @@ model Business {
   permitTypes            PermitType[]
   /// Catálogo de capacitaciones de Prevención (EXT-01, ODI-01, …).
   trainings              Training[]
+  /// Organizaciones contratistas (empresas externas del módulo contractors).
+  contractorOrganizations ContractorOrganization[]
 
   @@index([name])
   @@map("businesses")
@@ -989,6 +1002,46 @@ model UserAnnouncementRead {
   @@id([userId, announcementId])
   @@index([userId])
   @@map("user_announcement_reads")
+}
+
+/**
+ * Organización contratista / empresa externa (P2).
+ * Hija del tenant Business (no es otro Business). Sin legacyMongoId.
+ * Habilitación, invitaciones y personal llegan en micro-pasos siguientes.
+ */
+model ContractorOrganization {
+  id                  String         @id @default(uuid()) @db.Uuid
+  businessId          String         @map("business_id") @db.Uuid
+  business            Business       @relation(fields: [businessId], references: [id])
+  /// Razón social (se guarda en minúsculas como Business.name).
+  name                String
+  /// RUT normalizado cuerpo-dv; único por tenant.
+  rut                 String
+  role                ContractorRole
+  specialty           String?
+  contactName         String?        @map("contact_name")
+  contactEmail        String?        @map("contact_email")
+  contactPhone        String?        @map("contact_phone")
+  legalRepresentative String?        @map("legal_representative")
+  address             String?
+  /// Mutual de seguridad (texto libre por ahora).
+  mutual              String?
+  supervisorName      String?        @map("supervisor_name")
+  supervisorEmail     String?        @map("supervisor_email")
+  prevencionistName   String?        @map("prevencionist_name")
+  prevencionistEmail  String?        @map("prevencionist_email")
+  subcontractors      String?
+  workDescription     String?        @map("work_description")
+  active              Boolean        @default(true)
+  deletedAt           DateTime?      @map("deleted_at") @db.Timestamptz
+  createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([businessId, rut])
+  @@index([businessId])
+  @@index([active])
+  @@index([name])
+  @@map("contractor_organizations")
 }
 
 /**

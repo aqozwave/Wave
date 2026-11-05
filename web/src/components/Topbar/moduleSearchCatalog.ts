@@ -159,6 +159,14 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
       userHasPermission(u, "maestros.document_types", "read"),
   },
   {
+    id: "prevencion-contratistas",
+    label: "Contratistas",
+    group: "Prevención",
+    to: "/prevencion/contratistas",
+    keywords: ["organizaciones", "externas", "RUT", "habilitación"],
+    canShow: (u) => userHasPermission(u, "contractors", "read"),
+  },
+  {
     id: "notificaciones",
     label: "Notificaciones de vencimiento",
     group: "Cursos",

@@ -16,6 +16,7 @@ import { areasRouter } from "./modules/areas/areas.routes.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { businessesRouter } from "./modules/businesses/businesses.routes.js";
 import { competencyCertificatesRouter } from "./modules/competencyCertificates/competencyCertificates.routes.js";
+import { contractorsRouter } from "./modules/contractors/contractors.routes.js";
 import { coursesRouter } from "./modules/courses/courses.routes.js";
 import { crewMemberCoursesGlobalRouter } from "./modules/crewMemberCourses/crewMemberCourses.global.routes.js";
 import { crewMembersRouter } from "./modules/crewMembers/crewMembers.routes.js";
@@ -151,6 +152,7 @@ export function createApp() {
   app.use("/api/v1/document-types", documentTypesRouter);
   app.use("/api/v1/permit-types", permitTypesRouter);
   app.use("/api/v1/trainings", trainingsRouter);
+  app.use("/api/v1/contractors", contractorsRouter);
   app.use("/api/v1/courses", coursesRouter);
   app.use("/api/v1/ports", portsRouter);
   app.use("/api/v1/muelles", muellesRouter);
