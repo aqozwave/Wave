@@ -345,6 +345,9 @@ model User {
   location        Location?        @relation(fields: [locationId], references: [id])
   areaId          String?          @map("area_id") @db.Uuid
   area            Area?            @relation(fields: [areaId], references: [id])
+  /// Org contratista si es usuario externo invitado (P2 · P9b). null = usuario del tenant.
+  organizationId  String?          @map("organization_id") @db.Uuid
+  organization    ContractorOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   tokenVersion    Int              @default(0) @map("token_version")
   lastLoginAt     DateTime?        @map("last_login_at") @db.Timestamptz
   lastLoginIp     String?          @map("last_login_ip")
@@ -381,6 +384,7 @@ model User {
   @@index([businessId])
   @@index([locationId])
   @@index([areaId])
+  @@index([organizationId])
   @@map("users")
 }
 
@@ -1027,7 +1031,7 @@ model UserAnnouncementRead {
 /**
  * Organización contratista / empresa externa (P2).
  * Hija del tenant Business (no es otro Business). Sin legacyMongoId.
- * Habilitación, invitaciones y personal llegan en micro-pasos siguientes.
+ * Personal (ContractorPerson) llega en un micro-paso siguiente.
  */
 model ContractorOrganization {
   id                  String         @id @default(uuid()) @db.Uuid
@@ -1058,6 +1062,8 @@ model ContractorOrganization {
   updatedAt           DateTime       @updatedAt @map("updated_at") @db.Timestamptz
   /// Habilitaciones (solicitudes de documentación / revisión).
   accreditations      ContractorAccreditation[]
+  /// Usuarios invitados al portal de esta org (P9b).
+  users               User[]
 
   @@unique([businessId, rut])
   @@index([businessId])

@@ -22,9 +22,12 @@ import {
 } from "../../lib/api/accreditations";
 import {
   getContractorRequest,
+  inviteContractorUserRequest,
+  listContractorUsersRequest,
   updateContractorRequest,
   type ContractorOrganization,
   type ContractorRole,
+  type ContractorUser,
 } from "../../lib/api/contractors";
 import { userHasPermission } from "../../lib/api/auth";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
@@ -126,9 +129,17 @@ function DataRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Formulario de invitación (P9b). */
+type InviteForm = {
+  email: string;
+  firstName: string;
+  lastName: string;
+  run: string;
+};
+
 /**
- * Ficha de organización contratista (P2 · P9 / P9c).
- * Tabs: Datos (editable) · Habilitaciones · Usuarios (próximo).
+ * Ficha de organización contratista (P2 · P9 / P9c / P9b).
+ * Tabs: Datos · Habilitaciones · Usuarios (invitar).
  */
 export function ContractorDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -136,18 +147,31 @@ export function ContractorDetailPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const canRead = userHasPermission(user, "contractors", "read");
+  const canInvite =
+    (user?.internalRol === "admin" || user?.internalRol === "superadmin") &&
+    userHasPermission(user, "contractors", "create");
   const canManage =
     user?.internalRol === "admin" || user?.internalRol === "superadmin";
   const canReadHab = userHasPermission(user, "accreditations", "read");
 
   const [org, setOrg] = useState<ContractorOrganization | null>(null);
   const [habs, setHabs] = useState<ContractorAccreditation[]>([]);
+  const [orgUsers, setOrgUsers] = useState<ContractorUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TabId>("datos");
 
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState<EditForm | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteForm, setInviteForm] = useState<InviteForm>({
+    email: "",
+    firstName: "",
+    lastName: "",
+    run: "",
+  });
+  const [inviting, setInviting] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken || !id || !canRead) return;
@@ -163,6 +187,8 @@ export function ContractorDetailPage() {
       } else {
         setHabs([]);
       }
+      const usersList = await listContractorUsersRequest(accessToken, id, 1, 50);
+      setOrgUsers(usersList.items);
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo cargar la organización",
@@ -240,6 +266,46 @@ export function ContractorDetailPage() {
       );
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  /** Abre modal invitar usuario (P9b). */
+  function openInvite() {
+    setInviteForm({ email: "", firstName: "", lastName: "", run: "" });
+    setInviteOpen(true);
+  }
+
+  /** POST invitación. */
+  async function onInvite(e: FormEvent) {
+    e.preventDefault();
+    if (!accessToken || !org || inviting) return;
+    if (
+      !inviteForm.email.trim() ||
+      !inviteForm.firstName.trim() ||
+      !inviteForm.lastName.trim() ||
+      !inviteForm.run.trim()
+    ) {
+      showToast("Completá email, nombre, apellido y RUN.", "danger");
+      return;
+    }
+    setInviting(true);
+    try {
+      await inviteContractorUserRequest(accessToken, org.id, {
+        email: inviteForm.email.trim().toLowerCase(),
+        firstName: inviteForm.firstName.trim(),
+        lastName: inviteForm.lastName.trim(),
+        run: inviteForm.run.trim(),
+      });
+      showToast("Invitación enviada.", "success");
+      setInviteOpen(false);
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo invitar.",
+        "danger",
+      );
+    } finally {
+      setInviting(false);
     }
   }
 
@@ -331,6 +397,15 @@ export function ContractorDetailPage() {
               >
                 <Pencil className="size-4" strokeWidth={1.5} aria-hidden />
                 Editar datos
+              </Button>
+            ) : canInvite && tab === "usuarios" ? (
+              <Button
+                type="button"
+                size="medium"
+                className="!w-auto"
+                onClick={openInvite}
+              >
+                Invitar usuario
               </Button>
             ) : null
           }
@@ -456,10 +531,65 @@ export function ContractorDetailPage() {
         ) : null}
 
         {tab === "usuarios" ? (
-          <p className="m-0 max-w-lg text-[13px] text-[var(--color-nachipa-secondary)]">
-            Invitaciones y usuarios del contratista llegan en el próximo
-            micro-paso (P9b). Por ahora usá Usuarios del tenant si hace falta.
-          </p>
+          <div className="flex flex-col gap-3">
+            <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+              Usuarios invitados al portal de esta organización.
+            </p>
+            {orgUsers.length === 0 ? (
+              <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+                Todavía no hay invitados.
+                {canInvite ? " Usá «Invitar usuario»." : ""}
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white">
+                <table className="w-full min-w-[640px] border-collapse text-left text-[13px]">
+                  <thead className="bg-[var(--color-table-head-bg,#f8f9fb)] text-[12px] text-[var(--color-nachipa-secondary)]">
+                    <tr>
+                      <th className="px-3 py-2.5 font-medium">Nombre</th>
+                      <th className="px-3 py-2.5 font-medium">RUN</th>
+                      <th className="px-3 py-2.5 font-medium">Email</th>
+                      <th className="px-3 py-2.5 font-medium">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orgUsers.map((u) => (
+                      <tr
+                        key={u.id}
+                        className="border-t border-[var(--color-tremor-border)]"
+                      >
+                        <td className="px-3 py-2.5 text-[var(--color-nachipa-title)]">
+                          {displayName(`${u.firstName} ${u.lastName}`)}
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
+                          {u.run}
+                        </td>
+                        <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                          {u.email}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <StatusChip
+                            tone={
+                              !u.state
+                                ? "neutral"
+                                : u.invitePending
+                                  ? "warning"
+                                  : "success"
+                            }
+                          >
+                            {!u.state
+                              ? "Inactivo"
+                              : u.invitePending
+                                ? "Invitación pendiente"
+                                : "Activo"}
+                          </StatusChip>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         ) : null}
       </div>
 
@@ -568,6 +698,77 @@ export function ContractorDetailPage() {
             </div>
           </form>
         ) : null}
+      </Modal>
+
+      <Modal
+        open={inviteOpen}
+        onClose={() => {
+          if (!inviting) setInviteOpen(false);
+        }}
+        icon={Building2}
+        title="Invitar usuario"
+        subtitle="Recibe un correo para definir su clave (mismo flujo que Acceso de tripulante)."
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={inviting}
+              onClick={() => setInviteOpen(false)}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="submit"
+              form="contractor-invite-user"
+              size="medium"
+              className="!w-auto"
+              disabled={inviting}
+            >
+              {inviting ? "Enviando…" : "Invitar"}
+            </Button>
+          </div>
+        }
+      >
+        <form
+          id="contractor-invite-user"
+          className="flex flex-col gap-3"
+          onSubmit={(e) => void onInvite(e)}
+        >
+          <TextField
+            label="Email"
+            type="email"
+            value={inviteForm.email}
+            onChange={(e) =>
+              setInviteForm((f) => ({ ...f, email: e.target.value }))
+            }
+            required
+          />
+          <TextField
+            label="Nombre"
+            value={inviteForm.firstName}
+            onChange={(e) =>
+              setInviteForm((f) => ({ ...f, firstName: e.target.value }))
+            }
+            required
+          />
+          <TextField
+            label="Apellido"
+            value={inviteForm.lastName}
+            onChange={(e) =>
+              setInviteForm((f) => ({ ...f, lastName: e.target.value }))
+            }
+            required
+          />
+          <TextField
+            label="RUN"
+            value={inviteForm.run}
+            onChange={(e) =>
+              setInviteForm((f) => ({ ...f, run: e.target.value }))
+            }
+            required
+          />
+        </form>
       </Modal>
     </div>
   );

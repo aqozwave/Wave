@@ -8,6 +8,8 @@ import {
   createContractorHandler,
   deleteContractorHandler,
   getContractorHandler,
+  inviteContractorUserHandler,
+  listContractorUsersHandler,
   listContractorsHandler,
   updateContractorHandler,
 } from "./contractors.controller.js";
@@ -15,6 +17,8 @@ import {
   createContractorRequestSchema,
   deleteContractorRequestSchema,
   getContractorRequestSchema,
+  inviteContractorUserRequestSchema,
+  listContractorUsersRequestSchema,
   listContractorsRequestSchema,
   updateContractorRequestSchema,
 } from "./contractors.schemas.js";
@@ -41,6 +45,23 @@ contractorsRouter.post(
   requirePermission(PERMISSION_RESOURCE.CONTRACTORS, PERMISSION_ACTION.CREATE),
   validate(createContractorRequestSchema),
   createContractorHandler,
+);
+
+contractorsRouter.get(
+  "/:id/users",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.CONTRACTORS, PERMISSION_ACTION.READ),
+  validate(listContractorUsersRequestSchema),
+  listContractorUsersHandler,
+);
+
+contractorsRouter.post(
+  "/:id/users",
+  authenticate,
+  requireTenantManager,
+  requirePermission(PERMISSION_RESOURCE.CONTRACTORS, PERMISSION_ACTION.CREATE),
+  validate(inviteContractorUserRequestSchema),
+  inviteContractorUserHandler,
 );
 
 contractorsRouter.get(

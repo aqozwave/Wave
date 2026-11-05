@@ -246,6 +246,10 @@ import {
   createContractorResponseSchema,
   deleteContractorResponseSchema,
   getContractorResponseSchema,
+  inviteContractorUserBodySchema,
+  inviteContractorUserResponseSchema,
+  listContractorUsersQuerySchema,
+  listContractorUsersResponseSchema,
   listContractorsQuerySchema,
   listContractorsResponseSchema,
   updateContractorBodySchema,
@@ -2267,6 +2271,62 @@ registry.registerPath({
     401: { description: "Sin token" },
     403: { description: "Sin permiso" },
     404: { description: "No encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/{id}/users",
+  tags: ["Contractors"],
+  summary: "Listar usuarios invitados de la organización",
+  description:
+    "P9b. Usuarios con organizationId = org. Permiso contractors.read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    query: listContractorUsersQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listContractorUsersResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Org no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors/{id}/users",
+  tags: ["Contractors"],
+  summary: "Invitar usuario a la organización contratista",
+  description:
+    "P9b. Crea o vincula por email; envía reset de clave. Admin/superadmin + contractors.create.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: inviteContractorUserBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Invitado / vinculado",
+      content: {
+        "application/json": { schema: inviteContractorUserResponseSchema },
+      },
+    },
+    400: { description: "Org inactiva o validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo apagado" },
+    404: { description: "Org no encontrada" },
+    409: { description: "Email/RUN en conflicto" },
   },
 });
 

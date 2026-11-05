@@ -189,3 +189,75 @@ export async function deleteContractorRequest(
   if (!res.ok) throw toApiError(res, body);
   return body as ContractorOrganization;
 }
+
+/** Usuario invitado de una org (P9b). */
+export type ContractorUser = {
+  id: string;
+  email: string;
+  username: string;
+  firstName: string;
+  lastName: string;
+  run: string;
+  confirmed: boolean;
+  invitePending: boolean;
+  state: boolean;
+  internalRol: string;
+  lastLoginAt: string | null;
+  accessExpiresAt: string | null;
+  createdAt: string;
+};
+
+/** Listado de usuarios de la org. */
+export type ListContractorUsersResult = {
+  items: ContractorUser[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+/** Body invitar usuario. */
+export type InviteContractorUserBody = {
+  email: string;
+  firstName: string;
+  lastName: string;
+  run: string;
+  accessExpiresAt?: string | null;
+};
+
+/** GET /api/v1/contractors/:id/users */
+export async function listContractorUsersRequest(
+  accessToken: string,
+  organizationId: string,
+  page = 1,
+  limit = 50,
+): Promise<ListContractorUsersResult> {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+  const res = await fetch(
+    `/api/v1/contractors/${organizationId}/users?${params}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ListContractorUsersResult;
+}
+
+/** POST /api/v1/contractors/:id/users — invita / vincula. */
+export async function inviteContractorUserRequest(
+  accessToken: string,
+  organizationId: string,
+  data: InviteContractorUserBody,
+): Promise<ContractorUser> {
+  const res = await fetch(`/api/v1/contractors/${organizationId}/users`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorUser;
+}

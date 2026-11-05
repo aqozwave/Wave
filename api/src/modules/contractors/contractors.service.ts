@@ -1,11 +1,17 @@
+import { randomBytes } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { assertBusinessModuleEnabled } from "../../lib/businessModules.js";
 import { AppError } from "../../lib/errors.js";
+import { hashPassword } from "../../lib/password.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
+import { requestPasswordReset } from "../auth/auth.service.js";
 import type {
   ContractorOrganizationResponse,
+  ContractorUserResponse,
   CreateContractorBody,
+  InviteContractorUserBody,
+  ListContractorUsersQuery,
   ListContractorsQuery,
   UpdateContractorBody,
 } from "./contractors.schemas.js";
@@ -450,4 +456,288 @@ export async function deleteContractor(
     include: latestAccreditationInclude,
   });
   return toContractorResponse(updated);
+}
+
+/** Serializa usuario de org (P9b). */
+function toContractorUserResponse(row: {
+  id: string;
+  email: string;
+  username: string;
+  firstName: string;
+  lastName: string;
+  run: string;
+  confirmed: boolean;
+  state: boolean;
+  internalRol: string;
+  lastLoginAt: Date | null;
+  accessExpiresAt: Date | null;
+  createdAt: Date;
+}): ContractorUserResponse {
+  return {
+    id: row.id,
+    email: row.email,
+    username: row.username,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    run: row.run,
+    confirmed: row.confirmed,
+    invitePending: !row.confirmed,
+    state: row.state,
+    internalRol: row.internalRol,
+    lastLoginAt: row.lastLoginAt ? row.lastLoginAt.toISOString() : null,
+    accessExpiresAt: row.accessExpiresAt
+      ? row.accessExpiresAt.toISOString()
+      : null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/** Carga org activa con chequeo de tenant; 404 si no existe o sin acceso. */
+async function loadOrgForUsers(
+  actor: Actor,
+  organizationId: string,
+): Promise<{ id: string; businessId: string; active: boolean }> {
+  const org = await prisma.contractorOrganization.findFirst({
+    where: { id: organizationId, deletedAt: null },
+    select: { id: true, businessId: true, active: true },
+  });
+  if (!org) {
+    throw new AppError(
+      404,
+      "contractor_not_found",
+      "Organización contratista no encontrada",
+    );
+  }
+  assertContractorTenantAccess(actor, org.businessId);
+  return org;
+}
+
+/**
+ * Username a partir del local-part del email; asegura unicidad con sufijo.
+ * Mismo criterio que Acceso de tripulante (D45).
+ */
+async function uniqueUsernameFromEmail(email: string): Promise<string> {
+  const local = email.split("@")[0] ?? "user";
+  const base =
+    local
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]/g, "")
+      .slice(0, 24) || "user";
+
+  for (let i = 0; i < 8; i += 1) {
+    const candidate = i === 0 ? base : `${base}${i}`;
+    const taken = await prisma.user.findFirst({
+      where: { username: candidate, deletedAt: null },
+      select: { id: true },
+    });
+    if (!taken) return candidate;
+  }
+
+  return `${base}${randomBytes(3).toString("hex")}`;
+}
+
+/** Contraseña temporal fuerte; el invitado la cambia con el enlace. */
+function generateInvitePassword(): string {
+  return `Wave${randomBytes(9).toString("hex")}9a`;
+}
+
+/** Resuelve rol de sistema `user` para invitados del portal contratista. */
+async function resolveContractorInviteRole() {
+  const role = await prisma.role.findFirst({
+    where: { key: "user", deletedAt: null, state: true },
+  });
+  if (!role) {
+    throw new AppError(
+      500,
+      "role_missing",
+      'Rol de sistema "user" no encontrado',
+    );
+  }
+  return role;
+}
+
+/** GET /contractors/:id/users — listado de invitados de la org. */
+export async function listContractorUsers(
+  actor: Actor,
+  organizationId: string,
+  query: ListContractorUsersQuery,
+): Promise<{
+  items: ContractorUserResponse[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  await loadOrgForUsers(actor, organizationId);
+
+  const where = {
+    organizationId,
+    deletedAt: null,
+  };
+  const skip = (query.page - 1) * query.limit;
+
+  const [rows, total] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      skip,
+      take: query.limit,
+    }),
+    prisma.user.count({ where }),
+  ]);
+
+  return {
+    items: rows.map(toContractorUserResponse),
+    total,
+    page: query.page,
+    limit: query.limit,
+  };
+}
+
+/**
+ * POST /contractors/:id/users — invita o vincula (P9b).
+ * - Email nuevo → crea usuario confirmed=false + reset.
+ * - Email del mismo tenant sin org → vincula a esta org.
+ * - Ya en esta org → reenvía reset si no confirmó.
+ */
+export async function inviteContractorUser(
+  actor: Actor,
+  organizationId: string,
+  body: InviteContractorUserBody,
+): Promise<ContractorUserResponse> {
+  const org = await loadOrgForUsers(actor, organizationId);
+  if (!org.active) {
+    throw new AppError(
+      400,
+      "contractor_inactive",
+      "La organización está inactiva; no se pueden invitar usuarios",
+    );
+  }
+  await assertBusinessModuleEnabled(org.businessId, "contractors");
+
+  const role = await resolveContractorInviteRole();
+  const email = body.email.trim().toLowerCase();
+  const accessExpiresAt =
+    body.accessExpiresAt === undefined
+      ? undefined
+      : body.accessExpiresAt
+        ? new Date(body.accessExpiresAt)
+        : null;
+
+  const existing = await prisma.user.findFirst({
+    where: { email, deletedAt: null },
+  });
+
+  if (existing) {
+    // Otro tenant → no se reutiliza.
+    if (
+      existing.businessId &&
+      existing.businessId !== org.businessId
+    ) {
+      throw new AppError(
+        409,
+        "email_other_business",
+        "Ese email ya pertenece a otra empresa",
+      );
+    }
+    // Ya ligado a otra org contratista.
+    if (
+      existing.organizationId &&
+      existing.organizationId !== org.id
+    ) {
+      throw new AppError(
+        409,
+        "user_other_organization",
+        "Ese usuario ya está vinculado a otra organización contratista",
+      );
+    }
+    // Tripulante interno: no convertir en externo.
+    const crew = await prisma.crewMember.findFirst({
+      where: { userId: existing.id, deletedAt: null },
+      select: { id: true },
+    });
+    if (crew) {
+      throw new AppError(
+        409,
+        "user_is_crew",
+        "Ese email ya está vinculado a un tripulante",
+      );
+    }
+
+    // No pisa RUN de una cuenta ya existente (evita choque con unique).
+    const updated = await prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        organizationId: org.id,
+        businessId: existing.businessId ?? org.businessId,
+        firstName: body.firstName,
+        lastName: body.lastName,
+        ...(accessExpiresAt !== undefined
+          ? { accessExpiresAt }
+          : {}),
+        // Si no tenía rol, asigna user.
+        ...(existing.roleId
+          ? {}
+          : { roleId: role.id, internalRol: role.key }),
+      },
+    });
+
+    if (!updated.confirmed) {
+      await requestPasswordReset(updated.email);
+    }
+
+    return toContractorUserResponse(updated);
+  }
+
+  // Alta nueva: RUN no puede estar ya en users.
+  const runTaken = await prisma.user.findFirst({
+    where: { run: body.run, deletedAt: null },
+    select: { id: true },
+  });
+  if (runTaken) {
+    throw new AppError(
+      409,
+      "duplicate_run",
+      "Ya existe un usuario con ese RUN",
+    );
+  }
+
+  const username = await uniqueUsernameFromEmail(email);
+  const passwordHash = await hashPassword(generateInvitePassword());
+
+  try {
+    const created = await prisma.user.create({
+      data: {
+        email,
+        username,
+        passwordHash,
+        firstName: body.firstName,
+        lastName: body.lastName,
+        run: body.run,
+        confirmed: false,
+        state: true,
+        internalRol: role.key,
+        roleId: role.id,
+        businessId: org.businessId,
+        organizationId: org.id,
+        ...(accessExpiresAt !== undefined
+          ? { accessExpiresAt }
+          : {}),
+      },
+    });
+
+    await requestPasswordReset(created.email);
+    return toContractorUserResponse(created);
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      throw new AppError(
+        409,
+        "duplicate_identity",
+        "Email, usuario o RUN ya registrado",
+      );
+    }
+    throw err;
+  }
 }

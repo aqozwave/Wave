@@ -1,0 +1,63 @@
+meta {
+  name: Post contractor user (invite)
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/api/v1/contractors/{{contractorId}}/users
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "invitado.contratista@ejemplo.cl",
+    "firstName": "Luis",
+    "lastName": "Contreras",
+    "run": "11.111.111-1"
+  }
+}
+
+docs {
+  P9b — invita usuario a la org (crea + reset) o vincula email del mismo tenant.
+  Ajustá email/RUN si ya existen (409). Admin/superadmin.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+  const id = bru.getEnvVar("contractorId");
+  if (!id) {
+    throw new Error("Sin contractorId. Corré Post contractor antes.");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if ((res.getStatus() === 201 || res.getStatus() === 200) && body && body.id) {
+    bru.setEnvVar("contractorUserId", body.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.email: isDefined
+  res.body.invitePending: eq true
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

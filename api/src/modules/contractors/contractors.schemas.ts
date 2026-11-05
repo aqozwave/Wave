@@ -178,9 +178,88 @@ export const deleteContractorRequestSchema = z.object({
 export const deleteContractorResponseSchema =
   contractorOrganizationResponseSchema;
 
+/**
+ * Usuario invitado de una org contratista (P9b).
+ * invitePending = aún no confirmó / no definió clave.
+ */
+export const contractorUserResponseSchema = z
+  .object({
+    id: z.uuid(),
+    email: z.string(),
+    username: z.string(),
+    firstName: z.string(),
+    lastName: z.string(),
+    run: z.string(),
+    confirmed: z.boolean(),
+    invitePending: z.boolean(),
+    state: z.boolean(),
+    internalRol: z.string(),
+    lastLoginAt: z.string().datetime().nullable(),
+    accessExpiresAt: z.string().datetime().nullable(),
+    createdAt: z.string().datetime(),
+  })
+  .openapi("ContractorUser");
+
+/** Query GET /contractors/:id/users. */
+export const listContractorUsersQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+});
+
+export const listContractorUsersRequestSchema = z.object({
+  params: contractorIdParamsSchema,
+  query: listContractorUsersQuerySchema,
+});
+
+export const listContractorUsersResponseSchema = z
+  .object({
+    items: z.array(contractorUserResponseSchema),
+    total: z.number().int().nonnegative(),
+    page: z.number().int().positive(),
+    limit: z.number().int().positive(),
+  })
+  .openapi("ListContractorUsersResponse");
+
+/**
+ * Body invitar usuario a la org (P9b).
+ * Crea cuenta o vincula email existente del mismo tenant; envía reset.
+ */
+export const inviteContractorUserBodySchema = z.object({
+  email: z.email("Email inválido").trim().toLowerCase(),
+  firstName: z
+    .string({ error: "Nombre es requerido" })
+    .trim()
+    .min(1, "Nombre es requerido")
+    .max(100),
+  lastName: z
+    .string({ error: "Apellido es requerido" })
+    .trim()
+    .min(1, "Apellido es requerido")
+    .max(100),
+  run: chileanRunSchema,
+  /** Vencimiento opcional del acceso (ISO). */
+  accessExpiresAt: z.string().datetime().nullable().optional(),
+});
+
+export const inviteContractorUserRequestSchema = z.object({
+  params: contractorIdParamsSchema,
+  body: inviteContractorUserBodySchema,
+});
+
+export const inviteContractorUserResponseSchema = contractorUserResponseSchema;
+
 export type ContractorOrganizationResponse = z.infer<
   typeof contractorOrganizationResponseSchema
 >;
 export type ListContractorsQuery = z.infer<typeof listContractorsQuerySchema>;
 export type CreateContractorBody = z.infer<typeof createContractorBodySchema>;
 export type UpdateContractorBody = z.infer<typeof updateContractorBodySchema>;
+export type ContractorUserResponse = z.infer<
+  typeof contractorUserResponseSchema
+>;
+export type ListContractorUsersQuery = z.infer<
+  typeof listContractorUsersQuerySchema
+>;
+export type InviteContractorUserBody = z.infer<
+  typeof inviteContractorUserBodySchema
+>;

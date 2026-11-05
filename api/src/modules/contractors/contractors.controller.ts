@@ -8,9 +8,13 @@ import {
   createContractorResponseSchema,
   deleteContractorResponseSchema,
   getContractorResponseSchema,
+  inviteContractorUserResponseSchema,
+  listContractorUsersResponseSchema,
   listContractorsResponseSchema,
   updateContractorResponseSchema,
   type CreateContractorBody,
+  type InviteContractorUserBody,
+  type ListContractorUsersQuery,
   type ListContractorsQuery,
   type UpdateContractorBody,
 } from "./contractors.schemas.js";
@@ -18,6 +22,8 @@ import {
   createContractor,
   deleteContractor,
   getContractorById,
+  inviteContractorUser,
+  listContractorUsers,
   listContractors,
   updateContractor,
 } from "./contractors.service.js";
@@ -96,4 +102,40 @@ export async function deleteContractorHandler(
     targetLabel: `${result.rut} · ${result.name}`,
   });
   res.status(200).json(deleteContractorResponseSchema.parse(result));
+}
+
+/** GET /contractors/:id/users — invitados de la org (P9b). */
+export async function listContractorUsersHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const query = req.query as unknown as ListContractorUsersQuery;
+  const result = await listContractorUsers(
+    req.user,
+    req.params.id as string,
+    query,
+  );
+  res.status(200).json(listContractorUsersResponseSchema.parse(result));
+}
+
+/** POST /contractors/:id/users — invitar / vincular (P9b). */
+export async function inviteContractorUserHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as InviteContractorUserBody;
+  const result = await inviteContractorUser(
+    req.user,
+    req.params.id as string,
+    body,
+  );
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "user",
+    resourceId: result.id,
+    targetLabel: `${result.email} · org ${req.params.id as string}`,
+  });
+  res.status(201).json(inviteContractorUserResponseSchema.parse(result));
 }
