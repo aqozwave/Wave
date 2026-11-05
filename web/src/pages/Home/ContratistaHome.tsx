@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Building2, ClipboardCheck, FileStack, Users } from "lucide-react";
+import { useNavigate } from "react-router";
 import { Button } from "../../components/Button/Button";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
@@ -78,6 +79,7 @@ function formatDate(iso: string | null): string {
 export function ContratistaHome() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [summary, setSummary] = useState<ContractorPortalSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -210,7 +212,12 @@ export function ContratistaHome() {
           title={greeting}
           description={subtitle}
           actions={
-            <Button type="button" size="medium" className="!w-auto" disabled>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              onClick={() => void navigate("/portal/habilitacion")}
+            >
               + {ctaLabel}
             </Button>
           }

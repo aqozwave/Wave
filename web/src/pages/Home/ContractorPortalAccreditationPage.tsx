@@ -1,0 +1,468 @@
+import { useCallback, useEffect, useState } from "react";
+import { ClipboardCheck } from "lucide-react";
+import { Link } from "react-router";
+import { Button } from "../../components/Button/Button";
+import { Modal } from "../../components/Modal/Modal";
+import { PageHeader } from "../../components/PageHeader/PageHeader";
+import { StatusChip } from "../../components/StatusChip/StatusChip";
+import { TextField } from "../../components/TextField/TextField";
+import { Topbar } from "../../components/Topbar/Topbar";
+import { UserMenu } from "../../components/UserMenu/UserMenu";
+import { useToast } from "../../components/Toast/ToastProvider";
+import { fileToBase64 } from "../../lib/api/accreditations";
+import {
+  createContractorPortalDocumentRequest,
+  downloadContractorPortalDocumentRequest,
+  getContractorPortalAccreditationRequest,
+  listContractorPortalDocumentsRequest,
+  submitContractorPortalAccreditationRequest,
+  type ContractorPortalAccreditation,
+  type ContractorPortalDocChecklistItem,
+} from "../../lib/api/contractors";
+import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+
+/** Capitaliza nombre. */
+function displayName(value: string): string {
+  if (!value) return "—";
+  return value
+    .split(" ")
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
+/** Etiqueta HAB. */
+function habStatusLabel(status: string): string {
+  switch (status) {
+    case "pending":
+      return "Pendiente";
+    case "in_review":
+      return "En revisión";
+    case "observed":
+      return "Observada";
+    case "approved":
+      return "Habilitada";
+    case "rejected":
+      return "Rechazada";
+    case "invited":
+      return "Invitada";
+    default:
+      return status;
+  }
+}
+
+/** Tono HAB. */
+function habTone(
+  status: string,
+): "success" | "warning" | "danger" | "info" | "neutral" {
+  switch (status) {
+    case "approved":
+      return "success";
+    case "in_review":
+      return "info";
+    case "observed":
+    case "pending":
+      return "warning";
+    case "rejected":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+/** Etiqueta estado doc. */
+function docLabel(status: string): string {
+  switch (status) {
+    case "pending_validation":
+      return "Pendiente";
+    case "validated":
+      return "Vigente";
+    case "observed":
+      return "Observado";
+    case "replaced":
+      return "Reemplazado";
+    default:
+      return status;
+  }
+}
+
+/** Tono doc. */
+function docTone(
+  status: string,
+): "success" | "warning" | "danger" | "info" | "neutral" {
+  switch (status) {
+    case "validated":
+      return "success";
+    case "pending_validation":
+      return "info";
+    case "observed":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+/** Fecha corta. */
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("es-CL");
+  } catch {
+    return "—";
+  }
+}
+
+const outlineBtnClass =
+  "inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60";
+
+/**
+ * Habilitación del portal contratista (P2 · E4).
+ * Checklist pack company + upload + enviar a revisión.
+ */
+export function ContractorPortalAccreditationPage() {
+  const { accessToken, user } = useAuth();
+  const { showToast } = useToast();
+  const [hab, setHab] = useState<ContractorPortalAccreditation | null>(null);
+  const [items, setItems] = useState<ContractorPortalDocChecklistItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [acting, setActing] = useState(false);
+  const [uploadingTypeId, setUploadingTypeId] = useState<string | null>(null);
+  const [pendingUpload, setPendingUpload] = useState<{
+    documentTypeId: string;
+    file: File;
+  } | null>(null);
+  const [expiryDate, setExpiryDate] = useState("");
+
+  const canUpload =
+    hab?.status === "pending" || hab?.status === "observed";
+  const canSubmit =
+    hab?.status === "pending" || hab?.status === "observed";
+
+  const load = useCallback(async () => {
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      const [habRow, docs] = await Promise.all([
+        getContractorPortalAccreditationRequest(accessToken),
+        listContractorPortalDocumentsRequest(accessToken),
+      ]);
+      setHab(habRow);
+      setItems(docs.items);
+    } catch (err) {
+      showToast(
+        err instanceof ApiError
+          ? err.message
+          : "No se pudo cargar la habilitación",
+        "danger",
+      );
+      setHab(null);
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken, showToast]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  /** Sube archivo con vencimiento ya resuelto. */
+  async function uploadFile(
+    documentTypeId: string,
+    file: File,
+    expiresAt: string | null,
+  ) {
+    if (!accessToken || acting) return;
+    setUploadingTypeId(documentTypeId);
+    setActing(true);
+    try {
+      const contentBase64 = await fileToBase64(file);
+      await createContractorPortalDocumentRequest(accessToken, {
+        documentTypeId,
+        fileName: file.name,
+        mimeType: file.type || "application/pdf",
+        contentBase64,
+        expiresAt,
+      });
+      showToast("Documento subido.", "success");
+      setPendingUpload(null);
+      setExpiryDate("");
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo subir.",
+        "danger",
+      );
+    } finally {
+      setActing(false);
+      setUploadingTypeId(null);
+    }
+  }
+
+  /** Elige archivo. */
+  function onPickFile(
+    documentTypeId: string,
+    file: File | null,
+    requiresExpiry: boolean,
+  ) {
+    if (!file) return;
+    if (requiresExpiry) {
+      setPendingUpload({ documentTypeId, file });
+      setExpiryDate(
+        new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10),
+      );
+      return;
+    }
+    void uploadFile(documentTypeId, file, null);
+  }
+
+  /** Envía a revisión. */
+  async function onSubmit() {
+    if (!accessToken || !canSubmit || acting) return;
+    setActing(true);
+    try {
+      await submitContractorPortalAccreditationRequest(accessToken);
+      showToast("Documentación enviada a revisión.", "success");
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo enviar.",
+        "danger",
+      );
+    } finally {
+      setActing(false);
+    }
+  }
+
+  const uploaded = items.filter((i) => i.document).length;
+  const required = items.length;
+
+  if (!user?.organizationId) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <Topbar breadcrumb="Habilitación" actions={<UserMenu />} />
+        <p className="px-6 py-5 text-[13px] text-[var(--color-nachipa-secondary)]">
+          Esta cuenta no es de un portal contratista.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Topbar
+        breadcrumb="Habilitación"
+        breadcrumbIcon={ClipboardCheck}
+        actions={<UserMenu />}
+      />
+      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5 lg:px-8">
+        <PageHeader
+          crumbs={[
+            { label: "Panel", to: "/" },
+            { label: "Habilitación" },
+          ]}
+          title="Habilitación"
+          description={
+            hab
+              ? `${displayName(hab.organization.name)} · RUT ${hab.organization.rut} · ${hab.code}`
+              : "Documentos de tu empresa para la habilitación."
+          }
+          actions={
+            canSubmit ? (
+              <Button
+                type="button"
+                size="medium"
+                className="!w-auto"
+                disabled={acting || loading}
+                onClick={() => void onSubmit()}
+              >
+                {acting ? "Enviando…" : "Enviar a revisión"}
+              </Button>
+            ) : null
+          }
+        />
+
+        {loading ? (
+          <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+            Cargando…
+          </p>
+        ) : !hab ? (
+          <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+            Todavía no hay una habilitación abierta. Prevención debe solicitarte
+            la documentación.
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white px-4 py-3">
+              <StatusChip tone={habTone(hab.status)}>
+                {habStatusLabel(hab.status)}
+              </StatusChip>
+              <span className="text-[13px] text-[var(--color-nachipa-body)]">
+                {uploaded} de {required} documentos cargados
+              </span>
+              {hab.reviewNote ? (
+                <span className="w-full text-[12px] text-[var(--color-status-warning-fg,#b45309)]">
+                  Observación: {hab.reviewNote}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="flex gap-2 border-b border-[var(--color-tremor-border)]">
+              <span className="border-b-2 border-[var(--color-nachipa-primary)] px-1 pb-2 text-[13px] font-medium text-[var(--color-nachipa-primary)]">
+                Documentos de la empresa ({required})
+              </span>
+              <Link
+                to="/"
+                className="px-3 pb-2 text-[13px] text-[var(--color-nachipa-secondary)] hover:text-[var(--color-nachipa-title)]"
+              >
+                Volver al panel
+              </Link>
+            </div>
+
+            <ul className="m-0 list-none divide-y divide-[var(--color-tremor-border)] rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-0">
+              {items.length === 0 ? (
+                <li className="px-4 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
+                  Pack empresa vacío. Pedile a Prevención que configure los
+                  tipos.
+                </li>
+              ) : (
+                items.map((item) => {
+                  const doc = item.document;
+                  return (
+                    <li
+                      key={item.documentType.id}
+                      className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <span className="mr-2 text-[12px] font-semibold tabular-nums text-[var(--color-nachipa-title)]">
+                          {item.documentType.code}
+                        </span>
+                        <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                          {item.documentType.name}
+                        </span>
+                        <div className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                          {doc
+                            ? `${doc.originalName}${doc.expiresAt ? ` · vence ${formatDate(doc.expiresAt)}` : ""}`
+                            : "Sin archivo"}
+                          {doc?.status === "observed" && doc.observation
+                            ? ` · ${doc.observation}`
+                            : ""}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {doc ? (
+                          <StatusChip tone={docTone(doc.status)}>
+                            {docLabel(doc.status)}
+                          </StatusChip>
+                        ) : null}
+                        {doc && accessToken ? (
+                          <button
+                            type="button"
+                            className="text-[12px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                            onClick={() =>
+                              void downloadContractorPortalDocumentRequest(
+                                accessToken,
+                                doc.id,
+                                doc.originalName,
+                              ).catch((err) =>
+                                showToast(
+                                  err instanceof ApiError
+                                    ? err.message
+                                    : "No se pudo descargar.",
+                                  "danger",
+                                ),
+                              )
+                            }
+                          >
+                            Descargar
+                          </button>
+                        ) : null}
+                        {canUpload ? (
+                          <label className="cursor-pointer text-[12px] font-medium text-[var(--color-nachipa-title)] hover:underline">
+                            {uploadingTypeId === item.documentType.id
+                              ? "Subiendo…"
+                              : doc
+                                ? "Reemplazar"
+                                : "Subir"}
+                            <input
+                              type="file"
+                              className="hidden"
+                              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
+                              disabled={acting}
+                              onChange={(e) => {
+                                const f = e.target.files?.[0] ?? null;
+                                e.target.value = "";
+                                onPickFile(
+                                  item.documentType.id,
+                                  f,
+                                  item.documentType.requiresExpiry,
+                                );
+                              }}
+                            />
+                          </label>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </>
+        )}
+      </div>
+
+      <Modal
+        open={Boolean(pendingUpload)}
+        onClose={() => {
+          if (!acting) {
+            setPendingUpload(null);
+            setExpiryDate("");
+          }
+        }}
+        icon={ClipboardCheck}
+        title="Vencimiento del documento"
+        subtitle={
+          pendingUpload ? `Archivo: ${pendingUpload.file.name}` : undefined
+        }
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() => {
+                setPendingUpload(null);
+                setExpiryDate("");
+              }}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={acting || !expiryDate}
+              onClick={() => {
+                if (!pendingUpload || !expiryDate) return;
+                void uploadFile(
+                  pendingUpload.documentTypeId,
+                  pendingUpload.file,
+                  new Date(`${expiryDate}T12:00:00.000Z`).toISOString(),
+                );
+              }}
+            >
+              {acting ? "Subiendo…" : "Subir"}
+            </Button>
+          </div>
+        }
+      >
+        <TextField
+          label="Vence el"
+          type="date"
+          value={expiryDate}
+          onChange={(e) => setExpiryDate(e.target.value)}
+          required
+        />
+      </Modal>
+    </div>
+  );
+}

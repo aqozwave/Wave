@@ -314,6 +314,36 @@ export type ContractorPortalSummaryResponse = z.infer<
   typeof contractorPortalSummaryResponseSchema
 >;
 
+/** Params download doc portal. */
+export const contractorPortalDocumentIdParamsSchema = z.object({
+  documentId: z.uuid(),
+});
+
+export const downloadContractorPortalDocumentRequestSchema = z.object({
+  params: contractorPortalDocumentIdParamsSchema,
+});
+
+/** Body upload doc portal (mismo contrato que HAB interna). */
+export const createContractorPortalDocumentBodySchema = z.object({
+  documentTypeId: z.uuid(),
+  fileName: z
+    .string({ error: "Nombre de archivo requerido" })
+    .trim()
+    .min(1, "Nombre de archivo requerido")
+    .max(255),
+  mimeType: z.string().trim().min(1),
+  contentBase64: z.string().min(1, "Archivo requerido"),
+  expiresAt: z.string().datetime().nullable().optional(),
+});
+
+export const createContractorPortalDocumentRequestSchema = z.object({
+  body: createContractorPortalDocumentBodySchema,
+});
+
+export type CreateContractorPortalDocumentBody = z.infer<
+  typeof createContractorPortalDocumentBodySchema
+>;
+
 /** Persona externa de la org (P2 personal). */
 export const contractorPersonResponseSchema = z
   .object({

@@ -6,6 +6,14 @@ import { hashPassword } from "../../lib/password.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import { requestPasswordReset } from "../auth/auth.service.js";
+import {
+  createAccreditationDocument,
+  listAccreditationDocuments,
+  resolveAccreditationDocumentFile,
+} from "../accreditationDocuments/accreditationDocuments.service.js";
+import type { ContractorOrgDocumentResponse } from "../accreditationDocuments/accreditationDocuments.schemas.js";
+import type { AccreditationResponse } from "../accreditations/accreditations.schemas.js";
+import { submitAccreditation } from "../accreditations/accreditations.service.js";
 import type {
   ContractorOrganizationResponse,
   ContractorPersonResponse,
@@ -13,6 +21,7 @@ import type {
   ContractorUserResponse,
   CreateContractorBody,
   CreateContractorPersonBody,
+  CreateContractorPortalDocumentBody,
   InviteContractorUserBody,
   ListContractorPeopleQuery,
   ListContractorUsersQuery,
@@ -1039,4 +1048,110 @@ export async function getContractorPortalSummary(
     },
     people: { total: peopleTotal },
   };
+}
+
+/** Actor portal: debe tener organizationId. */
+type PortalActor = Pick<
+  AuthUser,
+  "id" | "internalRol" | "businessId" | "organizationId"
+>;
+
+/** Exige usuario externo con org. */
+function requirePortalOrgId(actor: PortalActor): string {
+  if (!actor.organizationId) {
+    throw new AppError(
+      403,
+      "not_contractor_user",
+      "Esta cuenta no pertenece a una organización contratista",
+    );
+  }
+  return actor.organizationId;
+}
+
+/**
+ * HAB más reciente de la org del portal (cualquier estado).
+ * 404 si no hay ninguna.
+ */
+export async function getMyContractorAccreditation(
+  actor: PortalActor,
+): Promise<AccreditationResponse> {
+  const organizationId = requirePortalOrgId(actor);
+  const hab = await prisma.contractorAccreditation.findFirst({
+    where: { organizationId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      organization: {
+        select: {
+          id: true,
+          name: true,
+          rut: true,
+          businessId: true,
+          deletedAt: true,
+        },
+      },
+    },
+  });
+  if (!hab || hab.organization.deletedAt) {
+    throw new AppError(
+      404,
+      "accreditation_not_found",
+      "No hay habilitación para tu organización",
+    );
+  }
+  return {
+    id: hab.id,
+    code: hab.code,
+    organizationId: hab.organizationId,
+    organization: {
+      id: hab.organization.id,
+      name: hab.organization.name,
+      rut: hab.organization.rut,
+      businessId: hab.organization.businessId,
+    },
+    status: hab.status,
+    message: hab.message,
+    reviewNote: hab.reviewNote,
+    requestedAt: hab.requestedAt ? hab.requestedAt.toISOString() : null,
+    requestedById: hab.requestedById,
+    dueAt: hab.dueAt ? hab.dueAt.toISOString() : null,
+    submittedAt: hab.submittedAt ? hab.submittedAt.toISOString() : null,
+    reviewedAt: hab.reviewedAt ? hab.reviewedAt.toISOString() : null,
+    reviewedById: hab.reviewedById,
+    createdAt: hab.createdAt.toISOString(),
+    updatedAt: hab.updatedAt.toISOString(),
+  };
+}
+
+/** Checklist pack company de la HAB del portal. */
+export async function listMyContractorAccreditationDocuments(
+  actor: PortalActor,
+) {
+  const hab = await getMyContractorAccreditation(actor);
+  return listAccreditationDocuments(actor, hab.id);
+}
+
+/** Upload doc empresa desde el portal. */
+export async function createMyContractorAccreditationDocument(
+  actor: PortalActor,
+  body: CreateContractorPortalDocumentBody,
+): Promise<ContractorOrgDocumentResponse> {
+  const hab = await getMyContractorAccreditation(actor);
+  return createAccreditationDocument(actor, hab.id, body);
+}
+
+/** Resuelve archivo para descarga portal. */
+export async function resolveMyContractorAccreditationDocumentFile(
+  actor: PortalActor,
+  documentId: string,
+) {
+  const hab = await getMyContractorAccreditation(actor);
+  return resolveAccreditationDocumentFile(actor, hab.id, documentId);
+}
+
+/** Enviar HAB a revisión desde el portal. */
+export async function submitMyContractorAccreditation(
+  actor: PortalActor,
+): Promise<AccreditationResponse> {
+  const hab = await getMyContractorAccreditation(actor);
+  return submitAccreditation(actor, hab.id);
 }

@@ -246,6 +246,7 @@ import {
   createContractorBodySchema,
   createContractorPersonBodySchema,
   createContractorPersonResponseSchema,
+  createContractorPortalDocumentBodySchema,
   createContractorResponseSchema,
   deleteContractorPersonResponseSchema,
   deleteContractorResponseSchema,
@@ -2185,6 +2186,91 @@ registry.registerPath({
     401: { description: "Sin token" },
     403: { description: "No es usuario contratista" },
     404: { description: "Org no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/me/accreditation",
+  tags: ["Contractors"],
+  summary: "HAB de la org del portal (E4)",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Habilitación",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+    404: { description: "Sin HAB" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/me/accreditation/documents",
+  tags: ["Contractors"],
+  summary: "Checklist pack company del portal (E4)",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Checklist",
+      content: {
+        "application/json": { schema: listAccreditationDocumentsResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+    404: { description: "Sin HAB" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors/me/accreditation/documents",
+  tags: ["Contractors"],
+  summary: "Subir documento empresa desde el portal (E4)",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createContractorPortalDocumentBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": {
+          schema: createAccreditationDocumentResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación o HAB cerrada" },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors/me/accreditation/submit",
+  tags: ["Contractors"],
+  summary: "Enviar HAB a revisión desde el portal (E4/E7)",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Enviada",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+    409: { description: "Transición inválida" },
   },
 });
 

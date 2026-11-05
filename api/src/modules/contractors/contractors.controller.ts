@@ -1,9 +1,15 @@
+import { createReadStream } from "node:fs";
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
   auditWrite,
   safeChangedFields,
 } from "../activityLogs/activityLogs.service.js";
+import {
+  createAccreditationDocumentResponseSchema,
+  listAccreditationDocumentsResponseSchema,
+} from "../accreditationDocuments/accreditationDocuments.schemas.js";
+import { getAccreditationResponseSchema } from "../accreditations/accreditations.schemas.js";
 import {
   contractorPortalSummaryResponseSchema,
   createContractorPersonResponseSchema,
@@ -19,6 +25,7 @@ import {
   updateContractorResponseSchema,
   type CreateContractorBody,
   type CreateContractorPersonBody,
+  type CreateContractorPortalDocumentBody,
   type InviteContractorUserBody,
   type ListContractorPeopleQuery,
   type ListContractorUsersQuery,
@@ -29,14 +36,19 @@ import {
 import {
   createContractor,
   createContractorPerson,
+  createMyContractorAccreditationDocument,
   deleteContractor,
   deleteContractorPerson,
   getContractorById,
   getContractorPortalSummary,
+  getMyContractorAccreditation,
   inviteContractorUser,
   listContractorPeople,
   listContractorUsers,
   listContractors,
+  listMyContractorAccreditationDocuments,
+  resolveMyContractorAccreditationDocumentFile,
+  submitMyContractorAccreditation,
   updateContractor,
   updateContractorPerson,
 } from "./contractors.service.js";
@@ -60,6 +72,85 @@ export async function getContractorPortalSummaryHandler(
   if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
   const result = await getContractorPortalSummary(req.user);
   res.status(200).json(contractorPortalSummaryResponseSchema.parse(result));
+}
+
+/** GET /contractors/me/accreditation — HAB de la org del portal. */
+export async function getMyContractorAccreditationHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await getMyContractorAccreditation(req.user);
+  res.status(200).json(getAccreditationResponseSchema.parse(result));
+}
+
+/** GET /contractors/me/accreditation/documents — pack company. */
+export async function listMyContractorAccreditationDocumentsHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await listMyContractorAccreditationDocuments(req.user);
+  res.status(200).json(listAccreditationDocumentsResponseSchema.parse(result));
+}
+
+/** POST /contractors/me/accreditation/documents — upload. */
+export async function createMyContractorAccreditationDocumentHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as CreateContractorPortalDocumentBody;
+  const created = await createMyContractorAccreditationDocument(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "contractorOrgDocument",
+    resourceId: created.id,
+    targetLabel: `${created.documentType.code} · ${created.originalName}`,
+    metadata: { accreditationId: created.accreditationId, via: "portal" },
+  });
+  res
+    .status(201)
+    .json(createAccreditationDocumentResponseSchema.parse(created));
+}
+
+/** GET /contractors/me/accreditation/documents/:documentId/download */
+export async function downloadMyContractorAccreditationDocumentHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const file = await resolveMyContractorAccreditationDocumentFile(
+    req.user,
+    req.params.documentId as string,
+  );
+  const inlineRaw = (req.query as { inline?: string }).inline;
+  const asInline = inlineRaw === "1" || inlineRaw === "true";
+  const disposition = asInline ? "inline" : "attachment";
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Type", file.mimeType);
+  res.setHeader(
+    "Content-Disposition",
+    `${disposition}; filename="${encodeURIComponent(file.originalName)}"`,
+  );
+  createReadStream(file.fullPath).pipe(res);
+}
+
+/** POST /contractors/me/accreditation/submit */
+export async function submitMyContractorAccreditationHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await submitMyContractorAccreditation(req.user);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "contractorAccreditation",
+    resourceId: result.id,
+    targetLabel: `${result.code} · submit`,
+    metadata: { status: result.status, via: "portal" },
+  });
+  res.status(200).json(getAccreditationResponseSchema.parse(result));
 }
 
 /** POST /contractors — alta. */

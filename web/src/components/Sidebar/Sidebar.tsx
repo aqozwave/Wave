@@ -282,6 +282,8 @@ export function Sidebar() {
     location.pathname.startsWith("/roles") ||
     location.pathname.startsWith("/sistema");
   const onPanel = location.pathname === "/";
+  /** Habilitación del portal contratista (E4). */
+  const onPortalHab = location.pathname.startsWith("/portal/habilitacion");
   const [crewOpen, setCrewOpen] = useState(onCrewSection);
   const [cursosOpen, setCursosOpen] = useState(onCursosSection);
   const [prevencionOpen, setPrevencionOpen] = useState(onPrevencionSection);
@@ -403,6 +405,15 @@ export function Sidebar() {
               active={onPanel}
               collapsed
             />
+            {isContractorPortal ? (
+              <SidebarItem
+                label="Habilitación"
+                icon={ClipboardCheck}
+                to="/portal/habilitacion"
+                active={onPortalHab}
+                collapsed
+              />
+            ) : null}
             <div className="h-1.5" aria-hidden />
             {showCrewGroup ? (
               <SidebarItem
@@ -491,6 +502,19 @@ export function Sidebar() {
               to="/"
               active={onPanel}
             />
+            {isContractorPortal ? (
+              <>
+                <p className="m-0 px-2.5 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-[var(--color-nav-icon)]">
+                  Mi empresa
+                </p>
+                <SidebarItem
+                  label="Habilitación"
+                  icon={ClipboardCheck}
+                  to="/portal/habilitacion"
+                  active={onPortalHab}
+                />
+              </>
+            ) : null}
             <div className="h-1.5" aria-hidden />
 
             {/* Grupo Tripulación (Figma): Embarcados. */}

@@ -412,3 +412,133 @@ export async function getContractorPortalSummaryRequest(
   if (!res.ok) throw toApiError(res, body);
   return body as ContractorPortalSummary;
 }
+
+/** HAB del portal (mismo shape que ContractorAccreditation interno). */
+export type ContractorPortalAccreditation = {
+  id: string;
+  code: string;
+  organizationId: string;
+  organization: {
+    id: string;
+    name: string;
+    rut: string;
+    businessId: string;
+  };
+  status: ContractorAccreditationStatus;
+  message: string | null;
+  reviewNote: string | null;
+  requestedAt: string | null;
+  dueAt: string | null;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Ítem checklist pack company en portal. */
+export type ContractorPortalDocChecklistItem = {
+  documentType: {
+    id: string;
+    code: string;
+    name: string;
+    requiresExpiry: boolean;
+  };
+  document: {
+    id: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+    status:
+      | "pending_validation"
+      | "validated"
+      | "observed"
+      | "replaced";
+    observation: string | null;
+    expiresAt: string | null;
+  } | null;
+};
+
+/** GET /contractors/me/accreditation */
+export async function getContractorPortalAccreditationRequest(
+  accessToken: string,
+): Promise<ContractorPortalAccreditation> {
+  const res = await fetch("/api/v1/contractors/me/accreditation", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorPortalAccreditation;
+}
+
+/** GET /contractors/me/accreditation/documents */
+export async function listContractorPortalDocumentsRequest(
+  accessToken: string,
+): Promise<{ items: ContractorPortalDocChecklistItem[]; total: number }> {
+  const res = await fetch("/api/v1/contractors/me/accreditation/documents", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as { items: ContractorPortalDocChecklistItem[]; total: number };
+}
+
+/** POST upload doc portal. */
+export async function createContractorPortalDocumentRequest(
+  accessToken: string,
+  data: {
+    documentTypeId: string;
+    fileName: string;
+    mimeType: string;
+    contentBase64: string;
+    expiresAt?: string | null;
+  },
+): Promise<NonNullable<ContractorPortalDocChecklistItem["document"]> & {
+  documentType: ContractorPortalDocChecklistItem["documentType"];
+}> {
+  const res = await fetch("/api/v1/contractors/me/accreditation/documents", {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as NonNullable<ContractorPortalDocChecklistItem["document"]> & {
+    documentType: ContractorPortalDocChecklistItem["documentType"];
+  };
+}
+
+/** Descarga doc portal. */
+export async function downloadContractorPortalDocumentRequest(
+  accessToken: string,
+  documentId: string,
+  fileName: string,
+): Promise<void> {
+  const res = await fetch(
+    `/api/v1/contractors/me/accreditation/documents/${documentId}/download`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    throw toApiError(res, body);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** POST enviar HAB a revisión. */
+export async function submitContractorPortalAccreditationRequest(
+  accessToken: string,
+): Promise<ContractorPortalAccreditation> {
+  const res = await fetch("/api/v1/contractors/me/accreditation/submit", {
+    method: "POST",
+    headers: authHeaders(accessToken),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorPortalAccreditation;
+}

@@ -16,6 +16,7 @@ import {
 import { Modal } from "../../components/Modal/Modal";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
+import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
 import {
   TablePagination,
   useClientTablePagination,
@@ -29,6 +30,7 @@ import {
   listBusinessesRequest,
   type Business,
 } from "../../lib/api/businesses";
+import { createAccreditationRequest } from "../../lib/api/accreditations";
 import {
   createContractorRequest,
   deleteContractorRequest,
@@ -77,7 +79,7 @@ function habLabel(status: ContractorAccreditationStatus | null): string {
   }
 }
 
-/** Tono del chip HAB. */
+/** Tono del chip HAB (Figma: Invitada = gris). */
 function habTone(
   status: ContractorAccreditationStatus | null,
 ): "success" | "warning" | "danger" | "info" | "neutral" {
@@ -89,8 +91,9 @@ function habTone(
       return "info";
     case "observed":
     case "pending":
-    case "invited":
       return "warning";
+    case "invited":
+      return "neutral";
     case "rejected":
       return "danger";
     default:
@@ -98,20 +101,45 @@ function habTone(
   }
 }
 
+/** Iniciales tipo avatar Figma (ej. «Servicios Navales» → SN). */
+function orgInitials(name: string): string {
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0 && !/^(spa|ltda|sa|de|del|la|el|y)$/i.test(w));
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0].charAt(0)}${parts[1].charAt(0)}`.toUpperCase();
+}
+
 /**
- * Texto «Última revisión» al estilo Figma
- * (fecha, «enviada hace N d», «invitación enviada», —).
+ * «Última revisión» Figma: línea fecha + subtítulo de estado.
  */
-function lastReviewLabel(row: ContractorOrganization): string {
+function lastReviewParts(row: ContractorOrganization): {
+  primary: string;
+  secondary: string | null;
+} {
   const hab = row.latestAccreditation;
-  if (!hab) return "—";
-  if (hab.status === "invited") return "invitación enviada";
+  if (!hab) return { primary: "—", secondary: null };
+  if (hab.status === "invited") {
+    return { primary: "invitación enviada", secondary: null };
+  }
   if (hab.reviewedAt) {
+    let date = "—";
     try {
-      return new Date(hab.reviewedAt).toLocaleDateString("es-CL");
+      date = new Date(hab.reviewedAt).toLocaleDateString("es-CL");
     } catch {
-      return "—";
+      date = "—";
     }
+    const secondary =
+      hab.status === "approved"
+        ? "habilitada"
+        : hab.status === "rejected"
+          ? "rechazada"
+          : hab.status === "observed"
+            ? "observada"
+            : null;
+    return { primary: date, secondary };
   }
   if (hab.submittedAt) {
     const days = Math.max(
@@ -120,17 +148,22 @@ function lastReviewLabel(row: ContractorOrganization): string {
         (Date.now() - new Date(hab.submittedAt).getTime()) / 86_400_000,
       ),
     );
-    if (days === 0) return "enviada hoy";
-    return `enviada hace ${days} d`;
+    return {
+      primary: days === 0 ? "enviada hoy" : `enviada hace ${days} d`,
+      secondary: hab.status === "observed" ? "observada" : null,
+    };
   }
   if (hab.requestedAt) {
     try {
-      return new Date(hab.requestedAt).toLocaleDateString("es-CL");
+      return {
+        primary: new Date(hab.requestedAt).toLocaleDateString("es-CL"),
+        secondary: "solicitada",
+      };
     } catch {
-      return "—";
+      return { primary: "—", secondary: null };
     }
   }
-  return "—";
+  return { primary: "—", secondary: null };
 }
 
 /** Personal: «N personas» o — (sin catálogo de personas aún). */
@@ -195,10 +228,14 @@ export function ContractorsPage() {
     "" | ContractorAccreditationStatus | "none"
   >("");
   const [menuId, setMenuId] = useState<string | null>(null);
+  /** Selección de filas (checkbox Figma; sin acciones masivas aún). */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ContractorOrganization | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  /** Figma P10: invitar contacto al crear (abre HAB + aviso). */
+  const [inviteNow, setInviteNow] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [pendingDeactivate, setPendingDeactivate] =
     useState<ContractorOrganization | null>(null);
@@ -279,16 +316,45 @@ export function ContractorsPage() {
           value: (row) =>
             habLabel(row.latestAccreditation?.status ?? null),
         },
-        { header: "Última revisión", value: (row) => lastReviewLabel(row) },
+        {
+          header: "Última revisión",
+          value: (row) => {
+            const p = lastReviewParts(row);
+            return p.secondary ? `${p.primary} ${p.secondary}` : p.primary;
+          },
+        },
         { header: "Email", value: (row) => row.contactEmail ?? "" },
       ],
       "contratistas",
     );
   }
 
+  /** Marca/desmarca todas las filas de la página. */
+  function toggleSelectAll(checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const row of pageItems) {
+        if (checked) next.add(row.id);
+        else next.delete(row.id);
+      }
+      return next;
+    });
+  }
+
+  /** Marca/desmarca una fila. */
+  function toggleSelectRow(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
   function openCreate() {
     setEditing(null);
     setForm({ ...EMPTY_FORM, businessId: user?.businessId ?? "" });
+    setInviteNow(true);
     setModalOpen(true);
   }
 
@@ -330,6 +396,10 @@ export function ContractorsPage() {
       showToast("Elegí la empresa.", "danger");
       return;
     }
+    if (!editing && inviteNow && !form.contactEmail.trim()) {
+      showToast("Con invitación activa, el correo de contacto es requerido.", "danger");
+      return;
+    }
     setSubmitting(true);
     try {
       const payload = {
@@ -346,11 +416,25 @@ export function ContractorsPage() {
         await updateContractorRequest(accessToken, editing.id, payload);
         showToast("Organización actualizada.", "success");
       } else {
-        await createContractorRequest(accessToken, {
+        const created = await createContractorRequest(accessToken, {
           ...payload,
           ...(isSuperadmin ? { businessId: form.businessId } : {}),
         });
-        showToast("Organización creada.", "success");
+        // Figma P10 «Crear e invitar»: solicita documentación (HAB) al contacto.
+        if (inviteNow) {
+          await createAccreditationRequest(accessToken, {
+            organizationId: created.id,
+            message: form.contactName.trim()
+              ? `Hola ${form.contactName.trim()}, favor subir la documentación del pack empresa para habilitación.`
+              : "Favor subir la documentación del pack empresa para habilitación.",
+          });
+          showToast(
+            "Organización creada e invitación de documentación enviada. El acceso al portal se invita desde la ficha (tab Usuarios, con RUN).",
+            "success",
+          );
+        } else {
+          showToast("Organización creada.", "success");
+        }
       }
       closeModal();
       await load();
@@ -533,23 +617,37 @@ export function ContractorsPage() {
             />
           }
         >
-          <table className="w-full min-w-[880px] border-collapse text-left text-[13px]">
+          <table className="w-full min-w-[960px] border-collapse text-left text-[13px]">
             <thead>
-              <tr className="bg-[var(--color-table-head-bg,#f8f9fb)] text-[12px] font-medium text-[var(--color-nachipa-secondary)]">
-                <th className="px-3 py-2.5">RUT</th>
-                <th className="px-3 py-2.5">Razón social</th>
-                <th className="px-3 py-2.5">Rol</th>
-                <th className="px-3 py-2.5">Personal</th>
-                <th className="px-3 py-2.5">Última revisión</th>
-                <th className="px-3 py-2.5">Habilitación</th>
-                <th className="px-3 py-2.5 text-right">Acciones</th>
+              <tr>
+                <TableHeaderCell rounded="left" className="w-10">
+                  <input
+                    type="checkbox"
+                    className="size-4 rounded border-[var(--color-tremor-border)]"
+                    aria-label="Seleccionar todas"
+                    checked={
+                      pageItems.length > 0 &&
+                      pageItems.every((r) => selectedIds.has(r.id))
+                    }
+                    onChange={(e) => toggleSelectAll(e.target.checked)}
+                  />
+                </TableHeaderCell>
+                <TableHeaderCell>RUT</TableHeaderCell>
+                <TableHeaderCell>Razón social</TableHeaderCell>
+                <TableHeaderCell>Rol</TableHeaderCell>
+                <TableHeaderCell>Personal</TableHeaderCell>
+                <TableHeaderCell>Última revisión</TableHeaderCell>
+                <TableHeaderCell>Habilitación</TableHeaderCell>
+                <TableHeaderCell rounded="right" align="right">
+                  Acciones
+                </TableHeaderCell>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-3 py-8 text-[var(--color-nachipa-secondary)]"
                   >
                     Cargando…
@@ -558,7 +656,7 @@ export function ContractorsPage() {
               ) : pageItems.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-3 py-8 text-[var(--color-nachipa-secondary)]"
                   >
                     No hay organizaciones con esos filtros.
@@ -567,11 +665,23 @@ export function ContractorsPage() {
               ) : (
                 pageItems.map((row) => {
                   const habStatus = row.latestAccreditation?.status ?? null;
+                  const review = lastReviewParts(row);
                   return (
                     <tr
                       key={row.id}
                       className="border-t border-[var(--color-tremor-border)] hover:bg-[var(--color-nachipa-bg-page)]"
                     >
+                      <td className="px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          className="size-4 rounded border-[var(--color-tremor-border)]"
+                          aria-label={`Seleccionar ${row.rut}`}
+                          checked={selectedIds.has(row.id)}
+                          onChange={(e) =>
+                            toggleSelectRow(row.id, e.target.checked)
+                          }
+                        />
+                      </td>
                       <td className="px-3 py-2.5 font-medium tabular-nums text-[var(--color-nachipa-title)]">
                         <Link
                           to={`/prevencion/contratistas/${row.id}`}
@@ -583,15 +693,22 @@ export function ContractorsPage() {
                       <td className="px-3 py-2.5">
                         <Link
                           to={`/prevencion/contratistas/${row.id}`}
-                          className="block font-medium text-[var(--color-nachipa-title)] hover:underline"
+                          className="flex items-center gap-2.5 hover:opacity-90"
                         >
-                          {displayName(row.name)}
-                        </Link>
-                        {row.contactEmail ? (
-                          <span className="block text-[12px] text-[var(--color-nachipa-secondary)]">
-                            {row.contactEmail}
+                          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-status-info-bg,#e0f2fe)] text-[11px] font-semibold text-[var(--color-status-info-fg,#0369a1)]">
+                            {orgInitials(row.name)}
                           </span>
-                        ) : null}
+                          <span className="min-w-0">
+                            <span className="block font-medium text-[var(--color-nachipa-title)]">
+                              {displayName(row.name)}
+                            </span>
+                            {row.contactEmail ? (
+                              <span className="block truncate text-[12px] text-[var(--color-nachipa-secondary)]">
+                                {row.contactEmail}
+                              </span>
+                            ) : null}
+                          </span>
+                        </Link>
                       </td>
                       <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
                         {roleLabel(row.role)}
@@ -599,8 +716,15 @@ export function ContractorsPage() {
                       <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
                         {personalLabel(row.personCount)}
                       </td>
-                      <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
-                        {lastReviewLabel(row)}
+                      <td className="px-3 py-2.5">
+                        <span className="block text-[var(--color-nachipa-body)]">
+                          {review.primary}
+                        </span>
+                        {review.secondary ? (
+                          <span className="block text-[12px] text-[var(--color-nachipa-secondary)]">
+                            {review.secondary}
+                          </span>
+                        ) : null}
                       </td>
                       <td className="px-3 py-2.5">
                         <StatusChip tone={habTone(habStatus)}>
@@ -673,11 +797,18 @@ export function ContractorsPage() {
       <Modal
         open={modalOpen}
         onClose={closeModal}
-        icon={Building2}
-        title={
-          editing ? "Editar organización" : "Nueva organización contratista"
+        icon={editing ? Building2 : undefined}
+        title={editing ? "Editar organización" : "Nueva organización"}
+        subtitle={
+          editing
+            ? "Datos de la empresa externa."
+            : "Das de alta una empresa externa e invitas a su contacto."
         }
-        subtitle="Empresa externa del tenant (no es un Business de Wave)."
+        maxWidthClass={
+          editing
+            ? "w-full max-w-[520px] sm:w-[520px]"
+            : "w-full max-w-[640px] sm:w-[640px]"
+        }
         footer={
           <div className="flex justify-end gap-2">
             <button
@@ -695,7 +826,13 @@ export function ContractorsPage() {
               className="!w-auto"
               disabled={submitting}
             >
-              {submitting ? "Guardando…" : editing ? "Guardar" : "Crear"}
+              {submitting
+                ? "Guardando…"
+                : editing
+                  ? "Guardar"
+                  : inviteNow
+                    ? "Crear e invitar"
+                    : "Crear"}
             </Button>
           </div>
         }
@@ -727,79 +864,178 @@ export function ContractorsPage() {
               </select>
             </label>
           ) : null}
-          <TextField
-            label="Razón social"
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            required
-          />
-          <TextField
-            label="RUT"
-            value={form.rut}
-            onChange={(e) => setForm((f) => ({ ...f, rut: e.target.value }))}
-            placeholder="76.123.456-0"
-            required
-            disabled={Boolean(editing)}
-          />
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
-              Relación
-            </span>
-            <select
-              className={selectClass}
-              value={form.role}
-              onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  role: e.target.value as ContractorRole,
-                }))
-              }
-            >
-              <option value="occasional">Ocasional</option>
-              <option value="permanent">Permanente</option>
-            </select>
-          </label>
-          <TextField
-            label="Especialidad"
-            value={form.specialty}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, specialty: e.target.value }))
-            }
-          />
-          <TextField
-            label="Contacto"
-            value={form.contactName}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, contactName: e.target.value }))
-            }
-          />
-          <TextField
-            label="Email contacto"
-            type="email"
-            value={form.contactEmail}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, contactEmail: e.target.value }))
-            }
-          />
-          <TextField
-            label="Teléfono"
-            value={form.contactPhone}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, contactPhone: e.target.value }))
-            }
-          />
+
           {editing ? (
-            <div className="flex items-center justify-between rounded-[10px] bg-[var(--color-table-head-bg,#f8f9fb)] px-3.5 py-3">
-              <span className="text-[13px] font-semibold text-[var(--color-nachipa-title)]">
-                Activa
-              </span>
-              <Toggle
-                checked={form.active}
-                onChange={(next) => setForm((f) => ({ ...f, active: next }))}
-                aria-label="Organización activa"
+            <>
+              <TextField
+                label="Razón social"
+                value={form.name}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, name: e.target.value }))
+                }
+                required
               />
-            </div>
-          ) : null}
+              <TextField
+                label="RUT"
+                value={form.rut}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, rut: e.target.value }))
+                }
+                required
+                disabled
+              />
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Rol
+                </span>
+                <select
+                  className={selectClass}
+                  value={form.role}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      role: e.target.value as ContractorRole,
+                    }))
+                  }
+                >
+                  <option value="occasional">Ocasional</option>
+                  <option value="permanent">Permanente</option>
+                </select>
+              </label>
+              <TextField
+                label="Especialidad"
+                value={form.specialty}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, specialty: e.target.value }))
+                }
+              />
+              <TextField
+                label="Contacto (nombre)"
+                value={form.contactName}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, contactName: e.target.value }))
+                }
+              />
+              <TextField
+                label="Correo de contacto"
+                type="email"
+                value={form.contactEmail}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, contactEmail: e.target.value }))
+                }
+              />
+              <TextField
+                label="Teléfono"
+                value={form.contactPhone}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, contactPhone: e.target.value }))
+                }
+              />
+              <div className="flex items-center justify-between rounded-[10px] bg-[var(--color-table-head-bg,#f8f9fb)] px-3.5 py-3">
+                <span className="text-[13px] font-semibold text-[var(--color-nachipa-title)]">
+                  Activa
+                </span>
+                <Toggle
+                  checked={form.active}
+                  onChange={(next) => setForm((f) => ({ ...f, active: next }))}
+                  aria-label="Organización activa"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Figma P10: grilla 2×3 */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-x-4 sm:gap-y-3">
+                <TextField
+                  label="Razón social"
+                  value={form.name}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                  placeholder="Soldaduras Calbuco SpA"
+                  required
+                />
+                <TextField
+                  label="RUT"
+                  value={form.rut}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, rut: e.target.value }))
+                  }
+                  placeholder="76.778.903-5"
+                  required
+                />
+                <TextField
+                  label="Especialidad"
+                  value={form.specialty}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, specialty: e.target.value }))
+                  }
+                  placeholder="Soldadura"
+                />
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                    Rol
+                  </span>
+                  <select
+                    className={selectClass}
+                    value={form.role}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        role: e.target.value as ContractorRole,
+                      }))
+                    }
+                  >
+                    <option value="occasional">Ocasional</option>
+                    <option value="permanent">Permanente</option>
+                  </select>
+                </label>
+                <TextField
+                  label="Contacto (nombre)"
+                  value={form.contactName}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, contactName: e.target.value }))
+                  }
+                  placeholder="Camila Rojas"
+                />
+                <TextField
+                  label="Correo de contacto"
+                  type="email"
+                  value={form.contactEmail}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, contactEmail: e.target.value }))
+                  }
+                  placeholder="contacto@soldacalbuco.cl"
+                  required={inviteNow}
+                />
+              </div>
+
+              <div className="flex items-start justify-between gap-3 rounded-[12px] border border-[var(--color-tremor-border)] bg-white px-3.5 py-3">
+                <div className="min-w-0">
+                  <p className="m-0 text-[13px] font-semibold text-[var(--color-nachipa-title)]">
+                    Invitar al contacto ahora
+                  </p>
+                  <p className="m-0 mt-0.5 text-[12px] text-[var(--color-nachipa-secondary)]">
+                    Recibe un link de un solo uso que vence en 72 h
+                  </p>
+                </div>
+                <Toggle
+                  checked={inviteNow}
+                  onChange={setInviteNow}
+                  aria-label="Invitar al contacto ahora"
+                />
+              </div>
+
+              {inviteNow ? (
+                <div className="rounded-[10px] bg-[var(--color-status-info-bg,#e0f2fe)] px-3.5 py-2.5">
+                  <p className="m-0 text-[12px] leading-5 text-[var(--color-status-info-fg,#0369a1)]">
+                    La organización queda «Invitada» y aún no puede recibir
+                    permisos de trabajo hasta ser habilitada.
+                  </p>
+                </div>
+              ) : null}
+            </>
+          )}
         </form>
       </Modal>
 

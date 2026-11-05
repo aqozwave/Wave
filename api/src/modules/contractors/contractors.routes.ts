@@ -7,22 +7,29 @@ import { validate } from "../../middlewares/validate.js";
 import {
   createContractorHandler,
   createContractorPersonHandler,
+  createMyContractorAccreditationDocumentHandler,
   deleteContractorHandler,
   deleteContractorPersonHandler,
+  downloadMyContractorAccreditationDocumentHandler,
   getContractorHandler,
   getContractorPortalSummaryHandler,
+  getMyContractorAccreditationHandler,
   inviteContractorUserHandler,
   listContractorPeopleHandler,
   listContractorUsersHandler,
   listContractorsHandler,
+  listMyContractorAccreditationDocumentsHandler,
+  submitMyContractorAccreditationHandler,
   updateContractorHandler,
   updateContractorPersonHandler,
 } from "./contractors.controller.js";
 import {
   createContractorPersonRequestSchema,
+  createContractorPortalDocumentRequestSchema,
   createContractorRequestSchema,
   deleteContractorPersonRequestSchema,
   deleteContractorRequestSchema,
+  downloadContractorPortalDocumentRequestSchema,
   getContractorPortalSummaryRequestSchema,
   getContractorRequestSchema,
   inviteContractorUserRequestSchema,
@@ -46,6 +53,41 @@ contractorsRouter.get(
   authenticate,
   validate(getContractorPortalSummaryRequestSchema),
   getContractorPortalSummaryHandler,
+);
+
+contractorsRouter.get(
+  "/me/accreditation",
+  authenticate,
+  validate(getContractorPortalSummaryRequestSchema),
+  getMyContractorAccreditationHandler,
+);
+
+contractorsRouter.get(
+  "/me/accreditation/documents",
+  authenticate,
+  validate(getContractorPortalSummaryRequestSchema),
+  listMyContractorAccreditationDocumentsHandler,
+);
+
+contractorsRouter.post(
+  "/me/accreditation/documents",
+  authenticate,
+  validate(createContractorPortalDocumentRequestSchema),
+  createMyContractorAccreditationDocumentHandler,
+);
+
+contractorsRouter.get(
+  "/me/accreditation/documents/:documentId/download",
+  authenticate,
+  validate(downloadContractorPortalDocumentRequestSchema),
+  downloadMyContractorAccreditationDocumentHandler,
+);
+
+contractorsRouter.post(
+  "/me/accreditation/submit",
+  authenticate,
+  validate(getContractorPortalSummaryRequestSchema),
+  submitMyContractorAccreditationHandler,
 );
 
 contractorsRouter.get(
