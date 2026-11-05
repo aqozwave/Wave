@@ -259,6 +259,7 @@ import {
   listContractorUsersResponseSchema,
   listContractorsQuerySchema,
   listContractorsResponseSchema,
+  listMyContractorPeopleResponseSchema,
   updateContractorBodySchema,
   updateContractorPersonBodySchema,
   updateContractorPersonResponseSchema,
@@ -2271,6 +2272,100 @@ registry.registerPath({
     401: { description: "Sin token" },
     403: { description: "No es usuario contratista" },
     409: { description: "Transición inválida" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/me/people",
+  tags: ["Contractors"],
+  summary: "Personal de la org del portal (E5)",
+  security: [{ bearerAuth: [] }],
+  request: { query: listContractorPeopleQuerySchema },
+  responses: {
+    200: {
+      description: "Listado con progreso de docs",
+      content: {
+        "application/json": { schema: listMyContractorPeopleResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors/me/people",
+  tags: ["Contractors"],
+  summary: "Agregar persona desde el portal (E5)",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createContractorPersonBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creada",
+      content: {
+        "application/json": { schema: createContractorPersonResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+    409: { description: "RUN duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/me/accreditation/people/{personId}/documents",
+  tags: ["Contractors"],
+  summary: "Checklist pack person del portal (E5)",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Checklist",
+      content: {
+        "application/json": {
+          schema: listAccreditationPersonDocumentsResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+    404: { description: "Sin HAB o persona" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors/me/accreditation/people/{personId}/documents",
+  tags: ["Contractors"],
+  summary: "Subir documento de persona desde el portal (E5)",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createContractorPortalDocumentBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": {
+          schema: createAccreditationPersonDocumentResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación o HAB cerrada" },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
   },
 });
 

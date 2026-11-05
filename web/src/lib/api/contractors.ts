@@ -542,3 +542,201 @@ export async function submitContractorPortalAccreditationRequest(
   if (!res.ok) throw toApiError(res, body);
   return body as ContractorPortalAccreditation;
 }
+
+/** Persona del portal con progreso de docs (E5). */
+export type ContractorPortalPerson = ContractorPerson & {
+  documents: {
+    uploaded: number;
+    required: number;
+    observed: number;
+  };
+};
+
+/** GET /contractors/me/people */
+export async function listContractorPortalPeopleRequest(
+  accessToken: string,
+  params: { page?: number; limit?: number; search?: string; active?: boolean } = {},
+): Promise<{
+  items: ContractorPortalPerson[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  const q = new URLSearchParams();
+  q.set("page", String(params.page ?? 1));
+  q.set("limit", String(params.limit ?? 50));
+  if (params.search) q.set("search", params.search);
+  if (params.active !== undefined) q.set("active", String(params.active));
+  const res = await fetch(`/api/v1/contractors/me/people?${q}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as {
+    items: ContractorPortalPerson[];
+    total: number;
+    page: number;
+    limit: number;
+  };
+}
+
+/** POST /contractors/me/people */
+export async function createContractorPortalPersonRequest(
+  accessToken: string,
+  data: {
+    rut: string;
+    fullName: string;
+    position?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    emergencyContact?: string | null;
+    active?: boolean;
+  },
+): Promise<ContractorPerson> {
+  const res = await fetch("/api/v1/contractors/me/people", {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorPerson;
+}
+
+/** PATCH /contractors/me/people/:personId */
+export async function updateContractorPortalPersonRequest(
+  accessToken: string,
+  personId: string,
+  data: Partial<{
+    rut: string;
+    fullName: string;
+    position: string | null;
+    email: string | null;
+    phone: string | null;
+    emergencyContact: string | null;
+    active: boolean;
+  }>,
+): Promise<ContractorPerson> {
+  const res = await fetch(`/api/v1/contractors/me/people/${personId}`, {
+    method: "PATCH",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorPerson;
+}
+
+/** DELETE /contractors/me/people/:personId */
+export async function deleteContractorPortalPersonRequest(
+  accessToken: string,
+  personId: string,
+): Promise<ContractorPerson> {
+  const res = await fetch(`/api/v1/contractors/me/people/${personId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorPerson;
+}
+
+/** Ítem checklist pack person en portal. */
+export type ContractorPortalPersonDocChecklistItem = {
+  documentType: {
+    id: string;
+    code: string;
+    name: string;
+    requiresExpiry: boolean;
+  };
+  document: {
+    id: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+    status:
+      | "pending_validation"
+      | "validated"
+      | "observed"
+      | "replaced";
+    observation: string | null;
+    expiresAt: string | null;
+  } | null;
+};
+
+/** GET /me/accreditation/people/:personId/documents */
+export async function listContractorPortalPersonDocumentsRequest(
+  accessToken: string,
+  personId: string,
+): Promise<{
+  items: ContractorPortalPersonDocChecklistItem[];
+  total: number;
+}> {
+  const res = await fetch(
+    `/api/v1/contractors/me/accreditation/people/${personId}/documents`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as {
+    items: ContractorPortalPersonDocChecklistItem[];
+    total: number;
+  };
+}
+
+/** POST upload doc persona portal. */
+export async function createContractorPortalPersonDocumentRequest(
+  accessToken: string,
+  personId: string,
+  data: {
+    documentTypeId: string;
+    fileName: string;
+    mimeType: string;
+    contentBase64: string;
+    expiresAt?: string | null;
+  },
+): Promise<
+  NonNullable<ContractorPortalPersonDocChecklistItem["document"]> & {
+    documentType: ContractorPortalPersonDocChecklistItem["documentType"];
+  }
+> {
+  const res = await fetch(
+    `/api/v1/contractors/me/accreditation/people/${personId}/documents`,
+    {
+      method: "POST",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(data),
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as NonNullable<
+    ContractorPortalPersonDocChecklistItem["document"]
+  > & {
+    documentType: ContractorPortalPersonDocChecklistItem["documentType"];
+  };
+}
+
+/** Descarga doc persona portal. */
+export async function downloadContractorPortalPersonDocumentRequest(
+  accessToken: string,
+  personId: string,
+  documentId: string,
+  fileName: string,
+): Promise<void> {
+  const res = await fetch(
+    `/api/v1/contractors/me/accreditation/people/${personId}/documents/${documentId}/download`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    throw toApiError(res, body);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}

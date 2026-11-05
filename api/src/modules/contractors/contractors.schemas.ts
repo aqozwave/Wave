@@ -452,3 +452,74 @@ export type CreateContractorPersonBody = z.infer<
 export type UpdateContractorPersonBody = z.infer<
   typeof updateContractorPersonBodySchema
 >;
+
+/** Progreso de docs pack person en el listado portal (E5). */
+export const contractorPortalPersonDocumentsSummarySchema = z.object({
+  uploaded: z.number().int().nonnegative(),
+  required: z.number().int().nonnegative(),
+  observed: z.number().int().nonnegative(),
+});
+
+/** Persona del portal con resumen de documentos de la HAB vigente. */
+export const contractorPortalPersonResponseSchema =
+  contractorPersonResponseSchema
+    .extend({
+      documents: contractorPortalPersonDocumentsSummarySchema,
+    })
+    .openapi("ContractorPortalPerson");
+
+/** Query GET /contractors/me/people (sin params de org). */
+export const listMyContractorPeopleRequestSchema = z.object({
+  query: listContractorPeopleQuerySchema,
+});
+
+export const listMyContractorPeopleResponseSchema = z
+  .object({
+    items: z.array(contractorPortalPersonResponseSchema),
+    total: z.number().int().nonnegative(),
+    page: z.number().int().positive(),
+    limit: z.number().int().positive(),
+  })
+  .openapi("ListMyContractorPeopleResponse");
+
+/** POST /contractors/me/people */
+export const createMyContractorPersonRequestSchema = z.object({
+  body: createContractorPersonBodySchema,
+});
+
+/** Params persona del portal. */
+export const myContractorPersonIdParamsSchema = z.object({
+  personId: z.uuid(),
+});
+
+export const updateMyContractorPersonRequestSchema = z.object({
+  params: myContractorPersonIdParamsSchema,
+  body: updateContractorPersonBodySchema,
+});
+
+export const deleteMyContractorPersonRequestSchema = z.object({
+  params: myContractorPersonIdParamsSchema,
+});
+
+/** Params docs de persona en portal. */
+export const myContractorPersonDocumentIdParamsSchema = z.object({
+  personId: z.uuid(),
+  documentId: z.uuid(),
+});
+
+export const listMyContractorPersonDocumentsRequestSchema = z.object({
+  params: myContractorPersonIdParamsSchema,
+});
+
+export const createMyContractorPersonDocumentRequestSchema = z.object({
+  params: myContractorPersonIdParamsSchema,
+  body: createContractorPortalDocumentBodySchema,
+});
+
+export const downloadMyContractorPersonDocumentRequestSchema = z.object({
+  params: myContractorPersonDocumentIdParamsSchema,
+});
+
+export type ContractorPortalPersonResponse = z.infer<
+  typeof contractorPortalPersonResponseSchema
+>;

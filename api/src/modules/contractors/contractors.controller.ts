@@ -7,7 +7,9 @@ import {
 } from "../activityLogs/activityLogs.service.js";
 import {
   createAccreditationDocumentResponseSchema,
+  createAccreditationPersonDocumentResponseSchema,
   listAccreditationDocumentsResponseSchema,
+  listAccreditationPersonDocumentsResponseSchema,
 } from "../accreditationDocuments/accreditationDocuments.schemas.js";
 import { getAccreditationResponseSchema } from "../accreditations/accreditations.schemas.js";
 import {
@@ -21,6 +23,7 @@ import {
   listContractorPeopleResponseSchema,
   listContractorUsersResponseSchema,
   listContractorsResponseSchema,
+  listMyContractorPeopleResponseSchema,
   updateContractorPersonResponseSchema,
   updateContractorResponseSchema,
   type CreateContractorBody,
@@ -37,8 +40,11 @@ import {
   createContractor,
   createContractorPerson,
   createMyContractorAccreditationDocument,
+  createMyContractorPerson,
+  createMyContractorPersonDocument,
   deleteContractor,
   deleteContractorPerson,
+  deleteMyContractorPerson,
   getContractorById,
   getContractorPortalSummary,
   getMyContractorAccreditation,
@@ -47,10 +53,14 @@ import {
   listContractorUsers,
   listContractors,
   listMyContractorAccreditationDocuments,
+  listMyContractorPeople,
+  listMyContractorPersonDocuments,
   resolveMyContractorAccreditationDocumentFile,
+  resolveMyContractorPersonDocumentFile,
   submitMyContractorAccreditation,
   updateContractor,
   updateContractorPerson,
+  updateMyContractorPerson,
 } from "./contractors.service.js";
 
 /** GET /contractors — listado paginado. */
@@ -151,6 +161,143 @@ export async function submitMyContractorAccreditationHandler(
     metadata: { status: result.status, via: "portal" },
   });
   res.status(200).json(getAccreditationResponseSchema.parse(result));
+}
+
+/** GET /contractors/me/people — personal del portal (E5). */
+export async function listMyContractorPeopleHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const query = req.query as unknown as ListContractorPeopleQuery;
+  const result = await listMyContractorPeople(req.user, query);
+  res.status(200).json(listMyContractorPeopleResponseSchema.parse(result));
+}
+
+/** POST /contractors/me/people — alta persona portal. */
+export async function createMyContractorPersonHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as CreateContractorPersonBody;
+  const result = await createMyContractorPerson(req.user, body);
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "contractorPerson",
+    resourceId: result.id,
+    targetLabel: `${result.rut} · ${result.fullName}`,
+    metadata: { via: "portal" },
+  });
+  res.status(201).json(createContractorPersonResponseSchema.parse(result));
+}
+
+/** PATCH /contractors/me/people/:personId */
+export async function updateMyContractorPersonHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as UpdateContractorPersonBody;
+  const result = await updateMyContractorPerson(
+    req.user,
+    req.params.personId as string,
+    body,
+  );
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "contractorPerson",
+    resourceId: result.id,
+    targetLabel: `${result.rut} · ${result.fullName}`,
+    metadata: { fields: safeChangedFields(body), via: "portal" },
+  });
+  res.status(200).json(updateContractorPersonResponseSchema.parse(result));
+}
+
+/** DELETE /contractors/me/people/:personId */
+export async function deleteMyContractorPersonHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await deleteMyContractorPerson(
+    req.user,
+    req.params.personId as string,
+  );
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "contractorPerson",
+    resourceId: result.id,
+    targetLabel: `${result.rut} · ${result.fullName}`,
+    metadata: { via: "portal" },
+  });
+  res.status(200).json(deleteContractorPersonResponseSchema.parse(result));
+}
+
+/** GET /contractors/me/accreditation/people/:personId/documents */
+export async function listMyContractorPersonDocumentsHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await listMyContractorPersonDocuments(
+    req.user,
+    req.params.personId as string,
+  );
+  res
+    .status(200)
+    .json(listAccreditationPersonDocumentsResponseSchema.parse(result));
+}
+
+/** POST /contractors/me/accreditation/people/:personId/documents */
+export async function createMyContractorPersonDocumentHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as CreateContractorPortalDocumentBody;
+  const created = await createMyContractorPersonDocument(
+    req.user,
+    req.params.personId as string,
+    body,
+  );
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "contractorPersonDocument",
+    resourceId: created.id,
+    targetLabel: `${created.documentType.code} · ${created.originalName}`,
+    metadata: {
+      accreditationId: created.accreditationId,
+      personId: created.personId,
+      via: "portal",
+    },
+  });
+  res
+    .status(201)
+    .json(createAccreditationPersonDocumentResponseSchema.parse(created));
+}
+
+/** GET …/people/:personId/documents/:documentId/download */
+export async function downloadMyContractorPersonDocumentHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const file = await resolveMyContractorPersonDocumentFile(
+    req.user,
+    req.params.personId as string,
+    req.params.documentId as string,
+  );
+  const inlineRaw = (req.query as { inline?: string }).inline;
+  const asInline = inlineRaw === "1" || inlineRaw === "true";
+  const disposition = asInline ? "inline" : "attachment";
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Type", file.mimeType);
+  res.setHeader(
+    "Content-Disposition",
+    `${disposition}; filename="${encodeURIComponent(file.originalName)}"`,
+  );
+  createReadStream(file.fullPath).pipe(res);
 }
 
 /** POST /contractors — alta. */

@@ -20,6 +20,7 @@ import { CursosTripulacion } from "./pages/Cursos/CursosTripulacion";
 import { Vencimientos } from "./pages/Cursos/Vencimientos";
 import { Empresas } from "./pages/Empresas/Empresas";
 import { ContractorPortalAccreditationPage } from "./pages/Home/ContractorPortalAccreditationPage";
+import { ContractorPortalPeoplePage } from "./pages/Home/ContractorPortalPeoplePage";
 import { HomeIndex } from "./pages/Home/HomeIndex";
 import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmation";
 import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
@@ -140,6 +141,10 @@ export function App() {
           <Route
             path="portal/habilitacion"
             element={<ContractorPortalAccreditationPage />}
+          />
+          <Route
+            path="portal/personal"
+            element={<ContractorPortalPeoplePage />}
           />
           <Route path="embarcados" element={<Embarcados />} />
           <Route path="embarcados/:id" element={<FichaTripulante />} />

@@ -1,0 +1,33 @@
+meta {
+  name: Get contractor portal people
+  type: http
+  seq: 23
+}
+
+get {
+  url: {{baseUrl}}/api/v1/contractors/me/people?page=1&limit=20
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  E5 listado de personal de la org del portal (+ progreso docs).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+}
+
+assert {
+  res.status: in [200, 403]
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

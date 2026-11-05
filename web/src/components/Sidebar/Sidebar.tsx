@@ -284,6 +284,8 @@ export function Sidebar() {
   const onPanel = location.pathname === "/";
   /** Habilitación del portal contratista (E4). */
   const onPortalHab = location.pathname.startsWith("/portal/habilitacion");
+  /** Mi personal del portal contratista (E5). */
+  const onPortalPeople = location.pathname.startsWith("/portal/personal");
   const [crewOpen, setCrewOpen] = useState(onCrewSection);
   const [cursosOpen, setCursosOpen] = useState(onCursosSection);
   const [prevencionOpen, setPrevencionOpen] = useState(onPrevencionSection);
@@ -406,13 +408,22 @@ export function Sidebar() {
               collapsed
             />
             {isContractorPortal ? (
-              <SidebarItem
-                label="Habilitación"
-                icon={ClipboardCheck}
-                to="/portal/habilitacion"
-                active={onPortalHab}
-                collapsed
-              />
+              <>
+                <SidebarItem
+                  label="Habilitación"
+                  icon={ClipboardCheck}
+                  to="/portal/habilitacion"
+                  active={onPortalHab}
+                  collapsed
+                />
+                <SidebarItem
+                  label="Mi personal"
+                  icon={Users}
+                  to="/portal/personal"
+                  active={onPortalPeople}
+                  collapsed
+                />
+              </>
             ) : null}
             <div className="h-1.5" aria-hidden />
             {showCrewGroup ? (
@@ -512,6 +523,12 @@ export function Sidebar() {
                   icon={ClipboardCheck}
                   to="/portal/habilitacion"
                   active={onPortalHab}
+                />
+                <SidebarItem
+                  label="Mi personal"
+                  icon={Users}
+                  to="/portal/personal"
+                  active={onPortalPeople}
                 />
               </>
             ) : null}

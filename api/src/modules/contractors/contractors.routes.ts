@@ -8,9 +8,13 @@ import {
   createContractorHandler,
   createContractorPersonHandler,
   createMyContractorAccreditationDocumentHandler,
+  createMyContractorPersonDocumentHandler,
+  createMyContractorPersonHandler,
   deleteContractorHandler,
   deleteContractorPersonHandler,
+  deleteMyContractorPersonHandler,
   downloadMyContractorAccreditationDocumentHandler,
+  downloadMyContractorPersonDocumentHandler,
   getContractorHandler,
   getContractorPortalSummaryHandler,
   getMyContractorAccreditationHandler,
@@ -19,25 +23,35 @@ import {
   listContractorUsersHandler,
   listContractorsHandler,
   listMyContractorAccreditationDocumentsHandler,
+  listMyContractorPeopleHandler,
+  listMyContractorPersonDocumentsHandler,
   submitMyContractorAccreditationHandler,
   updateContractorHandler,
   updateContractorPersonHandler,
+  updateMyContractorPersonHandler,
 } from "./contractors.controller.js";
 import {
   createContractorPersonRequestSchema,
   createContractorPortalDocumentRequestSchema,
   createContractorRequestSchema,
+  createMyContractorPersonDocumentRequestSchema,
+  createMyContractorPersonRequestSchema,
   deleteContractorPersonRequestSchema,
   deleteContractorRequestSchema,
+  deleteMyContractorPersonRequestSchema,
   downloadContractorPortalDocumentRequestSchema,
+  downloadMyContractorPersonDocumentRequestSchema,
   getContractorPortalSummaryRequestSchema,
   getContractorRequestSchema,
   inviteContractorUserRequestSchema,
   listContractorPeopleRequestSchema,
   listContractorUsersRequestSchema,
   listContractorsRequestSchema,
+  listMyContractorPeopleRequestSchema,
+  listMyContractorPersonDocumentsRequestSchema,
   updateContractorPersonRequestSchema,
   updateContractorRequestSchema,
+  updateMyContractorPersonRequestSchema,
 } from "./contractors.schemas.js";
 
 /**
@@ -88,6 +102,56 @@ contractorsRouter.post(
   authenticate,
   validate(getContractorPortalSummaryRequestSchema),
   submitMyContractorAccreditationHandler,
+);
+
+/** Portal E5: personal de la org del usuario externo. */
+contractorsRouter.get(
+  "/me/people",
+  authenticate,
+  validate(listMyContractorPeopleRequestSchema),
+  listMyContractorPeopleHandler,
+);
+
+contractorsRouter.post(
+  "/me/people",
+  authenticate,
+  validate(createMyContractorPersonRequestSchema),
+  createMyContractorPersonHandler,
+);
+
+contractorsRouter.patch(
+  "/me/people/:personId",
+  authenticate,
+  validate(updateMyContractorPersonRequestSchema),
+  updateMyContractorPersonHandler,
+);
+
+contractorsRouter.delete(
+  "/me/people/:personId",
+  authenticate,
+  validate(deleteMyContractorPersonRequestSchema),
+  deleteMyContractorPersonHandler,
+);
+
+contractorsRouter.get(
+  "/me/accreditation/people/:personId/documents",
+  authenticate,
+  validate(listMyContractorPersonDocumentsRequestSchema),
+  listMyContractorPersonDocumentsHandler,
+);
+
+contractorsRouter.post(
+  "/me/accreditation/people/:personId/documents",
+  authenticate,
+  validate(createMyContractorPersonDocumentRequestSchema),
+  createMyContractorPersonDocumentHandler,
+);
+
+contractorsRouter.get(
+  "/me/accreditation/people/:personId/documents/:documentId/download",
+  authenticate,
+  validate(downloadMyContractorPersonDocumentRequestSchema),
+  downloadMyContractorPersonDocumentHandler,
 );
 
 contractorsRouter.get(

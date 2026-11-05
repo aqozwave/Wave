@@ -212,14 +212,23 @@ export function ContratistaHome() {
           title={greeting}
           description={subtitle}
           actions={
-            <Button
-              type="button"
-              size="medium"
-              className="!w-auto"
-              onClick={() => void navigate("/portal/habilitacion")}
-            >
-              + {ctaLabel}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="medium"
+                className="!w-auto"
+                onClick={() => void navigate("/portal/habilitacion")}
+              >
+                + {ctaLabel}
+              </Button>
+              <button
+                type="button"
+                className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                onClick={() => void navigate("/portal/personal")}
+              >
+                Mi personal
+              </button>
+            </div>
           }
         />
 
@@ -284,30 +293,48 @@ export function ContratistaHome() {
                 {hab?.status === "approved" ? "Estado" : "Pendientes"}
               </h2>
               <ul className="m-0 list-none divide-y divide-[var(--color-tremor-border)] p-0">
-                {steps.map((step, idx) => (
-                  <li
-                    key={step.id}
-                    className="flex flex-wrap items-start gap-3 py-3 first:pt-0 last:pb-0"
-                  >
-                    <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-nachipa-bg-page)] text-[12px] font-semibold text-[var(--color-nachipa-title)]">
-                      {idx + 1}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                        {step.title}
-                      </p>
-                      <p className="m-0 mt-0.5 text-[12px] text-[var(--color-nachipa-secondary)]">
-                        {step.detail}
-                      </p>
-                    </div>
-                    <span className="text-[12px] text-[var(--color-nachipa-body)]">
-                      {step.appliesTo}
-                    </span>
-                    <StatusChip tone={step.blocked ? "neutral" : step.tone}>
-                      {step.statusLabel}
-                    </StatusChip>
-                  </li>
-                ))}
+                {steps.map((step, idx) => {
+                  const goTo =
+                    step.id === "docs" || step.id === "antecedentes"
+                      ? "/portal/habilitacion"
+                      : step.id === "people"
+                        ? "/portal/personal"
+                        : null;
+                  return (
+                    <li
+                      key={step.id}
+                      className="flex flex-wrap items-start gap-3 py-3 first:pt-0 last:pb-0"
+                    >
+                      <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-nachipa-bg-page)] text-[12px] font-semibold text-[var(--color-nachipa-title)]">
+                        {idx + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        {goTo ? (
+                          <button
+                            type="button"
+                            className="m-0 cursor-pointer border-0 bg-transparent p-0 text-left text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                            onClick={() => void navigate(goTo)}
+                          >
+                            {step.title}
+                          </button>
+                        ) : (
+                          <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                            {step.title}
+                          </p>
+                        )}
+                        <p className="m-0 mt-0.5 text-[12px] text-[var(--color-nachipa-secondary)]">
+                          {step.detail}
+                        </p>
+                      </div>
+                      <span className="text-[12px] text-[var(--color-nachipa-body)]">
+                        {step.appliesTo}
+                      </span>
+                      <StatusChip tone={step.blocked ? "neutral" : step.tone}>
+                        {step.statusLabel}
+                      </StatusChip>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           </>

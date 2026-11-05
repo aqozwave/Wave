@@ -8,15 +8,22 @@ import type { AuthUser } from "../auth/auth.schemas.js";
 import { requestPasswordReset } from "../auth/auth.service.js";
 import {
   createAccreditationDocument,
+  createAccreditationPersonDocument,
   listAccreditationDocuments,
+  listAccreditationPersonDocuments,
   resolveAccreditationDocumentFile,
+  resolveAccreditationPersonDocumentFile,
 } from "../accreditationDocuments/accreditationDocuments.service.js";
-import type { ContractorOrgDocumentResponse } from "../accreditationDocuments/accreditationDocuments.schemas.js";
+import type {
+  ContractorOrgDocumentResponse,
+  ContractorPersonDocumentResponse,
+} from "../accreditationDocuments/accreditationDocuments.schemas.js";
 import type { AccreditationResponse } from "../accreditations/accreditations.schemas.js";
 import { submitAccreditation } from "../accreditations/accreditations.service.js";
 import type {
   ContractorOrganizationResponse,
   ContractorPersonResponse,
+  ContractorPortalPersonResponse,
   ContractorPortalSummaryResponse,
   ContractorUserResponse,
   CreateContractorBody,
@@ -1154,4 +1161,159 @@ export async function submitMyContractorAccreditation(
 ): Promise<AccreditationResponse> {
   const hab = await getMyContractorAccreditation(actor);
   return submitAccreditation(actor, hab.id);
+}
+
+/**
+ * Portal E5: listado de personal de la org del actor + progreso docs pack person.
+ */
+export async function listMyContractorPeople(
+  actor: PortalActor,
+  query: ListContractorPeopleQuery,
+): Promise<{
+  items: ContractorPortalPersonResponse[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  const organizationId = requirePortalOrgId(actor);
+  const listed = await listContractorPeople(actor, organizationId, query);
+
+  const org = await prisma.contractorOrganization.findFirst({
+    where: { id: organizationId, deletedAt: null },
+    select: { businessId: true },
+  });
+  if (!org) {
+    throw new AppError(
+      404,
+      "contractor_not_found",
+      "Organización contratista no encontrada",
+    );
+  }
+
+  const required = await prisma.documentType.count({
+    where: {
+      businessId: org.businessId,
+      accreditationPack: "person",
+      state: true,
+      deletedAt: null,
+    },
+  });
+
+  const hab = await prisma.contractorAccreditation.findFirst({
+    where: { organizationId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+
+  const personIds = listed.items.map((p) => p.id);
+  const uploadedByPerson = new Map<string, number>();
+  const observedByPerson = new Map<string, number>();
+
+  if (hab && personIds.length > 0) {
+    const docs = await prisma.contractorPersonDocument.findMany({
+      where: {
+        accreditationId: hab.id,
+        personId: { in: personIds },
+        deletedAt: null,
+        status: { not: "replaced" },
+      },
+      select: { personId: true, status: true, documentTypeId: true },
+    });
+    /** Un doc vigente por tipo (el findMany no garantiza uniqueness, contamos tipos). */
+    const typesByPerson = new Map<string, Set<string>>();
+    const observedTypesByPerson = new Map<string, Set<string>>();
+    for (const doc of docs) {
+      const set = typesByPerson.get(doc.personId) ?? new Set<string>();
+      set.add(doc.documentTypeId);
+      typesByPerson.set(doc.personId, set);
+      if (doc.status === "observed") {
+        const obs =
+          observedTypesByPerson.get(doc.personId) ?? new Set<string>();
+        obs.add(doc.documentTypeId);
+        observedTypesByPerson.set(doc.personId, obs);
+      }
+    }
+    for (const [pid, set] of typesByPerson) {
+      uploadedByPerson.set(pid, set.size);
+    }
+    for (const [pid, set] of observedTypesByPerson) {
+      observedByPerson.set(pid, set.size);
+    }
+  }
+
+  return {
+    items: listed.items.map((p) => ({
+      ...p,
+      documents: {
+        uploaded: uploadedByPerson.get(p.id) ?? 0,
+        required,
+        observed: observedByPerson.get(p.id) ?? 0,
+      },
+    })),
+    total: listed.total,
+    page: listed.page,
+    limit: listed.limit,
+  };
+}
+
+/** Portal E5: alta de persona en la org del actor. */
+export async function createMyContractorPerson(
+  actor: PortalActor,
+  body: CreateContractorPersonBody,
+): Promise<ContractorPersonResponse> {
+  const organizationId = requirePortalOrgId(actor);
+  return createContractorPerson(actor, organizationId, body);
+}
+
+/** Portal E5: editar persona de la org del actor. */
+export async function updateMyContractorPerson(
+  actor: PortalActor,
+  personId: string,
+  body: UpdateContractorPersonBody,
+): Promise<ContractorPersonResponse> {
+  const organizationId = requirePortalOrgId(actor);
+  return updateContractorPerson(actor, organizationId, personId, body);
+}
+
+/** Portal E5: soft delete persona de la org del actor. */
+export async function deleteMyContractorPerson(
+  actor: PortalActor,
+  personId: string,
+): Promise<ContractorPersonResponse> {
+  const organizationId = requirePortalOrgId(actor);
+  return deleteContractorPerson(actor, organizationId, personId);
+}
+
+/** Checklist pack person de una persona en la HAB del portal. */
+export async function listMyContractorPersonDocuments(
+  actor: PortalActor,
+  personId: string,
+) {
+  const hab = await getMyContractorAccreditation(actor);
+  return listAccreditationPersonDocuments(actor, hab.id, personId);
+}
+
+/** Upload doc pack person desde el portal. */
+export async function createMyContractorPersonDocument(
+  actor: PortalActor,
+  personId: string,
+  body: CreateContractorPortalDocumentBody,
+): Promise<ContractorPersonDocumentResponse> {
+  const hab = await getMyContractorAccreditation(actor);
+  return createAccreditationPersonDocument(actor, hab.id, personId, body);
+}
+
+/** Resuelve archivo de doc persona para descarga portal. */
+export async function resolveMyContractorPersonDocumentFile(
+  actor: PortalActor,
+  personId: string,
+  documentId: string,
+) {
+  const hab = await getMyContractorAccreditation(actor);
+  return resolveAccreditationPersonDocumentFile(
+    actor,
+    hab.id,
+    personId,
+    documentId,
+  );
 }

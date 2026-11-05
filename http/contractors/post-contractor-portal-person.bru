@@ -1,0 +1,50 @@
+meta {
+  name: Post contractor portal person
+  type: http
+  seq: 24
+}
+
+post {
+  url: {{baseUrl}}/api/v1/contractors/me/people
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "rut": "12.345.678-5",
+    "fullName": "Persona Portal Demo",
+    "position": "Soldador",
+    "email": "persona.portal@example.com",
+    "phone": "+56911112222",
+    "emergencyContact": "Contacto demo"
+  }
+}
+
+docs {
+  E5 alta de persona desde el portal contratista.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+}
+
+script:post-response {
+  if (res.status === 201 && res.body && res.body.id) {
+    bru.setEnvVar("portalPersonId", res.body.id);
+  }
+}
+
+assert {
+  res.status: in [201, 403, 409]
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
