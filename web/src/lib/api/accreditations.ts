@@ -92,6 +92,19 @@ export async function listAccreditationsRequest(
   return body as ListAccreditationsResult;
 }
 
+/** GET /api/v1/accreditations/:id */
+export async function getAccreditationRequest(
+  accessToken: string,
+  id: string,
+): Promise<ContractorAccreditation> {
+  const res = await fetch(`/api/v1/accreditations/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorAccreditation;
+}
+
 /** POST /api/v1/accreditations — solicitar documentación. */
 export async function createAccreditationRequest(
   accessToken: string,

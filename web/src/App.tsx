@@ -28,6 +28,7 @@ import { Embarcados } from "./pages/Embarcados/Embarcados";
 import { FichaTripulante } from "./pages/Embarcados/FichaTripulante";
 import { NotificacionesVencimiento } from "./pages/Notificaciones/NotificacionesVencimiento";
 import { OutboxNotificaciones } from "./pages/Notificaciones/OutboxNotificaciones";
+import { AccreditationDetailPage } from "./pages/Prevencion/AccreditationDetailPage";
 import { AccreditationPacksPage } from "./pages/Prevencion/AccreditationPacksPage";
 import { AccreditationsPage } from "./pages/Prevencion/AccreditationsPage";
 import { ContractorDetailPage } from "./pages/Prevencion/ContractorDetailPage";
@@ -169,6 +170,10 @@ export function App() {
           <Route
             path="prevencion/habilitaciones"
             element={<AccreditationsPage />}
+          />
+          <Route
+            path="prevencion/habilitaciones/:id"
+            element={<AccreditationDetailPage />}
           />
           <Route path="empresas" element={<Empresas />} />
           <Route path="ubicaciones" element={<Ubicaciones />} />

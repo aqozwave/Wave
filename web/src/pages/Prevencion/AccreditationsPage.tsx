@@ -413,7 +413,12 @@ export function AccreditationsPage() {
                     className="border-t border-[var(--color-tremor-border)] hover:bg-[var(--color-nachipa-bg-page)]"
                   >
                     <td className="px-3 py-2.5 font-semibold tabular-nums text-[var(--color-nachipa-title)]">
-                      {row.code}
+                      <Link
+                        to={`/prevencion/habilitaciones/${row.id}`}
+                        className="hover:underline"
+                      >
+                        {row.code}
+                      </Link>
                     </td>
                     <td className="px-3 py-2.5">
                       <span className="block font-medium text-[var(--color-nachipa-title)]">

@@ -669,9 +669,12 @@ export function ContractorDetailPage() {
                     key={h.id}
                     className="flex items-center gap-3 px-4 py-3"
                   >
-                    <span className="w-24 shrink-0 font-semibold tabular-nums text-[var(--color-nachipa-title)]">
+                    <Link
+                      to={`/prevencion/habilitaciones/${h.id}`}
+                      className="w-24 shrink-0 font-semibold tabular-nums text-[var(--color-nachipa-primary)] hover:underline"
+                    >
                       {h.code}
-                    </span>
+                    </Link>
                     <StatusChip tone={statusTone(h.status)}>
                       {statusLabel(h.status)}
                     </StatusChip>
