@@ -31,6 +31,7 @@ import {
   approveAccreditationHandler,
   createAccreditationHandler,
   getAccreditationHandler,
+  listAccreditationHistoryHandler,
   listAccreditationsHandler,
   rejectAccreditationHandler,
   returnAccreditationHandler,
@@ -40,6 +41,7 @@ import {
   approveAccreditationRequestSchema,
   createAccreditationRequestSchema,
   getAccreditationRequestSchema,
+  listAccreditationHistoryRequestSchema,
   listAccreditationsRequestSchema,
   rejectAccreditationRequestSchema,
   returnAccreditationRequestSchema,
@@ -183,6 +185,17 @@ accreditationsRouter.delete(
   ),
   validate(deleteAccreditationPersonDocumentRequestSchema),
   deleteAccreditationPersonDocumentHandler,
+);
+
+accreditationsRouter.get(
+  "/:id/history",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.READ,
+  ),
+  validate(listAccreditationHistoryRequestSchema),
+  listAccreditationHistoryHandler,
 );
 
 accreditationsRouter.get(

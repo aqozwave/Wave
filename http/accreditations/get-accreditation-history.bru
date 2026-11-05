@@ -1,0 +1,39 @@
+meta {
+  name: Get accreditation history
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{baseUrl}}/api/v1/accreditations/{{accreditationId}}/history?page=1&limit=10
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  P5h historial: eventos de la HAB + docs empresa/persona.
+  Requiere accreditationId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("accreditationId")) {
+    throw new Error("Sin accreditationId. Corré Post accreditation.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+  res.body.total: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

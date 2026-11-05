@@ -4,15 +4,18 @@ import { auditWrite } from "../activityLogs/activityLogs.service.js";
 import {
   createAccreditationResponseSchema,
   getAccreditationResponseSchema,
+  listAccreditationHistoryResponseSchema,
   listAccreditationsResponseSchema,
   type AccreditationReviewNoteBody,
   type CreateAccreditationBody,
+  type ListAccreditationHistoryQuery,
   type ListAccreditationsQuery,
 } from "./accreditations.schemas.js";
 import {
   approveAccreditation,
   createAccreditation,
   getAccreditationById,
+  listAccreditationHistory,
   listAccreditations,
   rejectAccreditation,
   returnAccreditation,
@@ -55,6 +58,21 @@ export async function getAccreditationHandler(
   if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
   const result = await getAccreditationById(req.user, req.params.id as string);
   res.status(200).json(getAccreditationResponseSchema.parse(result));
+}
+
+/** GET /accreditations/:id/history — P5h. */
+export async function listAccreditationHistoryHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const query = req.query as unknown as ListAccreditationHistoryQuery;
+  const result = await listAccreditationHistory(
+    req.user,
+    req.params.id as string,
+    query,
+  );
+  res.status(200).json(listAccreditationHistoryResponseSchema.parse(result));
 }
 
 /** POST /accreditations/:id/submit. */

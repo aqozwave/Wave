@@ -113,6 +113,53 @@ export const rejectAccreditationRequestSchema = z.object({
   body: accreditationReviewNoteBodySchema,
 });
 
+/** Query GET /accreditations/:id/history (P5h). */
+export const listAccreditationHistoryQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(10),
+  /** Busca en evento / detalle / usuario. */
+  search: z.string().trim().optional(),
+  /** Filtra por éxito del audit (true|false). */
+  success: z.enum(["true", "false"]).optional(),
+});
+
+export const listAccreditationHistoryRequestSchema = z.object({
+  params: accreditationIdParamsSchema,
+  query: listAccreditationHistoryQuerySchema,
+});
+
+/** Evento de historial de una HAB (derivado de activity_logs). */
+export const accreditationHistoryItemSchema = z
+  .object({
+    id: z.uuid(),
+    createdAt: z.string().datetime(),
+    /** Título legible del evento (ej. «Documento aprobado»). */
+    event: z.string(),
+    /** Rol del actor si se conoce. */
+    role: z.string().nullable(),
+    /** Nombre o email del actor. */
+    user: z.string().nullable(),
+    /** Detalle (código doc, nota, etc.). */
+    detail: z.string().nullable(),
+    /** Resultado corto para chip (Enviada, Aprobado, Observado…). */
+    result: z.string(),
+    /** Tone del chip: success | warning | danger | info | neutral. */
+    resultTone: z.enum(["success", "warning", "danger", "info", "neutral"]),
+    success: z.boolean(),
+    action: z.string(),
+    resource: z.string(),
+  })
+  .openapi("AccreditationHistoryItem");
+
+export const listAccreditationHistoryResponseSchema = z
+  .object({
+    items: z.array(accreditationHistoryItemSchema),
+    total: z.number().int().nonnegative(),
+    page: z.number().int().positive(),
+    limit: z.number().int().positive(),
+  })
+  .openapi("ListAccreditationHistoryResponse");
+
 export type AccreditationResponse = z.infer<typeof accreditationResponseSchema>;
 export type ListAccreditationsQuery = z.infer<
   typeof listAccreditationsQuerySchema
@@ -122,4 +169,7 @@ export type CreateAccreditationBody = z.infer<
 >;
 export type AccreditationReviewNoteBody = z.infer<
   typeof accreditationReviewNoteBodySchema
+>;
+export type ListAccreditationHistoryQuery = z.infer<
+  typeof listAccreditationHistoryQuerySchema
 >;

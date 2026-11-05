@@ -7,6 +7,7 @@ import type {
   AccreditationResponse,
   AccreditationReviewNoteBody,
   CreateAccreditationBody,
+  ListAccreditationHistoryQuery,
   ListAccreditationsQuery,
 } from "./accreditations.schemas.js";
 
@@ -456,4 +457,265 @@ export async function rejectAccreditation(
     include: organizationInclude,
   });
   return toAccreditationResponse(updated);
+}
+
+/** Tone del chip de resultado en historial. */
+type HistoryTone = "success" | "warning" | "danger" | "info" | "neutral";
+
+/** Mapea un activity_log a evento legible de la HAB. */
+function mapAccreditationHistoryEvent(row: {
+  action: string;
+  resource: string;
+  targetLabel: string | null;
+  metadata: unknown;
+  success: boolean;
+  actorRole: string | null;
+  actorUsername: string | null;
+  actorEmail: string | null;
+}): {
+  event: string;
+  detail: string | null;
+  result: string;
+  resultTone: HistoryTone;
+} {
+  const meta =
+    row.metadata && typeof row.metadata === "object"
+      ? (row.metadata as Record<string, unknown>)
+      : {};
+  const status =
+    typeof meta.status === "string" ? meta.status : null;
+  const fields =
+    meta.fields && typeof meta.fields === "object"
+      ? (meta.fields as Record<string, unknown>)
+      : null;
+  const docStatus =
+    fields && typeof fields.status === "string" ? fields.status : null;
+  const label = row.targetLabel ?? "";
+
+  if (!row.success) {
+    return {
+      event: "Acción fallida",
+      detail: label || null,
+      result: "Error",
+      resultTone: "danger",
+    };
+  }
+
+  if (row.resource === "contractorAccreditation") {
+    if (row.action === "CREATE") {
+      return {
+        event: "Documentación solicitada",
+        detail: label || null,
+        result: "Solicitada",
+        resultTone: "info",
+      };
+    }
+    if (label.includes("submit") || status === "in_review") {
+      return {
+        event: "Documentación enviada a revisión",
+        detail: label || null,
+        result: "Enviada",
+        resultTone: "info",
+      };
+    }
+    if (label.includes("approve") || status === "approved") {
+      return {
+        event: "Empresa habilitada",
+        detail: label || null,
+        result: "Aprobado",
+        resultTone: "success",
+      };
+    }
+    if (label.includes("return") || status === "observed") {
+      return {
+        event: "Devuelta con observaciones",
+        detail: label || null,
+        result: "Observado",
+        resultTone: "warning",
+      };
+    }
+    if (label.includes("reject") || status === "rejected") {
+      return {
+        event: "Habilitación rechazada",
+        detail: label || null,
+        result: "Rechazado",
+        resultTone: "danger",
+      };
+    }
+    return {
+      event: "Habilitación actualizada",
+      detail: label || null,
+      result: "Actualizado",
+      resultTone: "neutral",
+    };
+  }
+
+  if (
+    row.resource === "contractorOrgDocument" ||
+    row.resource === "contractorPersonDocument"
+  ) {
+    if (row.action === "CREATE") {
+      return {
+        event: "Documento cargado",
+        detail: label || null,
+        result: "Cargado",
+        resultTone: "info",
+      };
+    }
+    if (row.action === "DELETE") {
+      return {
+        event: "Documento eliminado",
+        detail: label || null,
+        result: "Eliminado",
+        resultTone: "neutral",
+      };
+    }
+    if (docStatus === "validated" || label.includes("validated")) {
+      return {
+        event: "Documento aprobado",
+        detail: label || null,
+        result: "Aprobado",
+        resultTone: "success",
+      };
+    }
+    if (docStatus === "observed" || label.includes("observed")) {
+      return {
+        event: "Observación enviada",
+        detail: label || null,
+        result: "Observado",
+        resultTone: "warning",
+      };
+    }
+    return {
+      event: "Documento actualizado",
+      detail: label || null,
+      result: "Actualizado",
+      resultTone: "neutral",
+    };
+  }
+
+  return {
+    event: `${row.action} · ${row.resource}`,
+    detail: label || null,
+    result: "OK",
+    resultTone: "neutral",
+  };
+}
+
+/**
+ * Historial de una HAB (P5h): activity_logs de la habilitación
+ * y de sus documentos empresa/persona.
+ */
+export async function listAccreditationHistory(
+  actor: Actor,
+  accreditationId: string,
+  query: ListAccreditationHistoryQuery,
+): Promise<{
+  items: Array<{
+    id: string;
+    createdAt: string;
+    event: string;
+    role: string | null;
+    user: string | null;
+    detail: string | null;
+    result: string;
+    resultTone: HistoryTone;
+    success: boolean;
+    action: string;
+    resource: string;
+  }>;
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  // Valida tenant vía get (404 si no existe / no ve).
+  await getAccreditationById(actor, accreditationId);
+
+  const [orgDocs, personDocs] = await Promise.all([
+    prisma.contractorOrgDocument.findMany({
+      where: { accreditationId },
+      select: { id: true },
+    }),
+    prisma.contractorPersonDocument.findMany({
+      where: { accreditationId },
+      select: { id: true },
+    }),
+  ]);
+  const orgDocIds = orgDocs.map((d) => d.id);
+  const personDocIds = personDocs.map((d) => d.id);
+
+  const orFilters: Prisma.ActivityLogWhereInput[] = [
+    {
+      resource: "contractorAccreditation",
+      resourceId: accreditationId,
+    },
+  ];
+  if (orgDocIds.length > 0) {
+    orFilters.push({
+      resource: "contractorOrgDocument",
+      resourceId: { in: orgDocIds },
+    });
+  }
+  if (personDocIds.length > 0) {
+    orFilters.push({
+      resource: "contractorPersonDocument",
+      resourceId: { in: personDocIds },
+    });
+  }
+
+  const where: Prisma.ActivityLogWhereInput = { OR: orFilters };
+  if (query.success === "true") where.success = true;
+  if (query.success === "false") where.success = false;
+
+  const search = query.search?.trim();
+  if (search) {
+    where.AND = [
+      {
+        OR: [
+          { targetLabel: { contains: search, mode: "insensitive" } },
+          { actorUsername: { contains: search, mode: "insensitive" } },
+          { actorEmail: { contains: search, mode: "insensitive" } },
+          { actorRole: { contains: search, mode: "insensitive" } },
+        ],
+      },
+    ];
+  }
+
+  const page = query.page;
+  const limit = query.limit;
+  const skip = (page - 1) * limit;
+
+  const [total, rows] = await Promise.all([
+    prisma.activityLog.count({ where }),
+    prisma.activityLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: limit,
+    }),
+  ]);
+
+  return {
+    items: rows.map((row) => {
+      const mapped = mapAccreditationHistoryEvent(row);
+      const userLabel =
+        row.actorUsername || row.actorEmail || null;
+      return {
+        id: row.id,
+        createdAt: row.createdAt.toISOString(),
+        event: mapped.event,
+        role: row.actorRole,
+        user: userLabel,
+        detail: mapped.detail,
+        result: mapped.result,
+        resultTone: mapped.resultTone,
+        success: row.success,
+        action: row.action,
+        resource: row.resource,
+      };
+    }),
+    total,
+    page,
+    limit,
+  };
 }

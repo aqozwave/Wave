@@ -452,3 +452,49 @@ export async function downloadAccreditationPersonDocumentRequest(
   a.click();
   URL.revokeObjectURL(url);
 }
+
+/** Evento del historial HAB (P5h). */
+export type AccreditationHistoryItem = {
+  id: string;
+  createdAt: string;
+  event: string;
+  role: string | null;
+  user: string | null;
+  detail: string | null;
+  result: string;
+  resultTone: "success" | "warning" | "danger" | "info" | "neutral";
+  success: boolean;
+  action: string;
+  resource: string;
+};
+
+/** Listado historial HAB. */
+export type ListAccreditationHistoryResult = {
+  items: AccreditationHistoryItem[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+/** GET /accreditations/:id/history */
+export async function listAccreditationHistoryRequest(
+  accessToken: string,
+  accreditationId: string,
+  page = 1,
+  limit = 10,
+  filters?: { search?: string; success?: "true" | "false" },
+): Promise<ListAccreditationHistoryResult> {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+  if (filters?.search) params.set("search", filters.search);
+  if (filters?.success) params.set("success", filters.success);
+  const res = await fetch(
+    `/api/v1/accreditations/${accreditationId}/history?${params}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ListAccreditationHistoryResult;
+}

@@ -60,6 +60,7 @@ export async function createAccreditationDocumentHandler(
     resource: "contractorOrgDocument",
     resourceId: created.id,
     targetLabel: `${created.documentType.code} · ${created.originalName}`,
+    metadata: { accreditationId: created.accreditationId },
   });
   res
     .status(201)
@@ -108,7 +109,10 @@ export async function validateAccreditationDocumentHandler(
     resource: "contractorOrgDocument",
     resourceId: updated.id,
     targetLabel: `${updated.documentType.code} · ${body.status}`,
-    metadata: { fields: safeChangedFields(body) },
+    metadata: {
+      accreditationId: updated.accreditationId,
+      fields: safeChangedFields(body),
+    },
   });
   res
     .status(200)
@@ -131,6 +135,7 @@ export async function deleteAccreditationDocumentHandler(
     resource: "contractorOrgDocument",
     resourceId: deleted.id,
     targetLabel: `${deleted.documentType.code} · ${deleted.originalName}`,
+    metadata: { accreditationId: deleted.accreditationId },
   });
   res
     .status(200)
@@ -171,6 +176,7 @@ export async function createAccreditationPersonDocumentHandler(
     resource: "contractorPersonDocument",
     resourceId: created.id,
     targetLabel: `${created.documentType.code} · ${created.originalName}`,
+    metadata: { accreditationId: created.accreditationId },
   });
   res
     .status(201)
@@ -221,7 +227,10 @@ export async function validateAccreditationPersonDocumentHandler(
     resource: "contractorPersonDocument",
     resourceId: updated.id,
     targetLabel: `${updated.documentType.code} · ${body.status}`,
-    metadata: { fields: safeChangedFields(body) },
+    metadata: {
+      accreditationId: updated.accreditationId,
+      fields: safeChangedFields(body),
+    },
   });
   res
     .status(200)
@@ -245,6 +254,7 @@ export async function deleteAccreditationPersonDocumentHandler(
     resource: "contractorPersonDocument",
     resourceId: deleted.id,
     targetLabel: `${deleted.documentType.code} · ${deleted.originalName}`,
+    metadata: { accreditationId: deleted.accreditationId },
   });
   res
     .status(200)

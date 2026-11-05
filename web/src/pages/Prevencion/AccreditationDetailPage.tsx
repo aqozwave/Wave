@@ -2,13 +2,21 @@ import { useCallback, useEffect, useState } from "react";
 import { ClipboardCheck } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router";
 import { Button } from "../../components/Button/Button";
+import {
+  DataTableCard,
+  DataTableOutlineButton,
+  DataTableSearch,
+} from "../../components/DataTableCard/DataTableCard";
 import { Modal } from "../../components/Modal/Modal";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
+import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
+import { TablePagination } from "../../components/TablePagination/TablePagination";
 import { TextField } from "../../components/TextField/TextField";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { useToast } from "../../components/Toast/ToastProvider";
+import { downloadXls } from "../../lib/exportXls";
 import {
   approveAccreditationRequest,
   createAccreditationDocumentRequest,
@@ -18,6 +26,7 @@ import {
   fileToBase64,
   getAccreditationRequest,
   listAccreditationDocumentsRequest,
+  listAccreditationHistoryRequest,
   listAccreditationPersonDocumentsRequest,
   rejectAccreditationRequest,
   returnAccreditationRequest,
@@ -25,6 +34,7 @@ import {
   validateAccreditationDocumentRequest,
   validateAccreditationPersonDocumentRequest,
   type AccreditationDocumentChecklistItem,
+  type AccreditationHistoryItem,
   type AccreditationPersonDocumentChecklistItem,
   type AccreditationStatus,
   type ContractorAccreditation,
@@ -97,6 +107,25 @@ function formatDate(iso: string | null): string {
     return "—";
   }
 }
+
+/** Fecha+hora corta es-CL para historial. */
+function formatDateTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("es-CL", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+/** Clase de select compacto en toolbar. */
+const toolbarSelectClass =
+  "h-8 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-2.5 text-[12px] text-[var(--color-nachipa-body)] outline-none";
 
 /** Etiqueta estado doc HAB. */
 function docStatusLabel(status: ContractorDocumentStatus): string {
@@ -196,6 +225,19 @@ export function AccreditationDetailPage() {
   >([]);
   const [personDocsLoading, setPersonDocsLoading] = useState(false);
 
+  /** Historial P5h. */
+  const [historyItems, setHistoryItems] = useState<AccreditationHistoryItem[]>(
+    [],
+  );
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyLimit, setHistoryLimit] = useState(10);
+  const [historySearch, setHistorySearch] = useState("");
+  const [historySuccess, setHistorySuccess] = useState<"" | "true" | "false">(
+    "",
+  );
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   const load = useCallback(async () => {
     if (!accessToken || !id || !canRead) return;
     setLoading(true);
@@ -264,6 +306,70 @@ export function AccreditationDetailPage() {
     } finally {
       setActing(false);
     }
+  }
+
+  /** Carga historial P5h de la HAB. */
+  const loadHistory = useCallback(async () => {
+    if (!accessToken || !id || !canRead) return;
+    setHistoryLoading(true);
+    try {
+      const res = await listAccreditationHistoryRequest(
+        accessToken,
+        id,
+        historyPage,
+        historyLimit,
+        {
+          search: historySearch.trim() || undefined,
+          success: historySuccess || undefined,
+        },
+      );
+      setHistoryItems(res.items);
+      setHistoryTotal(res.total);
+    } catch (err) {
+      showToast(
+        err instanceof ApiError
+          ? err.message
+          : "No se pudo cargar el historial",
+        "danger",
+      );
+      setHistoryItems([]);
+      setHistoryTotal(0);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [
+    accessToken,
+    id,
+    canRead,
+    historyPage,
+    historyLimit,
+    historySearch,
+    historySuccess,
+    showToast,
+  ]);
+
+  useEffect(() => {
+    if (tab === "historial") void loadHistory();
+  }, [tab, loadHistory]);
+
+  /** Exporta historial visible a XLS. */
+  function onExportHistory() {
+    if (historyItems.length === 0) {
+      showToast("No hay eventos para exportar.", "info");
+      return;
+    }
+    downloadXls(
+      historyItems,
+      [
+        { header: "Fecha", value: (row) => formatDateTime(row.createdAt) },
+        { header: "Evento", value: (row) => row.event },
+        { header: "Rol", value: (row) => row.role },
+        { header: "Usuario", value: (row) => row.user },
+        { header: "Detalle", value: (row) => row.detail },
+        { header: "Resultado", value: (row) => row.result },
+      ],
+      `historial-${hab?.code ?? "hab"}`,
+    );
   }
 
   /** Carga checklist pack person de una persona. */
@@ -1040,16 +1146,123 @@ export function AccreditationDetailPage() {
         ) : null}
 
         {tab === "historial" ? (
-          <dl className="m-0 max-w-md rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white px-4 py-1">
-            <DataRow label="Creada" value={formatDate(hab.createdAt)} />
-            <DataRow label="Solicitada" value={formatDate(hab.requestedAt)} />
-            <DataRow label="Enviada" value={formatDate(hab.submittedAt)} />
-            <DataRow label="Revisada" value={formatDate(hab.reviewedAt)} />
-            <DataRow label="Actualizada" value={formatDate(hab.updatedAt)} />
-            <p className="m-0 border-t border-[var(--color-tremor-border)] py-2.5 text-[12px] text-[var(--color-nachipa-secondary)]">
-              Eventos detallados de auditoría llegan después.
-            </p>
-          </dl>
+          <DataTableCard
+            toolbar={
+              <>
+                <DataTableSearch
+                  value={historySearch}
+                  onChange={(v) => {
+                    setHistorySearch(v);
+                    setHistoryPage(1);
+                  }}
+                  placeholder="Buscar evento…"
+                />
+                <select
+                  className={toolbarSelectClass}
+                  value={historySuccess}
+                  onChange={(e) => {
+                    setHistorySuccess(
+                      e.target.value as "" | "true" | "false",
+                    );
+                    setHistoryPage(1);
+                  }}
+                  aria-label="Filtrar por resultado"
+                >
+                  <option value="">Estado: todos</option>
+                  <option value="true">Solo OK</option>
+                  <option value="false">Solo error</option>
+                </select>
+                <div className="ml-auto">
+                  <DataTableOutlineButton onClick={onExportHistory}>
+                    Exportar
+                  </DataTableOutlineButton>
+                </div>
+              </>
+            }
+            footer={
+              <TablePagination
+                totalLabel={
+                  historyLoading
+                    ? "Cargando…"
+                    : `${historyTotal} ${historyTotal === 1 ? "evento" : "eventos"}`
+                }
+                page={historyPage}
+                pageCount={Math.max(
+                  1,
+                  Math.ceil(historyTotal / historyLimit) || 1,
+                )}
+                pageSize={historyLimit}
+                onPageChange={setHistoryPage}
+                onPageSizeChange={(n) => {
+                  setHistoryLimit(n);
+                  setHistoryPage(1);
+                }}
+              />
+            }
+          >
+            <table className="w-full min-w-[720px] border-collapse text-left">
+              <thead>
+                <tr className="bg-[var(--color-nachipa-bg-page)]">
+                  <TableHeaderCell>Fecha</TableHeaderCell>
+                  <TableHeaderCell>Evento</TableHeaderCell>
+                  <TableHeaderCell>Rol</TableHeaderCell>
+                  <TableHeaderCell>Usuario</TableHeaderCell>
+                  <TableHeaderCell>Detalle</TableHeaderCell>
+                  <TableHeaderCell>Resultado</TableHeaderCell>
+                </tr>
+              </thead>
+              <tbody>
+                {historyLoading ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-3 py-6 text-[13px] text-[var(--color-nachipa-secondary)]"
+                    >
+                      Cargando historial…
+                    </td>
+                  </tr>
+                ) : historyItems.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-3 py-6 text-[13px] text-[var(--color-nachipa-secondary)]"
+                    >
+                      Sin eventos todavía. Las acciones sobre esta HAB quedan
+                      aquí.
+                    </td>
+                  </tr>
+                ) : (
+                  historyItems.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="border-t border-[var(--color-tremor-border)]"
+                    >
+                      <td className="whitespace-nowrap px-3 py-2.5 text-[12px] tabular-nums text-[var(--color-nachipa-body)]">
+                        {formatDateTime(row.createdAt)}
+                      </td>
+                      <td className="px-3 py-2.5 text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                        {row.event}
+                      </td>
+                      <td className="px-3 py-2.5 text-[12px] text-[var(--color-nachipa-body)]">
+                        {row.role ?? "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-[12px] text-[var(--color-nachipa-body)]">
+                        {row.user ?? "—"}
+                      </td>
+                      <td className="max-w-[220px] truncate px-3 py-2.5 text-[12px] text-[var(--color-nachipa-secondary)]">
+                        {row.detail ?? "—"}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <StatusChip tone={row.resultTone}>
+                          {row.result}
+                        </StatusChip>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </DataTableCard>
         ) : null}
       </div>
 

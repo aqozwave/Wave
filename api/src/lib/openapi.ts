@@ -267,6 +267,8 @@ import {
   createAccreditationBodySchema,
   createAccreditationResponseSchema,
   getAccreditationResponseSchema,
+  listAccreditationHistoryQuerySchema,
+  listAccreditationHistoryResponseSchema,
   listAccreditationsQuerySchema,
   listAccreditationsResponseSchema,
 } from "../modules/accreditations/accreditations.schemas.js";
@@ -2517,6 +2519,30 @@ registry.registerPath({
       description: "Habilitación",
       content: {
         "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/accreditations/{id}/history",
+  tags: ["Accreditations"],
+  summary: "Historial de eventos de una habilitación (P5h)",
+  description:
+    "Activity logs de la HAB y de sus documentos empresa/persona, con etiquetas legibles.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    query: listAccreditationHistoryQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Eventos paginados",
+      content: {
+        "application/json": { schema: listAccreditationHistoryResponseSchema },
       },
     },
     401: { description: "Sin token" },
