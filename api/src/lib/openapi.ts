@@ -273,10 +273,13 @@ import {
 import {
   createAccreditationDocumentBodySchema,
   createAccreditationDocumentResponseSchema,
+  createAccreditationPersonDocumentResponseSchema,
   deleteAccreditationDocumentResponseSchema,
   listAccreditationDocumentsResponseSchema,
+  listAccreditationPersonDocumentsResponseSchema,
   validateAccreditationDocumentBodySchema,
   validateAccreditationDocumentResponseSchema,
+  validateAccreditationPersonDocumentResponseSchema,
 } from "../modules/accreditationDocuments/accreditationDocuments.schemas.js";
 import {
   expiryNotificationSettingsSchema,
@@ -2642,6 +2645,88 @@ registry.registerPath({
       },
     },
     404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/accreditations/{id}/people/{personId}/documents",
+  tags: ["Accreditations"],
+  summary: "Checklist documentos pack person (P5d)",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), personId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Checklist",
+      content: {
+        "application/json": {
+          schema: listAccreditationPersonDocumentsResponseSchema,
+        },
+      },
+    },
+    404: { description: "HAB o persona no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/people/{personId}/documents",
+  tags: ["Accreditations"],
+  summary: "Subir documento pack person a la HAB",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), personId: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createAccreditationDocumentBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": {
+          schema: createAccreditationPersonDocumentResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/people/{personId}/documents/{documentId}/validate",
+  tags: ["Accreditations"],
+  summary: "Validar u observar documento de persona",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({
+      id: z.uuid(),
+      personId: z.uuid(),
+      documentId: z.uuid(),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: validateAccreditationDocumentBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizado",
+      content: {
+        "application/json": {
+          schema: validateAccreditationPersonDocumentResponseSchema,
+        },
+      },
+    },
   },
 });
 

@@ -333,3 +333,122 @@ export async function downloadAccreditationDocumentRequest(
   a.click();
   URL.revokeObjectURL(url);
 }
+
+/** Documento de persona en HAB. */
+export type ContractorPersonDocument = {
+  id: string;
+  personId: string;
+  accreditationId: string;
+  documentTypeId: string;
+  documentType: AccreditationPackDocumentType;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  status: ContractorDocumentStatus;
+  observation: string | null;
+  expiresAt: string | null;
+  uploadedById: string | null;
+  validatedById: string | null;
+  validatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Fila checklist pack person. */
+export type AccreditationPersonDocumentChecklistItem = {
+  documentType: AccreditationPackDocumentType;
+  document: ContractorPersonDocument | null;
+};
+
+/** Listado checklist person. */
+export type ListAccreditationPersonDocumentsResult = {
+  items: AccreditationPersonDocumentChecklistItem[];
+  total: number;
+};
+
+/** GET pack person de una persona en la HAB. */
+export async function listAccreditationPersonDocumentsRequest(
+  accessToken: string,
+  accreditationId: string,
+  personId: string,
+): Promise<ListAccreditationPersonDocumentsResult> {
+  const res = await fetch(
+    `/api/v1/accreditations/${accreditationId}/people/${personId}/documents`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ListAccreditationPersonDocumentsResult;
+}
+
+/** POST upload doc pack person. */
+export async function createAccreditationPersonDocumentRequest(
+  accessToken: string,
+  accreditationId: string,
+  personId: string,
+  data: {
+    documentTypeId: string;
+    fileName: string;
+    mimeType: string;
+    contentBase64: string;
+    expiresAt?: string | null;
+  },
+): Promise<ContractorPersonDocument> {
+  const res = await fetch(
+    `/api/v1/accreditations/${accreditationId}/people/${personId}/documents`,
+    {
+      method: "POST",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(data),
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorPersonDocument;
+}
+
+/** POST validate/observe doc person. */
+export async function validateAccreditationPersonDocumentRequest(
+  accessToken: string,
+  accreditationId: string,
+  personId: string,
+  documentId: string,
+  data: { status: "validated" | "observed"; observation?: string | null },
+): Promise<ContractorPersonDocument> {
+  const res = await fetch(
+    `/api/v1/accreditations/${accreditationId}/people/${personId}/documents/${documentId}/validate`,
+    {
+      method: "POST",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(data),
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorPersonDocument;
+}
+
+/** Descarga doc de persona. */
+export async function downloadAccreditationPersonDocumentRequest(
+  accessToken: string,
+  accreditationId: string,
+  personId: string,
+  documentId: string,
+  fileName: string,
+): Promise<void> {
+  const res = await fetch(
+    `/api/v1/accreditations/${accreditationId}/people/${personId}/documents/${documentId}/download`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    throw toApiError(res, body);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}

@@ -5,17 +5,27 @@ import { requirePermission } from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createAccreditationDocumentHandler,
+  createAccreditationPersonDocumentHandler,
   deleteAccreditationDocumentHandler,
+  deleteAccreditationPersonDocumentHandler,
   downloadAccreditationDocumentHandler,
+  downloadAccreditationPersonDocumentHandler,
   listAccreditationDocumentsHandler,
+  listAccreditationPersonDocumentsHandler,
   validateAccreditationDocumentHandler,
+  validateAccreditationPersonDocumentHandler,
 } from "../accreditationDocuments/accreditationDocuments.controller.js";
 import {
   createAccreditationDocumentRequestSchema,
+  createAccreditationPersonDocumentRequestSchema,
   deleteAccreditationDocumentRequestSchema,
+  deleteAccreditationPersonDocumentRequestSchema,
   downloadAccreditationDocumentRequestSchema,
+  downloadAccreditationPersonDocumentRequestSchema,
   listAccreditationDocumentsRequestSchema,
+  listAccreditationPersonDocumentsRequestSchema,
   validateAccreditationDocumentRequestSchema,
+  validateAccreditationPersonDocumentRequestSchema,
 } from "../accreditationDocuments/accreditationDocuments.schemas.js";
 import {
   approveAccreditationHandler,
@@ -118,6 +128,61 @@ accreditationsRouter.delete(
   ),
   validate(deleteAccreditationDocumentRequestSchema),
   deleteAccreditationDocumentHandler,
+);
+
+accreditationsRouter.get(
+  "/:id/people/:personId/documents",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.READ,
+  ),
+  validate(listAccreditationPersonDocumentsRequestSchema),
+  listAccreditationPersonDocumentsHandler,
+);
+
+accreditationsRouter.post(
+  "/:id/people/:personId/documents",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(createAccreditationPersonDocumentRequestSchema),
+  createAccreditationPersonDocumentHandler,
+);
+
+accreditationsRouter.get(
+  "/:id/people/:personId/documents/:documentId/download",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.READ,
+  ),
+  validate(downloadAccreditationPersonDocumentRequestSchema),
+  downloadAccreditationPersonDocumentHandler,
+);
+
+accreditationsRouter.post(
+  "/:id/people/:personId/documents/:documentId/validate",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(validateAccreditationPersonDocumentRequestSchema),
+  validateAccreditationPersonDocumentHandler,
+);
+
+accreditationsRouter.delete(
+  "/:id/people/:personId/documents/:documentId",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(deleteAccreditationPersonDocumentRequestSchema),
+  deleteAccreditationPersonDocumentHandler,
 );
 
 accreditationsRouter.get(

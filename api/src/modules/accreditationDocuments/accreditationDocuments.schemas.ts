@@ -126,3 +126,89 @@ export type CreateAccreditationDocumentBody = z.infer<
 export type ValidateAccreditationDocumentBody = z.infer<
   typeof validateAccreditationDocumentBodySchema
 >;
+
+/** Documento de persona (pack person) sin filePath. */
+export const contractorPersonDocumentResponseSchema = z
+  .object({
+    id: z.uuid(),
+    personId: z.uuid(),
+    accreditationId: z.uuid(),
+    documentTypeId: z.uuid(),
+    documentType: documentTypeSummarySchema,
+    originalName: z.string(),
+    mimeType: z.string(),
+    size: z.number().int().nonnegative(),
+    status: contractorDocumentStatusSchema,
+    observation: z.string().nullable(),
+    expiresAt: z.string().datetime().nullable(),
+    uploadedById: z.uuid().nullable(),
+    validatedById: z.uuid().nullable(),
+    validatedAt: z.string().datetime().nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi("ContractorPersonDocument");
+
+/** Checklist pack person para una persona en la HAB. */
+export const accreditationPersonDocumentChecklistItemSchema = z
+  .object({
+    documentType: documentTypeSummarySchema,
+    document: contractorPersonDocumentResponseSchema.nullable(),
+  })
+  .openapi("AccreditationPersonDocumentChecklistItem");
+
+export const accreditationPersonParamsSchema = z.object({
+  id: z.uuid(),
+  personId: z.uuid(),
+});
+
+export const listAccreditationPersonDocumentsRequestSchema = z.object({
+  params: accreditationPersonParamsSchema,
+});
+
+export const listAccreditationPersonDocumentsResponseSchema = z
+  .object({
+    items: z.array(accreditationPersonDocumentChecklistItemSchema),
+    total: z.number().int().nonnegative(),
+  })
+  .openapi("ListAccreditationPersonDocumentsResponse");
+
+export const createAccreditationPersonDocumentBodySchema =
+  createAccreditationDocumentBodySchema;
+
+export const createAccreditationPersonDocumentRequestSchema = z.object({
+  params: accreditationPersonParamsSchema,
+  body: createAccreditationPersonDocumentBodySchema,
+});
+
+export const createAccreditationPersonDocumentResponseSchema =
+  contractorPersonDocumentResponseSchema;
+
+export const accreditationPersonDocumentIdParamsSchema = z.object({
+  id: z.uuid(),
+  personId: z.uuid(),
+  documentId: z.uuid(),
+});
+
+export const downloadAccreditationPersonDocumentRequestSchema = z.object({
+  params: accreditationPersonDocumentIdParamsSchema,
+});
+
+export const validateAccreditationPersonDocumentRequestSchema = z.object({
+  params: accreditationPersonDocumentIdParamsSchema,
+  body: validateAccreditationDocumentBodySchema,
+});
+
+export const validateAccreditationPersonDocumentResponseSchema =
+  contractorPersonDocumentResponseSchema;
+
+export const deleteAccreditationPersonDocumentRequestSchema = z.object({
+  params: accreditationPersonDocumentIdParamsSchema,
+});
+
+export const deleteAccreditationPersonDocumentResponseSchema =
+  contractorPersonDocumentResponseSchema;
+
+export type ContractorPersonDocumentResponse = z.infer<
+  typeof contractorPersonDocumentResponseSchema
+>;

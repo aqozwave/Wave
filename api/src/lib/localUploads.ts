@@ -286,3 +286,67 @@ export async function unlinkContractorOrgDocumentFile(
     // ya borrado
   }
 }
+
+/**
+ * Ruta relativa de documento de persona en una HAB.
+ * /uploads/{businessId}/contractors/{orgId}/people/{personId}/accreditations/{habId}/{code}/{rand}.ext
+ */
+export function buildContractorPersonDocumentRelativePath(input: {
+  businessId: string;
+  organizationId: string;
+  personId: string;
+  accreditationId: string;
+  type: string;
+  mimeType: string;
+}): string {
+  const sub = folderForDocType(input.type);
+  const rand = crypto.randomBytes(8).toString("hex");
+  const ext = extensionForMime(input.mimeType);
+  return `${RELATIVE_PREFIX}/${input.businessId}/contractors/${input.organizationId}/people/${input.personId}/accreditations/${input.accreditationId}/${sub}/${rand}${ext}`;
+}
+
+/** True si la ruta es de docs de persona bajo /uploads/. */
+export function isContractorPersonDocumentRelativePath(
+  relativePath: string,
+): boolean {
+  return (
+    relativePath.startsWith(`${RELATIVE_PREFIX}/`) &&
+    relativePath.includes("/contractors/") &&
+    relativePath.includes("/people/") &&
+    relativePath.includes("/accreditations/")
+  );
+}
+
+/** Escribe buffer de doc de persona. */
+export async function writeContractorPersonDocumentFile(input: {
+  businessId: string;
+  organizationId: string;
+  personId: string;
+  accreditationId: string;
+  type: string;
+  mimeType: string;
+  buffer: Buffer;
+}): Promise<{ relativePath: string; fullPath: string; size: number }> {
+  const relativePath = buildContractorPersonDocumentRelativePath(input);
+  const fullPath = resolveUploadFullPath(relativePath);
+  if (!fullPath) {
+    throw new Error("Ruta de upload inválida");
+  }
+  await fs.mkdir(path.dirname(fullPath), { recursive: true });
+  await fs.writeFile(fullPath, input.buffer);
+  return { relativePath, fullPath, size: input.buffer.length };
+}
+
+/** Borra archivo de doc de persona si la ruta es válida. */
+export async function unlinkContractorPersonDocumentFile(
+  relativePath: string,
+): Promise<void> {
+  if (!isContractorPersonDocumentRelativePath(relativePath)) return;
+  const fullPath = resolveUploadFullPath(relativePath);
+  if (!fullPath) return;
+  try {
+    await fs.unlink(fullPath);
+  } catch {
+    // ya borrado
+  }
+}

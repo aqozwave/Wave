@@ -12,15 +12,20 @@ import { useToast } from "../../components/Toast/ToastProvider";
 import {
   approveAccreditationRequest,
   createAccreditationDocumentRequest,
+  createAccreditationPersonDocumentRequest,
   downloadAccreditationDocumentRequest,
+  downloadAccreditationPersonDocumentRequest,
   fileToBase64,
   getAccreditationRequest,
   listAccreditationDocumentsRequest,
+  listAccreditationPersonDocumentsRequest,
   rejectAccreditationRequest,
   returnAccreditationRequest,
   submitAccreditationRequest,
   validateAccreditationDocumentRequest,
+  validateAccreditationPersonDocumentRequest,
   type AccreditationDocumentChecklistItem,
+  type AccreditationPersonDocumentChecklistItem,
   type AccreditationStatus,
   type ContractorAccreditation,
   type ContractorDocumentStatus,
@@ -174,13 +179,22 @@ export function AccreditationDetailPage() {
   );
   const [reviewNote, setReviewNote] = useState("");
   const [observeDocId, setObserveDocId] = useState<string | null>(null);
+  /** Si viene, la observación es de pack person. */
+  const [observePersonId, setObservePersonId] = useState<string | null>(null);
   const [observeNote, setObserveNote] = useState("");
   /** Upload pendiente de vencimiento (tipos requiresExpiry). */
   const [pendingUpload, setPendingUpload] = useState<{
     documentTypeId: string;
     file: File;
+    /** Si viene, es pack person. */
+    personId?: string;
   } | null>(null);
   const [expiryDate, setExpiryDate] = useState("");
+  const [expandedPersonId, setExpandedPersonId] = useState<string | null>(null);
+  const [personDocItems, setPersonDocItems] = useState<
+    AccreditationPersonDocumentChecklistItem[]
+  >([]);
+  const [personDocsLoading, setPersonDocsLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken || !id || !canRead) return;
@@ -252,28 +266,81 @@ export function AccreditationDetailPage() {
     }
   }
 
+  /** Carga checklist pack person de una persona. */
+  async function loadPersonDocs(personId: string) {
+    if (!accessToken || !hab) return;
+    setPersonDocsLoading(true);
+    try {
+      const docs = await listAccreditationPersonDocumentsRequest(
+        accessToken,
+        hab.id,
+        personId,
+      );
+      setPersonDocItems(docs.items);
+    } catch (err) {
+      showToast(
+        err instanceof ApiError
+          ? err.message
+          : "No se pudieron cargar docs de la persona",
+        "danger",
+      );
+      setPersonDocItems([]);
+    } finally {
+      setPersonDocsLoading(false);
+    }
+  }
+
+  /** Expande/colapsa persona y carga checklist. */
+  function togglePerson(personId: string) {
+    if (expandedPersonId === personId) {
+      setExpandedPersonId(null);
+      setPersonDocItems([]);
+      return;
+    }
+    setExpandedPersonId(personId);
+    void loadPersonDocs(personId);
+  }
+
   /** Sube archivo (con expiresAt ya resuelto). */
   async function uploadFile(
     documentTypeId: string,
     file: File,
     expiresAt: string | null,
+    personId?: string,
   ) {
     if (!accessToken || !hab || acting) return;
     setUploadingTypeId(documentTypeId);
     setActing(true);
     try {
       const contentBase64 = await fileToBase64(file);
-      await createAccreditationDocumentRequest(accessToken, hab.id, {
-        documentTypeId,
-        fileName: file.name,
-        mimeType: file.type || "application/pdf",
-        contentBase64,
-        expiresAt,
-      });
-      showToast("Documento subido.", "success");
+      if (personId) {
+        await createAccreditationPersonDocumentRequest(
+          accessToken,
+          hab.id,
+          personId,
+          {
+            documentTypeId,
+            fileName: file.name,
+            mimeType: file.type || "application/pdf",
+            contentBase64,
+            expiresAt,
+          },
+        );
+        showToast("Documento de persona subido.", "success");
+        await loadPersonDocs(personId);
+      } else {
+        await createAccreditationDocumentRequest(accessToken, hab.id, {
+          documentTypeId,
+          fileName: file.name,
+          mimeType: file.type || "application/pdf",
+          contentBase64,
+          expiresAt,
+        });
+        showToast("Documento subido.", "success");
+        await load();
+      }
       setPendingUpload(null);
       setExpiryDate("");
-      await load();
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo subir.",
@@ -290,16 +357,17 @@ export function AccreditationDetailPage() {
     documentTypeId: string,
     file: File | null,
     requiresExpiry: boolean,
+    personId?: string,
   ) {
     if (!file) return;
     if (requiresExpiry) {
-      setPendingUpload({ documentTypeId, file });
+      setPendingUpload({ documentTypeId, file, personId });
       setExpiryDate(
         new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10),
       );
       return;
     }
-    void uploadFile(documentTypeId, file, null);
+    void uploadFile(documentTypeId, file, null, personId);
   }
 
   /** Marca doc como validado. */
@@ -325,23 +393,41 @@ export function AccreditationDetailPage() {
     }
   }
 
-  /** Confirma observación de doc. */
+  /** Confirma observación de doc (empresa o person). */
   async function confirmObserveDoc() {
     if (!accessToken || !hab || !observeDocId || !observeNote.trim() || acting) {
       return;
     }
+    const personId = observePersonId;
+    const docId = observeDocId;
     setActing(true);
     try {
-      await validateAccreditationDocumentRequest(
-        accessToken,
-        hab.id,
-        observeDocId,
-        { status: "observed", observation: observeNote.trim() },
-      );
-      showToast("Documento observado.", "success");
-      setObserveDocId(null);
-      setObserveNote("");
-      await load();
+      if (personId) {
+        await validateAccreditationPersonDocumentRequest(
+          accessToken,
+          hab.id,
+          personId,
+          docId,
+          { status: "observed", observation: observeNote.trim() },
+        );
+        showToast("Documento observado.", "success");
+        setObserveDocId(null);
+        setObservePersonId(null);
+        setObserveNote("");
+        await loadPersonDocs(personId);
+      } else {
+        await validateAccreditationDocumentRequest(
+          accessToken,
+          hab.id,
+          docId,
+          { status: "observed", observation: observeNote.trim() },
+        );
+        showToast("Documento observado.", "success");
+        setObserveDocId(null);
+        setObservePersonId(null);
+        setObserveNote("");
+        await load();
+      }
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo observar.",
@@ -670,6 +756,7 @@ export function AccreditationDetailPage() {
                               disabled={acting}
                               onClick={() => {
                                 setObserveDocId(doc.id);
+                                setObservePersonId(null);
                                 setObserveNote(doc.observation ?? "");
                               }}
                             >
@@ -750,7 +837,8 @@ export function AccreditationDetailPage() {
         {tab === "personal" ? (
           <div className="flex flex-col gap-3">
             <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
-              Personal declarado de la organización ({people.length}).
+              Personal declarado ({people.length}). Expandí una fila para ver el
+              pack person.
             </p>
             {people.length === 0 ? (
               <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
@@ -758,25 +846,194 @@ export function AccreditationDetailPage() {
               </p>
             ) : (
               <ul className="m-0 list-none divide-y divide-[var(--color-tremor-border)] rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-0">
-                {people.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex flex-wrap items-center gap-3 px-4 py-3"
-                  >
-                    <span className="min-w-0 flex-1 font-medium text-[var(--color-nachipa-title)]">
-                      {displayName(p.fullName)}
-                    </span>
-                    <span className="tabular-nums text-[12px] text-[var(--color-nachipa-secondary)]">
-                      {p.rut}
-                    </span>
-                    <span className="text-[12px] text-[var(--color-nachipa-body)]">
-                      {p.position ?? "—"}
-                    </span>
-                    <StatusChip tone={p.active ? "success" : "neutral"}>
-                      {p.active ? "Activo" : "Inactivo"}
-                    </StatusChip>
-                  </li>
-                ))}
+                {people.map((p) => {
+                  const open = expandedPersonId === p.id;
+                  return (
+                    <li key={p.id} className="flex flex-col">
+                      <button
+                        type="button"
+                        className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left hover:bg-[var(--color-nachipa-bg-page)]"
+                        onClick={() => togglePerson(p.id)}
+                      >
+                        <span className="min-w-0 flex-1 font-medium text-[var(--color-nachipa-title)]">
+                          {displayName(p.fullName)}
+                        </span>
+                        <span className="tabular-nums text-[12px] text-[var(--color-nachipa-secondary)]">
+                          {p.rut}
+                        </span>
+                        <span className="text-[12px] text-[var(--color-nachipa-body)]">
+                          {p.position ?? "—"}
+                        </span>
+                        <StatusChip tone={p.active ? "success" : "neutral"}>
+                          {p.active ? "Activo" : "Inactivo"}
+                        </StatusChip>
+                        <span className="text-[12px] text-[var(--color-nachipa-primary)]">
+                          {open ? "Ocultar docs" : "Ver docs"}
+                        </span>
+                      </button>
+                      {open ? (
+                        <div className="border-t border-[var(--color-tremor-border)] bg-[var(--color-nachipa-bg-page)] px-4 py-3">
+                          {personDocsLoading ? (
+                            <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
+                              Cargando pack person…
+                            </p>
+                          ) : personDocItems.length === 0 ? (
+                            <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
+                              No hay tipos con pack «person». Configuralos en
+                              Packs.
+                            </p>
+                          ) : (
+                            <ul className="m-0 list-none space-y-2 p-0">
+                              {personDocItems.map((item) => {
+                                const doc = item.document;
+                                return (
+                                  <li
+                                    key={item.documentType.id}
+                                    className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 py-2 sm:flex-row sm:items-center sm:gap-2"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                                        {item.documentType.name}
+                                      </span>
+                                      <span className="ml-2 text-[11px] text-[var(--color-nachipa-secondary)]">
+                                        {item.documentType.code}
+                                      </span>
+                                      <div className="text-[11px] text-[var(--color-nachipa-body)]">
+                                        {doc
+                                          ? doc.originalName
+                                          : "Sin archivo"}
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      {doc ? (
+                                        <StatusChip
+                                          tone={docStatusTone(doc.status)}
+                                        >
+                                          {docStatusLabel(doc.status)}
+                                        </StatusChip>
+                                      ) : null}
+                                      {doc && accessToken ? (
+                                        <button
+                                          type="button"
+                                          className="text-[11px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                                          onClick={() =>
+                                            void downloadAccreditationPersonDocumentRequest(
+                                              accessToken,
+                                              hab.id,
+                                              p.id,
+                                              doc.id,
+                                              doc.originalName,
+                                            ).catch((err) =>
+                                              showToast(
+                                                err instanceof ApiError
+                                                  ? err.message
+                                                  : "No se pudo descargar.",
+                                                "danger",
+                                              ),
+                                            )
+                                          }
+                                        >
+                                          Descargar
+                                        </button>
+                                      ) : null}
+                                      {canUpdate &&
+                                      doc &&
+                                      (doc.status === "pending_validation" ||
+                                        doc.status === "observed") ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            className="text-[11px] font-medium text-[var(--color-status-success-fg,#15803d)] hover:underline"
+                                            disabled={acting}
+                                            onClick={() =>
+                                              void (async () => {
+                                                if (!accessToken) return;
+                                                setActing(true);
+                                                try {
+                                                  await validateAccreditationPersonDocumentRequest(
+                                                    accessToken,
+                                                    hab.id,
+                                                    p.id,
+                                                    doc.id,
+                                                    { status: "validated" },
+                                                  );
+                                                  showToast(
+                                                    "Documento validado.",
+                                                    "success",
+                                                  );
+                                                  await loadPersonDocs(p.id);
+                                                } catch (err) {
+                                                  showToast(
+                                                    err instanceof ApiError
+                                                      ? err.message
+                                                      : "No se pudo validar.",
+                                                    "danger",
+                                                  );
+                                                } finally {
+                                                  setActing(false);
+                                                }
+                                              })()
+                                            }
+                                          >
+                                            Validar
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="text-[11px] font-medium text-[var(--color-status-warning-fg,#b45309)] hover:underline"
+                                            disabled={acting}
+                                            onClick={() => {
+                                              setObserveDocId(doc.id);
+                                              setObservePersonId(p.id);
+                                              setObserveNote(
+                                                doc.observation ?? "",
+                                              );
+                                            }}
+                                          >
+                                            Observar
+                                          </button>
+                                        </>
+                                      ) : null}
+                                      {canUpdate &&
+                                      hab.status !== "approved" &&
+                                      hab.status !== "rejected" ? (
+                                        <label className="cursor-pointer text-[11px] font-medium text-[var(--color-nachipa-title)] hover:underline">
+                                          {uploadingTypeId ===
+                                          item.documentType.id
+                                            ? "Subiendo…"
+                                            : doc
+                                              ? "Reemplazar"
+                                              : "Subir"}
+                                          <input
+                                            type="file"
+                                            className="hidden"
+                                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
+                                            disabled={acting}
+                                            onChange={(e) => {
+                                              const f =
+                                                e.target.files?.[0] ?? null;
+                                              e.target.value = "";
+                                              onPickFile(
+                                                item.documentType.id,
+                                                f,
+                                                item.documentType
+                                                  .requiresExpiry,
+                                                p.id,
+                                              );
+                                            }}
+                                          />
+                                        </label>
+                                      ) : null}
+                                    </div>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
@@ -835,6 +1092,7 @@ export function AccreditationDetailPage() {
                   pendingUpload.documentTypeId,
                   pendingUpload.file,
                   new Date(`${expiryDate}T12:00:00.000Z`).toISOString(),
+                  pendingUpload.personId,
                 );
               }}
             >
@@ -855,7 +1113,10 @@ export function AccreditationDetailPage() {
       <Modal
         open={Boolean(observeDocId)}
         onClose={() => {
-          if (!acting) setObserveDocId(null);
+          if (!acting) {
+            setObserveDocId(null);
+            setObservePersonId(null);
+          }
         }}
         icon={ClipboardCheck}
         title="Observar documento"
@@ -865,7 +1126,10 @@ export function AccreditationDetailPage() {
             <button
               type="button"
               disabled={acting}
-              onClick={() => setObserveDocId(null)}
+              onClick={() => {
+                setObserveDocId(null);
+                setObservePersonId(null);
+              }}
               className={outlineBtnClass}
             >
               Cancelar
