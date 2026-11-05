@@ -227,6 +227,8 @@ enum ActivityResource {
   contractorOrganization
   /// Habilitación de org contratista (P2 bandeja).
   contractorAccreditation
+  /// Persona externa de una org contratista (P2 personal).
+  contractorPerson
   system
 }
 
@@ -1064,12 +1066,41 @@ model ContractorOrganization {
   accreditations      ContractorAccreditation[]
   /// Usuarios invitados al portal de esta org (P9b).
   users               User[]
+  /// Personal externo (trabajadores de la org).
+  people              ContractorPerson[]
 
   @@unique([businessId, rut])
   @@index([businessId])
   @@index([active])
   @@index([name])
   @@map("contractor_organizations")
+}
+
+/**
+ * Persona externa / trabajador de una organización contratista (P2).
+ * Estado «Habilitado» / «Con pendientes» se calculará con docs (R-10); no se guarda.
+ */
+model ContractorPerson {
+  id               String                 @id @default(uuid()) @db.Uuid
+  organizationId   String                 @map("organization_id") @db.Uuid
+  organization     ContractorOrganization @relation(fields: [organizationId], references: [id])
+  /// RUN normalizado cuerpo-dv; único por org.
+  rut              String
+  /// Nombre completo (UI Figma usa un solo campo).
+  fullName         String                 @map("full_name")
+  position         String?
+  email            String?
+  phone            String?
+  emergencyContact String?                @map("emergency_contact")
+  active           Boolean                @default(true)
+  deletedAt        DateTime?              @map("deleted_at") @db.Timestamptz
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([organizationId, rut])
+  @@index([organizationId])
+  @@index([active])
+  @@map("contractor_people")
 }
 
 /**

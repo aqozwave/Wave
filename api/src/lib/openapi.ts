@@ -243,16 +243,23 @@ import {
 } from "../modules/trainings/trainings.schemas.js";
 import {
   createContractorBodySchema,
+  createContractorPersonBodySchema,
+  createContractorPersonResponseSchema,
   createContractorResponseSchema,
+  deleteContractorPersonResponseSchema,
   deleteContractorResponseSchema,
   getContractorResponseSchema,
   inviteContractorUserBodySchema,
   inviteContractorUserResponseSchema,
+  listContractorPeopleQuerySchema,
+  listContractorPeopleResponseSchema,
   listContractorUsersQuerySchema,
   listContractorUsersResponseSchema,
   listContractorsQuerySchema,
   listContractorsResponseSchema,
   updateContractorBodySchema,
+  updateContractorPersonBodySchema,
+  updateContractorPersonResponseSchema,
   updateContractorResponseSchema,
 } from "../modules/contractors/contractors.schemas.js";
 import {
@@ -2327,6 +2334,113 @@ registry.registerPath({
     403: { description: "Sin permiso o módulo apagado" },
     404: { description: "Org no encontrada" },
     409: { description: "Email/RUN en conflicto" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/{id}/people",
+  tags: ["Contractors"],
+  summary: "Listar personal de la organización",
+  description: "P2 personal. Permiso contractors.read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    query: listContractorPeopleQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listContractorPeopleResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Org no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors/{id}/people",
+  tags: ["Contractors"],
+  summary: "Agregar persona al personal de la organización",
+  description: "RUN único por org. Admin/superadmin + contractors.create.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createContractorPersonBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creada",
+      content: {
+        "application/json": { schema: createContractorPersonResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Org no encontrada" },
+    409: { description: "RUN duplicado en la org" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/contractors/{id}/people/{personId}",
+  tags: ["Contractors"],
+  summary: "Actualizar persona del personal",
+  description: "Editar ficha o active. Permiso contractors.update.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), personId: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateContractorPersonBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizada",
+      content: {
+        "application/json": { schema: updateContractorPersonResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Persona no encontrada" },
+    409: { description: "RUN duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/contractors/{id}/people/{personId}",
+  tags: ["Contractors"],
+  summary: "Eliminar (soft) persona del personal",
+  description: "deletedAt + active=false. Permiso contractors.deactivate.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), personId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteContractorPersonResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Persona no encontrada" },
   },
 });
 

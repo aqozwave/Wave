@@ -1,0 +1,50 @@
+meta {
+  name: Patch contractor person
+  type: http
+  seq: 10
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/contractors/{{contractorId}}/people/{{contractorPersonId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "position": "Soldador senior",
+    "phone": "+56 9 1111 2222"
+  }
+}
+
+docs {
+  Editar persona. Requiere contractorPersonId (post-contractor-person).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+  if (!bru.getEnvVar("contractorId") || !bru.getEnvVar("contractorPersonId")) {
+    throw new Error("Faltan contractorId / contractorPersonId.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

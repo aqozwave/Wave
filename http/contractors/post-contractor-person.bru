@@ -1,0 +1,62 @@
+meta {
+  name: Post contractor person
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/api/v1/contractors/{{contractorId}}/people
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "rut": "12.345.678-5",
+    "fullName": "Pedro Morales",
+    "position": "Soldador",
+    "email": "pedro.morales@ejemplo.cl",
+    "phone": "+56 9 8765 4321"
+  }
+}
+
+docs {
+  Alta de persona en el personal de la org. RUN único por org (ajustá si 409).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+  const id = bru.getEnvVar("contractorId");
+  if (!id) {
+    throw new Error("Sin contractorId. Corré Post contractor antes.");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if ((res.getStatus() === 201 || res.getStatus() === 200) && body && body.id) {
+    bru.setEnvVar("contractorPersonId", body.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.rut: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

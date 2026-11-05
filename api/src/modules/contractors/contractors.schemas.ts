@@ -263,3 +263,112 @@ export type ListContractorUsersQuery = z.infer<
 export type InviteContractorUserBody = z.infer<
   typeof inviteContractorUserBodySchema
 >;
+
+/** Persona externa de la org (P2 personal). */
+export const contractorPersonResponseSchema = z
+  .object({
+    id: z.uuid(),
+    organizationId: z.uuid(),
+    rut: z.string(),
+    fullName: z.string(),
+    position: z.string().nullable(),
+    email: z.string().nullable(),
+    phone: z.string().nullable(),
+    emergencyContact: z.string().nullable(),
+    active: z.boolean(),
+    deletedAt: z.string().datetime().nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi("ContractorPerson");
+
+/** Query GET /contractors/:id/people. */
+export const listContractorPeopleQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  active: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "true")),
+  search: z.string().trim().optional(),
+});
+
+export const listContractorPeopleRequestSchema = z.object({
+  params: contractorIdParamsSchema,
+  query: listContractorPeopleQuerySchema,
+});
+
+export const listContractorPeopleResponseSchema = z
+  .object({
+    items: z.array(contractorPersonResponseSchema),
+    total: z.number().int().nonnegative(),
+    page: z.number().int().positive(),
+    limit: z.number().int().positive(),
+  })
+  .openapi("ListContractorPeopleResponse");
+
+/** Campos create/update de persona. */
+const contractorPersonFieldsObjectSchema = z.object({
+  rut: chileanRunSchema,
+  fullName: z
+    .string({ error: "Nombre es requerido" })
+    .trim()
+    .min(1, "Nombre es requerido")
+    .max(200),
+  position: optionalTextSchema,
+  email: optionalEmailSchema,
+  phone: optionalTextSchema,
+  emergencyContact: optionalTextSchema,
+  active: z.boolean().optional(),
+});
+
+export const createContractorPersonBodySchema =
+  contractorPersonFieldsObjectSchema;
+
+export const createContractorPersonRequestSchema = z.object({
+  params: contractorIdParamsSchema,
+  body: createContractorPersonBodySchema,
+});
+
+export const createContractorPersonResponseSchema =
+  contractorPersonResponseSchema;
+
+export const contractorPersonIdParamsSchema = z.object({
+  id: z.uuid(),
+  personId: z.uuid(),
+});
+
+export const updateContractorPersonBodySchema =
+  contractorPersonFieldsObjectSchema
+    .partial()
+    .refine((body) => Object.keys(body).length > 0, {
+      message: "Enviá al menos un campo para actualizar",
+    });
+
+export const updateContractorPersonRequestSchema = z.object({
+  params: contractorPersonIdParamsSchema,
+  body: updateContractorPersonBodySchema,
+});
+
+export const updateContractorPersonResponseSchema =
+  contractorPersonResponseSchema;
+
+export const deleteContractorPersonRequestSchema = z.object({
+  params: contractorPersonIdParamsSchema,
+});
+
+export const deleteContractorPersonResponseSchema =
+  contractorPersonResponseSchema;
+
+export type ContractorPersonResponse = z.infer<
+  typeof contractorPersonResponseSchema
+>;
+export type ListContractorPeopleQuery = z.infer<
+  typeof listContractorPeopleQuerySchema
+>;
+export type CreateContractorPersonBody = z.infer<
+  typeof createContractorPersonBodySchema
+>;
+export type UpdateContractorPersonBody = z.infer<
+  typeof updateContractorPersonBodySchema
+>;

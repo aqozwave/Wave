@@ -5,27 +5,38 @@ import {
   safeChangedFields,
 } from "../activityLogs/activityLogs.service.js";
 import {
+  createContractorPersonResponseSchema,
   createContractorResponseSchema,
+  deleteContractorPersonResponseSchema,
   deleteContractorResponseSchema,
   getContractorResponseSchema,
   inviteContractorUserResponseSchema,
+  listContractorPeopleResponseSchema,
   listContractorUsersResponseSchema,
   listContractorsResponseSchema,
+  updateContractorPersonResponseSchema,
   updateContractorResponseSchema,
   type CreateContractorBody,
+  type CreateContractorPersonBody,
   type InviteContractorUserBody,
+  type ListContractorPeopleQuery,
   type ListContractorUsersQuery,
   type ListContractorsQuery,
   type UpdateContractorBody,
+  type UpdateContractorPersonBody,
 } from "./contractors.schemas.js";
 import {
   createContractor,
+  createContractorPerson,
   deleteContractor,
+  deleteContractorPerson,
   getContractorById,
   inviteContractorUser,
+  listContractorPeople,
   listContractorUsers,
   listContractors,
   updateContractor,
+  updateContractorPerson,
 } from "./contractors.service.js";
 
 /** GET /contractors — listado paginado. */
@@ -138,4 +149,83 @@ export async function inviteContractorUserHandler(
     targetLabel: `${result.email} · org ${req.params.id as string}`,
   });
   res.status(201).json(inviteContractorUserResponseSchema.parse(result));
+}
+
+/** GET /contractors/:id/people — personal de la org. */
+export async function listContractorPeopleHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const query = req.query as unknown as ListContractorPeopleQuery;
+  const result = await listContractorPeople(
+    req.user,
+    req.params.id as string,
+    query,
+  );
+  res.status(200).json(listContractorPeopleResponseSchema.parse(result));
+}
+
+/** POST /contractors/:id/people — alta persona. */
+export async function createContractorPersonHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as CreateContractorPersonBody;
+  const result = await createContractorPerson(
+    req.user,
+    req.params.id as string,
+    body,
+  );
+  auditWrite(req, {
+    action: "CREATE",
+    resource: "contractorPerson",
+    resourceId: result.id,
+    targetLabel: `${result.rut} · ${result.fullName}`,
+  });
+  res.status(201).json(createContractorPersonResponseSchema.parse(result));
+}
+
+/** PATCH /contractors/:id/people/:personId. */
+export async function updateContractorPersonHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as UpdateContractorPersonBody;
+  const result = await updateContractorPerson(
+    req.user,
+    req.params.id as string,
+    req.params.personId as string,
+    body,
+  );
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "contractorPerson",
+    resourceId: result.id,
+    targetLabel: `${result.rut} · ${result.fullName}`,
+    metadata: { fields: safeChangedFields(body) },
+  });
+  res.status(200).json(updateContractorPersonResponseSchema.parse(result));
+}
+
+/** DELETE /contractors/:id/people/:personId — soft delete. */
+export async function deleteContractorPersonHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await deleteContractorPerson(
+    req.user,
+    req.params.id as string,
+    req.params.personId as string,
+  );
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "contractorPerson",
+    resourceId: result.id,
+    targetLabel: `${result.rut} · ${result.fullName}`,
+  });
+  res.status(200).json(deleteContractorPersonResponseSchema.parse(result));
 }

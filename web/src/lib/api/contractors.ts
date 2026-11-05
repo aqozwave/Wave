@@ -261,3 +261,119 @@ export async function inviteContractorUserRequest(
   if (!res.ok) throw toApiError(res, body);
   return body as ContractorUser;
 }
+
+/** Persona externa de la org. */
+export type ContractorPerson = {
+  id: string;
+  organizationId: string;
+  rut: string;
+  fullName: string;
+  position: string | null;
+  email: string | null;
+  phone: string | null;
+  emergencyContact: string | null;
+  active: boolean;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Listado de personal. */
+export type ListContractorPeopleResult = {
+  items: ContractorPerson[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+/** Body create/patch persona. */
+export type ContractorPersonWriteBody = {
+  rut?: string;
+  fullName?: string;
+  position?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  emergencyContact?: string | null;
+  active?: boolean;
+};
+
+/** GET /api/v1/contractors/:id/people */
+export async function listContractorPeopleRequest(
+  accessToken: string,
+  organizationId: string,
+  page = 1,
+  limit = 50,
+  filters?: { active?: boolean; search?: string },
+): Promise<ListContractorPeopleResult> {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+  if (filters?.active !== undefined) {
+    params.set("active", filters.active ? "true" : "false");
+  }
+  if (filters?.search) params.set("search", filters.search);
+  const res = await fetch(
+    `/api/v1/contractors/${organizationId}/people?${params}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ListContractorPeopleResult;
+}
+
+/** POST /api/v1/contractors/:id/people */
+export async function createContractorPersonRequest(
+  accessToken: string,
+  organizationId: string,
+  data: ContractorPersonWriteBody,
+): Promise<ContractorPerson> {
+  const res = await fetch(`/api/v1/contractors/${organizationId}/people`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorPerson;
+}
+
+/** PATCH /api/v1/contractors/:id/people/:personId */
+export async function updateContractorPersonRequest(
+  accessToken: string,
+  organizationId: string,
+  personId: string,
+  data: ContractorPersonWriteBody,
+): Promise<ContractorPerson> {
+  const res = await fetch(
+    `/api/v1/contractors/${organizationId}/people/${personId}`,
+    {
+      method: "PATCH",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(data),
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorPerson;
+}
+
+/** DELETE /api/v1/contractors/:id/people/:personId (soft). */
+export async function deleteContractorPersonRequest(
+  accessToken: string,
+  organizationId: string,
+  personId: string,
+): Promise<ContractorPerson> {
+  const res = await fetch(
+    `/api/v1/contractors/${organizationId}/people/${personId}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorPerson;
+}

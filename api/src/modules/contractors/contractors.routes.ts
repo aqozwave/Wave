@@ -6,20 +6,28 @@ import { requireTenantManager } from "../../middlewares/requireTenantManager.js"
 import { validate } from "../../middlewares/validate.js";
 import {
   createContractorHandler,
+  createContractorPersonHandler,
   deleteContractorHandler,
+  deleteContractorPersonHandler,
   getContractorHandler,
   inviteContractorUserHandler,
+  listContractorPeopleHandler,
   listContractorUsersHandler,
   listContractorsHandler,
   updateContractorHandler,
+  updateContractorPersonHandler,
 } from "./contractors.controller.js";
 import {
+  createContractorPersonRequestSchema,
   createContractorRequestSchema,
+  deleteContractorPersonRequestSchema,
   deleteContractorRequestSchema,
   getContractorRequestSchema,
   inviteContractorUserRequestSchema,
+  listContractorPeopleRequestSchema,
   listContractorUsersRequestSchema,
   listContractorsRequestSchema,
+  updateContractorPersonRequestSchema,
   updateContractorRequestSchema,
 } from "./contractors.schemas.js";
 
@@ -62,6 +70,44 @@ contractorsRouter.post(
   requirePermission(PERMISSION_RESOURCE.CONTRACTORS, PERMISSION_ACTION.CREATE),
   validate(inviteContractorUserRequestSchema),
   inviteContractorUserHandler,
+);
+
+contractorsRouter.get(
+  "/:id/people",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.CONTRACTORS, PERMISSION_ACTION.READ),
+  validate(listContractorPeopleRequestSchema),
+  listContractorPeopleHandler,
+);
+
+contractorsRouter.post(
+  "/:id/people",
+  authenticate,
+  requireTenantManager,
+  requirePermission(PERMISSION_RESOURCE.CONTRACTORS, PERMISSION_ACTION.CREATE),
+  validate(createContractorPersonRequestSchema),
+  createContractorPersonHandler,
+);
+
+contractorsRouter.patch(
+  "/:id/people/:personId",
+  authenticate,
+  requireTenantManager,
+  requirePermission(PERMISSION_RESOURCE.CONTRACTORS, PERMISSION_ACTION.UPDATE),
+  validate(updateContractorPersonRequestSchema),
+  updateContractorPersonHandler,
+);
+
+contractorsRouter.delete(
+  "/:id/people/:personId",
+  authenticate,
+  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.CONTRACTORS,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
+  validate(deleteContractorPersonRequestSchema),
+  deleteContractorPersonHandler,
 );
 
 contractorsRouter.get(

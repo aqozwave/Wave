@@ -21,11 +21,16 @@ import {
   type ContractorAccreditation,
 } from "../../lib/api/accreditations";
 import {
+  createContractorPersonRequest,
+  deleteContractorPersonRequest,
   getContractorRequest,
   inviteContractorUserRequest,
+  listContractorPeopleRequest,
   listContractorUsersRequest,
+  updateContractorPersonRequest,
   updateContractorRequest,
   type ContractorOrganization,
+  type ContractorPerson,
   type ContractorRole,
   type ContractorUser,
 } from "../../lib/api/contractors";
@@ -86,8 +91,19 @@ function statusTone(
   }
 }
 
-/** Tabs de la ficha (P9). */
-type TabId = "datos" | "habilitaciones" | "usuarios";
+/** Tabs de la ficha (P9 + personal). */
+type TabId = "datos" | "habilitaciones" | "personal" | "usuarios";
+
+/** Form alta/edición de persona. */
+type PersonForm = {
+  rut: string;
+  fullName: string;
+  position: string;
+  email: string;
+  phone: string;
+  emergencyContact: string;
+  active: boolean;
+};
 
 /** Form edición de datos (P9m). */
 type EditForm = {
@@ -152,11 +168,18 @@ export function ContractorDetailPage() {
     userHasPermission(user, "contractors", "create");
   const canManage =
     user?.internalRol === "admin" || user?.internalRol === "superadmin";
+  const canCreatePeople =
+    canManage && userHasPermission(user, "contractors", "create");
+  const canUpdatePeople =
+    canManage && userHasPermission(user, "contractors", "update");
+  const canDeactivatePeople =
+    canManage && userHasPermission(user, "contractors", "deactivate");
   const canReadHab = userHasPermission(user, "accreditations", "read");
 
   const [org, setOrg] = useState<ContractorOrganization | null>(null);
   const [habs, setHabs] = useState<ContractorAccreditation[]>([]);
   const [orgUsers, setOrgUsers] = useState<ContractorUser[]>([]);
+  const [people, setPeople] = useState<ContractorPerson[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TabId>("datos");
 
@@ -172,6 +195,23 @@ export function ContractorDetailPage() {
     run: "",
   });
   const [inviting, setInviting] = useState(false);
+
+  const [personOpen, setPersonOpen] = useState(false);
+  const [personEditing, setPersonEditing] = useState<ContractorPerson | null>(
+    null,
+  );
+  const [personForm, setPersonForm] = useState<PersonForm>({
+    rut: "",
+    fullName: "",
+    position: "",
+    email: "",
+    phone: "",
+    emergencyContact: "",
+    active: true,
+  });
+  const [personSaving, setPersonSaving] = useState(false);
+  const [pendingDeactivatePerson, setPendingDeactivatePerson] =
+    useState<ContractorPerson | null>(null);
 
   const load = useCallback(async () => {
     if (!accessToken || !id || !canRead) return;
@@ -189,6 +229,13 @@ export function ContractorDetailPage() {
       }
       const usersList = await listContractorUsersRequest(accessToken, id, 1, 50);
       setOrgUsers(usersList.items);
+      const peopleList = await listContractorPeopleRequest(
+        accessToken,
+        id,
+        1,
+        100,
+      );
+      setPeople(peopleList.items);
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo cargar la organización",
@@ -309,6 +356,104 @@ export function ContractorDetailPage() {
     }
   }
 
+  /** Abre modal alta persona. */
+  function openCreatePerson() {
+    setPersonEditing(null);
+    setPersonForm({
+      rut: "",
+      fullName: "",
+      position: "",
+      email: "",
+      phone: "",
+      emergencyContact: "",
+      active: true,
+    });
+    setPersonOpen(true);
+  }
+
+  /** Abre modal editar persona. */
+  function openEditPerson(row: ContractorPerson) {
+    setPersonEditing(row);
+    setPersonForm({
+      rut: row.rut,
+      fullName: displayName(row.fullName),
+      position: row.position ?? "",
+      email: row.email ?? "",
+      phone: row.phone ?? "",
+      emergencyContact: row.emergencyContact ?? "",
+      active: row.active,
+    });
+    setPersonOpen(true);
+  }
+
+  /** POST/PATCH persona. */
+  async function onSavePerson(e: FormEvent) {
+    e.preventDefault();
+    if (!accessToken || !org || personSaving) return;
+    if (!personForm.fullName.trim() || !personForm.rut.trim()) {
+      showToast("Nombre y RUN son requeridos.", "danger");
+      return;
+    }
+    setPersonSaving(true);
+    try {
+      if (personEditing) {
+        await updateContractorPersonRequest(accessToken, org.id, personEditing.id, {
+          rut: personForm.rut.trim(),
+          fullName: personForm.fullName.trim(),
+          position: personForm.position.trim() || null,
+          email: personForm.email.trim() || null,
+          phone: personForm.phone.trim() || null,
+          emergencyContact: personForm.emergencyContact.trim() || null,
+          active: personForm.active,
+        });
+        showToast("Persona actualizada.", "success");
+      } else {
+        await createContractorPersonRequest(accessToken, org.id, {
+          rut: personForm.rut.trim(),
+          fullName: personForm.fullName.trim(),
+          position: personForm.position.trim() || null,
+          email: personForm.email.trim() || null,
+          phone: personForm.phone.trim() || null,
+          emergencyContact: personForm.emergencyContact.trim() || null,
+          active: personForm.active,
+        });
+        showToast("Persona agregada.", "success");
+      }
+      setPersonOpen(false);
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo guardar.",
+        "danger",
+      );
+    } finally {
+      setPersonSaving(false);
+    }
+  }
+
+  /** Soft delete persona. */
+  async function confirmDeactivatePerson() {
+    if (!accessToken || !org || !pendingDeactivatePerson) return;
+    setPersonSaving(true);
+    try {
+      await deleteContractorPersonRequest(
+        accessToken,
+        org.id,
+        pendingDeactivatePerson.id,
+      );
+      showToast("Persona desactivada.", "success");
+      setPendingDeactivatePerson(null);
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo desactivar.",
+        "danger",
+      );
+    } finally {
+      setPersonSaving(false);
+    }
+  }
+
   if (!canRead) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -368,6 +513,7 @@ export function ContractorDetailPage() {
   const tabs: { id: TabId; label: string }[] = [
     { id: "datos", label: "Datos" },
     { id: "habilitaciones", label: "Habilitaciones" },
+    { id: "personal", label: "Personal" },
     { id: "usuarios", label: "Usuarios" },
   ];
 
@@ -397,6 +543,15 @@ export function ContractorDetailPage() {
               >
                 <Pencil className="size-4" strokeWidth={1.5} aria-hidden />
                 Editar datos
+              </Button>
+            ) : canCreatePeople && tab === "personal" ? (
+              <Button
+                type="button"
+                size="medium"
+                className="!w-auto"
+                onClick={openCreatePerson}
+              >
+                Agregar persona
               </Button>
             ) : canInvite && tab === "usuarios" ? (
               <Button
@@ -526,6 +681,83 @@ export function ContractorDetailPage() {
                   </li>
                 ))}
               </ul>
+            )}
+          </div>
+        ) : null}
+
+        {tab === "personal" ? (
+          <div className="flex flex-col gap-3">
+            <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+              Trabajadores externos de la organización ({people.length}).
+            </p>
+            {people.length === 0 ? (
+              <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+                Todavía no hay personal.
+                {canCreatePeople ? " Usá «Agregar persona»." : ""}
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white">
+                <table className="w-full min-w-[720px] border-collapse text-left text-[13px]">
+                  <thead className="bg-[var(--color-table-head-bg,#f8f9fb)] text-[12px] text-[var(--color-nachipa-secondary)]">
+                    <tr>
+                      <th className="px-3 py-2.5 font-medium">Nombre</th>
+                      <th className="px-3 py-2.5 font-medium">RUN</th>
+                      <th className="px-3 py-2.5 font-medium">Cargo</th>
+                      <th className="px-3 py-2.5 font-medium">Contacto</th>
+                      <th className="px-3 py-2.5 font-medium">Estado</th>
+                      <th className="px-3 py-2.5 font-medium text-right">
+                        Acciones
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {people.map((p) => (
+                      <tr
+                        key={p.id}
+                        className="border-t border-[var(--color-tremor-border)]"
+                      >
+                        <td className="px-3 py-2.5 text-[var(--color-nachipa-title)]">
+                          {displayName(p.fullName)}
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
+                          {p.rut}
+                        </td>
+                        <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                          {p.position ?? "—"}
+                        </td>
+                        <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                          {p.email ?? p.phone ?? "—"}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <StatusChip tone={p.active ? "success" : "neutral"}>
+                            {p.active ? "Activo" : "Inactivo"}
+                          </StatusChip>
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          {canUpdatePeople ? (
+                            <button
+                              type="button"
+                              className="mr-2 text-[12px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                              onClick={() => openEditPerson(p)}
+                            >
+                              Editar
+                            </button>
+                          ) : null}
+                          {canDeactivatePeople && p.active ? (
+                            <button
+                              type="button"
+                              className="text-[12px] font-medium text-[var(--color-status-danger-fg)] hover:underline"
+                              onClick={() => setPendingDeactivatePerson(p)}
+                            >
+                              Desactivar
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         ) : null}
@@ -769,6 +1001,145 @@ export function ContractorDetailPage() {
             required
           />
         </form>
+      </Modal>
+
+      <Modal
+        open={personOpen}
+        onClose={() => {
+          if (!personSaving) setPersonOpen(false);
+        }}
+        icon={Building2}
+        title={personEditing ? "Editar persona" : "Agregar persona"}
+        subtitle="Personal externo de la organización contratista."
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={personSaving}
+              onClick={() => setPersonOpen(false)}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="submit"
+              form="contractor-person-form"
+              size="medium"
+              className="!w-auto"
+              disabled={personSaving}
+            >
+              {personSaving ? "Guardando…" : "Guardar"}
+            </Button>
+          </div>
+        }
+      >
+        <form
+          id="contractor-person-form"
+          className="flex flex-col gap-3"
+          onSubmit={(e) => void onSavePerson(e)}
+        >
+          <TextField
+            label="RUN"
+            value={personForm.rut}
+            onChange={(e) =>
+              setPersonForm((f) => ({ ...f, rut: e.target.value }))
+            }
+            required
+          />
+          <TextField
+            label="Nombre completo"
+            value={personForm.fullName}
+            onChange={(e) =>
+              setPersonForm((f) => ({ ...f, fullName: e.target.value }))
+            }
+            required
+          />
+          <TextField
+            label="Cargo"
+            value={personForm.position}
+            onChange={(e) =>
+              setPersonForm((f) => ({ ...f, position: e.target.value }))
+            }
+          />
+          <TextField
+            label="Email"
+            type="email"
+            value={personForm.email}
+            onChange={(e) =>
+              setPersonForm((f) => ({ ...f, email: e.target.value }))
+            }
+          />
+          <TextField
+            label="Teléfono"
+            value={personForm.phone}
+            onChange={(e) =>
+              setPersonForm((f) => ({ ...f, phone: e.target.value }))
+            }
+          />
+          <TextField
+            label="Contacto de emergencia"
+            value={personForm.emergencyContact}
+            onChange={(e) =>
+              setPersonForm((f) => ({
+                ...f,
+                emergencyContact: e.target.value,
+              }))
+            }
+          />
+          {personEditing ? (
+            <div className="flex items-center justify-between rounded-[10px] bg-[var(--color-table-head-bg,#f8f9fb)] px-3.5 py-3">
+              <span className="text-[13px] font-semibold text-[var(--color-nachipa-title)]">
+                Activo
+              </span>
+              <Toggle
+                checked={personForm.active}
+                onChange={(next) =>
+                  setPersonForm((f) => ({ ...f, active: next }))
+                }
+                aria-label="Persona activa"
+              />
+            </div>
+          ) : null}
+        </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(pendingDeactivatePerson)}
+        onClose={() => {
+          if (!personSaving) setPendingDeactivatePerson(null);
+        }}
+        icon={Building2}
+        title="Desactivar persona"
+        subtitle={
+          pendingDeactivatePerson
+            ? `¿Desactivar «${displayName(pendingDeactivatePerson.fullName)}» (${pendingDeactivatePerson.rut})?`
+            : undefined
+        }
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={personSaving}
+              onClick={() => setPendingDeactivatePerson(null)}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={personSaving}
+              onClick={() => void confirmDeactivatePerson()}
+            >
+              {personSaving ? "Desactivando…" : "Desactivar"}
+            </Button>
+          </div>
+        }
+      >
+        <p className="m-0 text-[13px] text-[var(--color-nachipa-body)]">
+          Soft delete: queda fuera del listado activo.
+        </p>
       </Modal>
     </div>
   );

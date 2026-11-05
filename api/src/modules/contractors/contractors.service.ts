@@ -8,12 +8,16 @@ import type { AuthUser } from "../auth/auth.schemas.js";
 import { requestPasswordReset } from "../auth/auth.service.js";
 import type {
   ContractorOrganizationResponse,
+  ContractorPersonResponse,
   ContractorUserResponse,
   CreateContractorBody,
+  CreateContractorPersonBody,
   InviteContractorUserBody,
+  ListContractorPeopleQuery,
   ListContractorUsersQuery,
   ListContractorsQuery,
   UpdateContractorBody,
+  UpdateContractorPersonBody,
 } from "./contractors.schemas.js";
 
 /** Actor mínimo para reglas de tenant. */
@@ -60,6 +64,7 @@ function toContractorResponse(row: {
   createdAt: Date;
   updatedAt: Date;
   accreditations?: LatestAccreditationRow[];
+  _count?: { people: number };
 }): ContractorOrganizationResponse {
   const latest = row.accreditations?.[0] ?? null;
   return {
@@ -101,12 +106,11 @@ function toContractorResponse(row: {
             : null,
         }
       : null,
-    /** Hasta existir contractor_people. */
-    personCount: 0,
+    personCount: row._count?.people ?? 0,
   };
 }
 
-/** Include HAB más reciente (1) por createdAt desc. */
+/** Include HAB más reciente (1) + conteo de personal activo. */
 const latestAccreditationInclude = {
   accreditations: {
     orderBy: { createdAt: "desc" as const },
@@ -118,6 +122,11 @@ const latestAccreditationInclude = {
       requestedAt: true,
       submittedAt: true,
       reviewedAt: true,
+    },
+  },
+  _count: {
+    select: {
+      people: { where: { deletedAt: null } },
     },
   },
 } as const;
@@ -740,4 +749,201 @@ export async function inviteContractorUser(
     }
     throw err;
   }
+}
+
+/** Serializa persona externa → contrato Zod. */
+function toContractorPersonResponse(row: {
+  id: string;
+  organizationId: string;
+  rut: string;
+  fullName: string;
+  position: string | null;
+  email: string | null;
+  phone: string | null;
+  emergencyContact: string | null;
+  active: boolean;
+  deletedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): ContractorPersonResponse {
+  return {
+    id: row.id,
+    organizationId: row.organizationId,
+    rut: row.rut,
+    fullName: row.fullName,
+    position: row.position,
+    email: row.email,
+    phone: row.phone,
+    emergencyContact: row.emergencyContact,
+    active: row.active,
+    deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/** GET /contractors/:id/people — personal de la org. */
+export async function listContractorPeople(
+  actor: Actor,
+  organizationId: string,
+  query: ListContractorPeopleQuery,
+): Promise<{
+  items: ContractorPersonResponse[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  await loadOrgForUsers(actor, organizationId);
+
+  const where: Prisma.ContractorPersonWhereInput = {
+    organizationId,
+    deletedAt: null,
+  };
+  if (query.active !== undefined) {
+    where.active = query.active;
+  }
+  if (query.search && query.search.length > 0) {
+    where.OR = [
+      { fullName: { contains: query.search, mode: "insensitive" } },
+      { rut: { contains: query.search, mode: "insensitive" } },
+      { email: { contains: query.search, mode: "insensitive" } },
+      { position: { contains: query.search, mode: "insensitive" } },
+    ];
+  }
+
+  const skip = (query.page - 1) * query.limit;
+  const [rows, total] = await Promise.all([
+    prisma.contractorPerson.findMany({
+      where,
+      orderBy: [{ fullName: "asc" }],
+      skip,
+      take: query.limit,
+    }),
+    prisma.contractorPerson.count({ where }),
+  ]);
+
+  return {
+    items: rows.map(toContractorPersonResponse),
+    total,
+    page: query.page,
+    limit: query.limit,
+  };
+}
+
+/** POST /contractors/:id/people — alta de persona. */
+export async function createContractorPerson(
+  actor: Actor,
+  organizationId: string,
+  body: CreateContractorPersonBody,
+): Promise<ContractorPersonResponse> {
+  const org = await loadOrgForUsers(actor, organizationId);
+  await assertBusinessModuleEnabled(org.businessId, "contractors");
+
+  try {
+    const row = await prisma.contractorPerson.create({
+      data: {
+        organizationId: org.id,
+        rut: body.rut,
+        fullName: body.fullName.trim(),
+        position: body.position ?? null,
+        email: body.email ?? null,
+        phone: body.phone ?? null,
+        emergencyContact: body.emergencyContact ?? null,
+        active: body.active ?? true,
+      },
+    });
+    return toContractorPersonResponse(row);
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      throw new AppError(
+        409,
+        "duplicate_person_rut",
+        "Ya existe una persona con ese RUN en esta organización",
+      );
+    }
+    throw err;
+  }
+}
+
+/** Carga persona de la org o 404. */
+async function loadPersonInOrg(
+  actor: Actor,
+  organizationId: string,
+  personId: string,
+) {
+  await loadOrgForUsers(actor, organizationId);
+  const row = await prisma.contractorPerson.findFirst({
+    where: { id: personId, organizationId, deletedAt: null },
+  });
+  if (!row) {
+    throw new AppError(
+      404,
+      "contractor_person_not_found",
+      "Persona no encontrada",
+    );
+  }
+  return row;
+}
+
+/** PATCH /contractors/:id/people/:personId. */
+export async function updateContractorPerson(
+  actor: Actor,
+  organizationId: string,
+  personId: string,
+  payload: UpdateContractorPersonBody,
+): Promise<ContractorPersonResponse> {
+  const existing = await loadPersonInOrg(actor, organizationId, personId);
+  const org = await loadOrgForUsers(actor, organizationId);
+  await assertBusinessModuleEnabled(org.businessId, "contractors");
+
+  const data: Prisma.ContractorPersonUpdateInput = {};
+  if (payload.rut !== undefined) data.rut = payload.rut;
+  if (payload.fullName !== undefined) data.fullName = payload.fullName.trim();
+  if (payload.position !== undefined) data.position = payload.position ?? null;
+  if (payload.email !== undefined) data.email = payload.email ?? null;
+  if (payload.phone !== undefined) data.phone = payload.phone ?? null;
+  if (payload.emergencyContact !== undefined) {
+    data.emergencyContact = payload.emergencyContact ?? null;
+  }
+  if (payload.active !== undefined) data.active = payload.active;
+
+  try {
+    const updated = await prisma.contractorPerson.update({
+      where: { id: existing.id },
+      data,
+    });
+    return toContractorPersonResponse(updated);
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      throw new AppError(
+        409,
+        "duplicate_person_rut",
+        "Ya existe una persona con ese RUN en esta organización",
+      );
+    }
+    throw err;
+  }
+}
+
+/** DELETE /contractors/:id/people/:personId — soft delete. */
+export async function deleteContractorPerson(
+  actor: Actor,
+  organizationId: string,
+  personId: string,
+): Promise<ContractorPersonResponse> {
+  const existing = await loadPersonInOrg(actor, organizationId, personId);
+  const org = await loadOrgForUsers(actor, organizationId);
+  await assertBusinessModuleEnabled(org.businessId, "contractors");
+
+  const updated = await prisma.contractorPerson.update({
+    where: { id: existing.id },
+    data: { deletedAt: new Date(), active: false },
+  });
+  return toContractorPersonResponse(updated);
 }
