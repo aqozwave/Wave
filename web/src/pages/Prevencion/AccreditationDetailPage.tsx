@@ -11,12 +11,19 @@ import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { useToast } from "../../components/Toast/ToastProvider";
 import {
   approveAccreditationRequest,
+  createAccreditationDocumentRequest,
+  downloadAccreditationDocumentRequest,
+  fileToBase64,
   getAccreditationRequest,
+  listAccreditationDocumentsRequest,
   rejectAccreditationRequest,
   returnAccreditationRequest,
   submitAccreditationRequest,
+  validateAccreditationDocumentRequest,
+  type AccreditationDocumentChecklistItem,
   type AccreditationStatus,
   type ContractorAccreditation,
+  type ContractorDocumentStatus,
 } from "../../lib/api/accreditations";
 import {
   getContractorRequest,
@@ -86,7 +93,39 @@ function formatDate(iso: string | null): string {
   }
 }
 
-/** Tabs de revisión P5 (docs llega después). */
+/** Etiqueta estado doc HAB. */
+function docStatusLabel(status: ContractorDocumentStatus): string {
+  switch (status) {
+    case "pending_validation":
+      return "Pendiente";
+    case "validated":
+      return "Validado";
+    case "observed":
+      return "Observado";
+    case "replaced":
+      return "Reemplazado";
+    default:
+      return status;
+  }
+}
+
+/** Tono chip doc. */
+function docStatusTone(
+  status: ContractorDocumentStatus,
+): "success" | "warning" | "danger" | "info" | "neutral" {
+  switch (status) {
+    case "validated":
+      return "success";
+    case "pending_validation":
+      return "info";
+    case "observed":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+/** Tabs de revisión P5. */
 type TabId = "documentos" | "antecedentes" | "personal" | "historial";
 
 /** Fila de dato en antecedentes. */
@@ -122,14 +161,26 @@ export function AccreditationDetailPage() {
   const [hab, setHab] = useState<ContractorAccreditation | null>(null);
   const [org, setOrg] = useState<ContractorOrganization | null>(null);
   const [people, setPeople] = useState<ContractorPerson[]>([]);
+  const [docItems, setDocItems] = useState<AccreditationDocumentChecklistItem[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<TabId>("antecedentes");
+  const [tab, setTab] = useState<TabId>("documentos");
   const [acting, setActing] = useState(false);
+  const [uploadingTypeId, setUploadingTypeId] = useState<string | null>(null);
 
   const [noteAction, setNoteAction] = useState<"return" | "reject" | null>(
     null,
   );
   const [reviewNote, setReviewNote] = useState("");
+  const [observeDocId, setObserveDocId] = useState<string | null>(null);
+  const [observeNote, setObserveNote] = useState("");
+  /** Upload pendiente de vencimiento (tipos requiresExpiry). */
+  const [pendingUpload, setPendingUpload] = useState<{
+    documentTypeId: string;
+    file: File;
+  } | null>(null);
+  const [expiryDate, setExpiryDate] = useState("");
 
   const load = useCallback(async () => {
     if (!accessToken || !id || !canRead) return;
@@ -156,6 +207,12 @@ export function AccreditationDetailPage() {
         setPeople(peopleList.items);
       } catch {
         setPeople([]);
+      }
+      try {
+        const docs = await listAccreditationDocumentsRequest(accessToken, id);
+        setDocItems(docs.items);
+      } catch {
+        setDocItems([]);
       }
     } catch (err) {
       showToast(
@@ -188,6 +245,106 @@ export function AccreditationDetailPage() {
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo completar.",
+        "danger",
+      );
+    } finally {
+      setActing(false);
+    }
+  }
+
+  /** Sube archivo (con expiresAt ya resuelto). */
+  async function uploadFile(
+    documentTypeId: string,
+    file: File,
+    expiresAt: string | null,
+  ) {
+    if (!accessToken || !hab || acting) return;
+    setUploadingTypeId(documentTypeId);
+    setActing(true);
+    try {
+      const contentBase64 = await fileToBase64(file);
+      await createAccreditationDocumentRequest(accessToken, hab.id, {
+        documentTypeId,
+        fileName: file.name,
+        mimeType: file.type || "application/pdf",
+        contentBase64,
+        expiresAt,
+      });
+      showToast("Documento subido.", "success");
+      setPendingUpload(null);
+      setExpiryDate("");
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo subir.",
+        "danger",
+      );
+    } finally {
+      setActing(false);
+      setUploadingTypeId(null);
+    }
+  }
+
+  /** Elige archivo: si requiere vencimiento abre modal; si no, sube directo. */
+  function onPickFile(
+    documentTypeId: string,
+    file: File | null,
+    requiresExpiry: boolean,
+  ) {
+    if (!file) return;
+    if (requiresExpiry) {
+      setPendingUpload({ documentTypeId, file });
+      setExpiryDate(
+        new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10),
+      );
+      return;
+    }
+    void uploadFile(documentTypeId, file, null);
+  }
+
+  /** Marca doc como validado. */
+  async function onValidateDoc(documentId: string) {
+    if (!accessToken || !hab || acting) return;
+    setActing(true);
+    try {
+      await validateAccreditationDocumentRequest(
+        accessToken,
+        hab.id,
+        documentId,
+        { status: "validated" },
+      );
+      showToast("Documento validado.", "success");
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo validar.",
+        "danger",
+      );
+    } finally {
+      setActing(false);
+    }
+  }
+
+  /** Confirma observación de doc. */
+  async function confirmObserveDoc() {
+    if (!accessToken || !hab || !observeDocId || !observeNote.trim() || acting) {
+      return;
+    }
+    setActing(true);
+    try {
+      await validateAccreditationDocumentRequest(
+        accessToken,
+        hab.id,
+        observeDocId,
+        { status: "observed", observation: observeNote.trim() },
+      );
+      showToast("Documento observado.", "success");
+      setObserveDocId(null);
+      setObserveNote("");
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo observar.",
         "danger",
       );
     } finally {
@@ -426,10 +583,133 @@ export function AccreditationDetailPage() {
         </div>
 
         {tab === "documentos" ? (
-          <p className="m-0 max-w-lg text-[13px] text-[var(--color-nachipa-secondary)]">
-            Carga y validación de documentos de la empresa llegan en el
-            siguiente micro-paso (almacenamiento de archivos pendiente).
-          </p>
+          <div className="flex flex-col gap-3">
+            <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+              Pack de empresa ({docItems.length} tipos). Disco local, mismo
+              patrón que docs de tripulante.
+            </p>
+            {docItems.length === 0 ? (
+              <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+                No hay tipos con pack «company» en esta empresa. Configuralos
+                en Packs de habilitación.
+              </p>
+            ) : (
+              <ul className="m-0 list-none divide-y divide-[var(--color-tremor-border)] rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-0">
+                {docItems.map((item) => {
+                  const doc = item.document;
+                  return (
+                    <li
+                      key={item.documentType.id}
+                      className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <span className="block font-medium text-[var(--color-nachipa-title)]">
+                          {item.documentType.name}
+                          <span className="ml-2 text-[12px] font-normal text-[var(--color-nachipa-secondary)]">
+                            {item.documentType.code}
+                          </span>
+                        </span>
+                        {doc ? (
+                          <span className="text-[12px] text-[var(--color-nachipa-body)]">
+                            {doc.originalName}
+                            {doc.expiresAt
+                              ? ` · vence ${formatDate(doc.expiresAt)}`
+                              : ""}
+                          </span>
+                        ) : (
+                          <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                            Sin archivo
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {doc ? (
+                          <StatusChip tone={docStatusTone(doc.status)}>
+                            {docStatusLabel(doc.status)}
+                          </StatusChip>
+                        ) : null}
+                        {doc && accessToken ? (
+                          <button
+                            type="button"
+                            className="text-[12px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                            onClick={() =>
+                              void downloadAccreditationDocumentRequest(
+                                accessToken,
+                                hab.id,
+                                doc.id,
+                                doc.originalName,
+                              ).catch((err) =>
+                                showToast(
+                                  err instanceof ApiError
+                                    ? err.message
+                                    : "No se pudo descargar.",
+                                  "danger",
+                                ),
+                              )
+                            }
+                          >
+                            Descargar
+                          </button>
+                        ) : null}
+                        {canUpdate &&
+                        doc &&
+                        (doc.status === "pending_validation" ||
+                          doc.status === "observed") ? (
+                          <>
+                            <button
+                              type="button"
+                              className="text-[12px] font-medium text-[var(--color-status-success-fg,#15803d)] hover:underline"
+                              disabled={acting}
+                              onClick={() => void onValidateDoc(doc.id)}
+                            >
+                              Validar
+                            </button>
+                            <button
+                              type="button"
+                              className="text-[12px] font-medium text-[var(--color-status-warning-fg,#b45309)] hover:underline"
+                              disabled={acting}
+                              onClick={() => {
+                                setObserveDocId(doc.id);
+                                setObserveNote(doc.observation ?? "");
+                              }}
+                            >
+                              Observar
+                            </button>
+                          </>
+                        ) : null}
+                        {canUpdate &&
+                        hab.status !== "approved" &&
+                        hab.status !== "rejected" ? (
+                          <label className="cursor-pointer text-[12px] font-medium text-[var(--color-nachipa-title)] hover:underline">
+                            {uploadingTypeId === item.documentType.id
+                              ? "Subiendo…"
+                              : doc
+                                ? "Reemplazar"
+                                : "Subir"}
+                            <input
+                              type="file"
+                              className="hidden"
+                              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
+                              disabled={acting}
+                              onChange={(e) => {
+                                const f = e.target.files?.[0] ?? null;
+                                e.target.value = "";
+                                onPickFile(
+                                  item.documentType.id,
+                                  f,
+                                  item.documentType.requiresExpiry,
+                                );
+                              }}
+                            />
+                          </label>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
         ) : null}
 
         {tab === "antecedentes" ? (
@@ -515,6 +795,100 @@ export function AccreditationDetailPage() {
           </dl>
         ) : null}
       </div>
+
+      <Modal
+        open={Boolean(pendingUpload)}
+        onClose={() => {
+          if (!acting) {
+            setPendingUpload(null);
+            setExpiryDate("");
+          }
+        }}
+        icon={ClipboardCheck}
+        title="Vencimiento del documento"
+        subtitle={
+          pendingUpload
+            ? `Archivo: ${pendingUpload.file.name}`
+            : undefined
+        }
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() => {
+                setPendingUpload(null);
+                setExpiryDate("");
+              }}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={acting || !expiryDate}
+              onClick={() => {
+                if (!pendingUpload || !expiryDate) return;
+                void uploadFile(
+                  pendingUpload.documentTypeId,
+                  pendingUpload.file,
+                  new Date(`${expiryDate}T12:00:00.000Z`).toISOString(),
+                );
+              }}
+            >
+              {acting ? "Subiendo…" : "Subir"}
+            </Button>
+          </div>
+        }
+      >
+        <TextField
+          label="Vence el"
+          type="date"
+          value={expiryDate}
+          onChange={(e) => setExpiryDate(e.target.value)}
+          required
+        />
+      </Modal>
+
+      <Modal
+        open={Boolean(observeDocId)}
+        onClose={() => {
+          if (!acting) setObserveDocId(null);
+        }}
+        icon={ClipboardCheck}
+        title="Observar documento"
+        subtitle="La observación queda en el documento."
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() => setObserveDocId(null)}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={acting || !observeNote.trim()}
+              onClick={() => void confirmObserveDoc()}
+            >
+              {acting ? "Guardando…" : "Observar"}
+            </Button>
+          </div>
+        }
+      >
+        <TextField
+          label="Observación"
+          value={observeNote}
+          onChange={(e) => setObserveNote(e.target.value)}
+          required
+        />
+      </Modal>
 
       <Modal
         open={Boolean(noteAction)}

@@ -1,0 +1,38 @@
+meta {
+  name: Get accreditation documents
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/api/v1/accreditations/{{accreditationId}}/documents
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  P5 checklist: tipos pack company + documento vigente.
+  Requiere accreditationId (post-accreditation).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("accreditationId")) {
+    throw new Error("Sin accreditationId. Corré Post accreditation.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

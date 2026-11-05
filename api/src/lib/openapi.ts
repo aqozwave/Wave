@@ -271,6 +271,14 @@ import {
   listAccreditationsResponseSchema,
 } from "../modules/accreditations/accreditations.schemas.js";
 import {
+  createAccreditationDocumentBodySchema,
+  createAccreditationDocumentResponseSchema,
+  deleteAccreditationDocumentResponseSchema,
+  listAccreditationDocumentsResponseSchema,
+  validateAccreditationDocumentBodySchema,
+  validateAccreditationDocumentResponseSchema,
+} from "../modules/accreditationDocuments/accreditationDocuments.schemas.js";
+import {
   expiryNotificationSettingsSchema,
   updateExpiryNotificationSettingsBodySchema,
 } from "../modules/notificationSettings/notificationSettings.schemas.js";
@@ -2510,6 +2518,130 @@ registry.registerPath({
     },
     401: { description: "Sin token" },
     404: { description: "No encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/accreditations/{id}/documents",
+  tags: ["Accreditations"],
+  summary: "Checklist documentos pack company (P5)",
+  description:
+    "Tipos con accreditationPack=company + documento vigente. Disco local.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Checklist",
+      content: {
+        "application/json": {
+          schema: listAccreditationDocumentsResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "HAB no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/documents",
+  tags: ["Accreditations"],
+  summary: "Subir documento de empresa a la HAB",
+  description: "JSON + base64. Reemplaza el vigente del mismo tipo. Permiso update.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createAccreditationDocumentBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": {
+          schema: createAccreditationDocumentResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación / HAB cerrada" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "HAB no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/accreditations/{id}/documents/{documentId}/download",
+  tags: ["Accreditations"],
+  summary: "Descargar documento de la HAB",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), documentId: z.uuid() }),
+  },
+  responses: {
+    200: { description: "Stream del archivo" },
+    401: { description: "Sin token" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/documents/{documentId}/validate",
+  tags: ["Accreditations"],
+  summary: "Validar u observar documento",
+  description: "Body: status validated|observed + observation opcional/requerida.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), documentId: z.uuid() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: validateAccreditationDocumentBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizado",
+      content: {
+        "application/json": {
+          schema: validateAccreditationDocumentResponseSchema,
+        },
+      },
+    },
+    400: { description: "Estado inválido" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/accreditations/{id}/documents/{documentId}",
+  tags: ["Accreditations"],
+  summary: "Eliminar documento de la HAB",
+  description: "Soft delete + borra archivo.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), documentId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Eliminado",
+      content: {
+        "application/json": {
+          schema: deleteAccreditationDocumentResponseSchema,
+        },
+      },
+    },
+    404: { description: "No encontrado" },
   },
 });
 

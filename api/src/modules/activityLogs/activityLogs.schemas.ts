@@ -33,6 +33,7 @@ export const activityResourceSchema = z.enum([
   "contractorOrganization",
   "contractorAccreditation",
   "contractorPerson",
+  "contractorOrgDocument",
   "system",
 ]);
 

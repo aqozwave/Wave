@@ -4,6 +4,20 @@ import { authenticate } from "../../middlewares/authenticate.js";
 import { requirePermission } from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
+  createAccreditationDocumentHandler,
+  deleteAccreditationDocumentHandler,
+  downloadAccreditationDocumentHandler,
+  listAccreditationDocumentsHandler,
+  validateAccreditationDocumentHandler,
+} from "../accreditationDocuments/accreditationDocuments.controller.js";
+import {
+  createAccreditationDocumentRequestSchema,
+  deleteAccreditationDocumentRequestSchema,
+  downloadAccreditationDocumentRequestSchema,
+  listAccreditationDocumentsRequestSchema,
+  validateAccreditationDocumentRequestSchema,
+} from "../accreditationDocuments/accreditationDocuments.schemas.js";
+import {
   approveAccreditationHandler,
   createAccreditationHandler,
   getAccreditationHandler,
@@ -49,6 +63,61 @@ accreditationsRouter.post(
   ),
   validate(createAccreditationRequestSchema),
   createAccreditationHandler,
+);
+
+accreditationsRouter.get(
+  "/:id/documents",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.READ,
+  ),
+  validate(listAccreditationDocumentsRequestSchema),
+  listAccreditationDocumentsHandler,
+);
+
+accreditationsRouter.post(
+  "/:id/documents",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(createAccreditationDocumentRequestSchema),
+  createAccreditationDocumentHandler,
+);
+
+accreditationsRouter.get(
+  "/:id/documents/:documentId/download",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.READ,
+  ),
+  validate(downloadAccreditationDocumentRequestSchema),
+  downloadAccreditationDocumentHandler,
+);
+
+accreditationsRouter.post(
+  "/:id/documents/:documentId/validate",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(validateAccreditationDocumentRequestSchema),
+  validateAccreditationDocumentHandler,
+);
+
+accreditationsRouter.delete(
+  "/:id/documents/:documentId",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(deleteAccreditationDocumentRequestSchema),
+  deleteAccreditationDocumentHandler,
 );
 
 accreditationsRouter.get(

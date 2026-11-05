@@ -229,7 +229,20 @@ enum ActivityResource {
   contractorAccreditation
   /// Persona externa de una org contratista (P2 personal).
   contractorPerson
+  /// Documento de empresa en habilitación (P2 · P5).
+  contractorOrgDocument
   system
+}
+
+/**
+ * Estado de un documento de org contratista en la HAB.
+ * pending_validation → validated | observed; replace marca el anterior replaced.
+ */
+enum ContractorDocumentStatus {
+  pending_validation
+  validated
+  observed
+  replaced
 }
 
 /**
@@ -380,6 +393,10 @@ model User {
   accreditationsRequested ContractorAccreditation[] @relation("AccreditationRequestedBy")
   /// Habilitaciones revisadas (aprobar / devolver / rechazar) por este usuario.
   accreditationsReviewed  ContractorAccreditation[] @relation("AccreditationReviewedBy")
+  /// Docs de org contratista subidos por este usuario.
+  contractorOrgDocumentsUploaded ContractorOrgDocument[] @relation("ContractorOrgDocUploadedBy")
+  /// Docs de org contratista validados/observados por este usuario.
+  contractorOrgDocumentsValidated ContractorOrgDocument[] @relation("ContractorOrgDocValidatedBy")
 
   @@index([email])
   @@index([username])
@@ -511,6 +528,8 @@ model DocumentType {
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   documents     CrewMemberDocument[]
+  /// Docs de habilitación de org contratista (pack company).
+  contractorOrgDocuments ContractorOrgDocument[]
   /// Exigencias de tipos de permiso que apuntan a este tipo de documento.
   permitTypeRequirements PermitTypeRequirement[]
   /// Capacitaciones que se acreditan con este tipo de documento.
@@ -1068,6 +1087,8 @@ model ContractorOrganization {
   users               User[]
   /// Personal externo (trabajadores de la org).
   people              ContractorPerson[]
+  /// Documentos de empresa (pack habilitación).
+  documents           ContractorOrgDocument[]
 
   @@unique([businessId, rut])
   @@index([businessId])
@@ -1128,11 +1149,50 @@ model ContractorAccreditation {
   reviewedBy     User?               @relation("AccreditationReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
   createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+  /// Documentos de empresa asociados a esta solicitud HAB.
+  documents      ContractorOrgDocument[]
 
   @@index([organizationId])
   @@index([status])
   @@index([requestedAt])
   @@map("contractor_accreditations")
+}
+
+/**
+ * Documento de empresa en una habilitación (P2 · P5 pack company).
+ * Archivo en disco local (mismo patrón que CrewMemberDocument).
+ */
+model ContractorOrgDocument {
+  id              String                   @id @default(uuid()) @db.Uuid
+  organizationId  String                   @map("organization_id") @db.Uuid
+  organization    ContractorOrganization   @relation(fields: [organizationId], references: [id])
+  accreditationId String                   @map("accreditation_id") @db.Uuid
+  accreditation   ContractorAccreditation  @relation(fields: [accreditationId], references: [id])
+  documentTypeId  String                   @map("document_type_id") @db.Uuid
+  documentType    DocumentType             @relation(fields: [documentTypeId], references: [id])
+  originalName    String                   @map("original_name")
+  mimeType        String                   @map("mime_type")
+  size            Int
+  /// Relativa: /uploads/{businessId}/contractors/{orgId}/accreditations/{habId}/…
+  filePath        String                   @map("file_path")
+  status          ContractorDocumentStatus @default(pending_validation)
+  /// Nota al observar o al validar (opcional).
+  observation     String?
+  expiresAt       DateTime?                @map("expires_at") @db.Timestamptz
+  uploadedById    String?                  @map("uploaded_by_id") @db.Uuid
+  uploadedBy      User?                    @relation("ContractorOrgDocUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  validatedById   String?                  @map("validated_by_id") @db.Uuid
+  validatedBy     User?                    @relation("ContractorOrgDocValidatedBy", fields: [validatedById], references: [id], onDelete: SetNull)
+  validatedAt     DateTime?                @map("validated_at") @db.Timestamptz
+  deletedAt       DateTime?                @map("deleted_at") @db.Timestamptz
+  createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([organizationId])
+  @@index([accreditationId])
+  @@index([documentTypeId])
+  @@index([status])
+  @@map("contractor_org_documents")
 }
 
 /**

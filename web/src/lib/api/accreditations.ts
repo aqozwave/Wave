@@ -176,3 +176,160 @@ export function rejectAccreditationRequest(
 ): Promise<ContractorAccreditation> {
   return postAccreditationAction(accessToken, id, "reject", { reviewNote });
 }
+
+/** Estado de doc de empresa en HAB. */
+export type ContractorDocumentStatus =
+  | "pending_validation"
+  | "validated"
+  | "observed"
+  | "replaced";
+
+/** Tipo en checklist P5. */
+export type AccreditationPackDocumentType = {
+  id: string;
+  code: string;
+  name: string;
+  requiresExpiry: boolean;
+};
+
+/** Documento cargado (sin path). */
+export type ContractorOrgDocument = {
+  id: string;
+  organizationId: string;
+  accreditationId: string;
+  documentTypeId: string;
+  documentType: AccreditationPackDocumentType;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  status: ContractorDocumentStatus;
+  observation: string | null;
+  expiresAt: string | null;
+  uploadedById: string | null;
+  validatedById: string | null;
+  validatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Fila checklist: tipo + doc vigente. */
+export type AccreditationDocumentChecklistItem = {
+  documentType: AccreditationPackDocumentType;
+  document: ContractorOrgDocument | null;
+};
+
+/** Listado checklist. */
+export type ListAccreditationDocumentsResult = {
+  items: AccreditationDocumentChecklistItem[];
+  total: number;
+};
+
+/** Lee File → base64 puro (sin data-URL prefix). */
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** GET /accreditations/:id/documents */
+export async function listAccreditationDocumentsRequest(
+  accessToken: string,
+  accreditationId: string,
+): Promise<ListAccreditationDocumentsResult> {
+  const res = await fetch(
+    `/api/v1/accreditations/${accreditationId}/documents`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ListAccreditationDocumentsResult;
+}
+
+/** POST upload documento. */
+export async function createAccreditationDocumentRequest(
+  accessToken: string,
+  accreditationId: string,
+  data: {
+    documentTypeId: string;
+    fileName: string;
+    mimeType: string;
+    contentBase64: string;
+    expiresAt?: string | null;
+  },
+): Promise<ContractorOrgDocument> {
+  const res = await fetch(
+    `/api/v1/accreditations/${accreditationId}/documents`,
+    {
+      method: "POST",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(data),
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorOrgDocument;
+}
+
+/** POST validate/observe. */
+export async function validateAccreditationDocumentRequest(
+  accessToken: string,
+  accreditationId: string,
+  documentId: string,
+  data: { status: "validated" | "observed"; observation?: string | null },
+): Promise<ContractorOrgDocument> {
+  const res = await fetch(
+    `/api/v1/accreditations/${accreditationId}/documents/${documentId}/validate`,
+    {
+      method: "POST",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(data),
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ContractorOrgDocument;
+}
+
+/** URL de descarga (Bearer no cabe en <a>; el caller hace fetch+blob). */
+export function accreditationDocumentDownloadUrl(
+  accreditationId: string,
+  documentId: string,
+  inline = false,
+): string {
+  const q = inline ? "?inline=1" : "";
+  return `/api/v1/accreditations/${accreditationId}/documents/${documentId}/download${q}`;
+}
+
+/** Descarga autenticada → dispara save/open. */
+export async function downloadAccreditationDocumentRequest(
+  accessToken: string,
+  accreditationId: string,
+  documentId: string,
+  fileName: string,
+  inline = false,
+): Promise<void> {
+  const res = await fetch(
+    accreditationDocumentDownloadUrl(accreditationId, documentId, inline),
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    throw toApiError(res, body);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
