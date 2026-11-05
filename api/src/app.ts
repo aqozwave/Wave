@@ -11,6 +11,7 @@ import { startRateLimitCleanup } from "./lib/rateLimit.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { notFoundHandler } from "./middlewares/notFound.js";
 import { academicDegreesRouter } from "./modules/academicDegrees/academicDegrees.routes.js";
+import { accreditationsRouter } from "./modules/accreditations/accreditations.routes.js";
 import { activityLogsRouter } from "./modules/activityLogs/activityLogs.routes.js";
 import { areasRouter } from "./modules/areas/areas.routes.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
@@ -153,6 +154,7 @@ export function createApp() {
   app.use("/api/v1/permit-types", permitTypesRouter);
   app.use("/api/v1/trainings", trainingsRouter);
   app.use("/api/v1/contractors", contractorsRouter);
+  app.use("/api/v1/accreditations", accreditationsRouter);
   app.use("/api/v1/courses", coursesRouter);
   app.use("/api/v1/ports", portsRouter);
   app.use("/api/v1/muelles", muellesRouter);

@@ -29,6 +29,7 @@ import { FichaTripulante } from "./pages/Embarcados/FichaTripulante";
 import { NotificacionesVencimiento } from "./pages/Notificaciones/NotificacionesVencimiento";
 import { OutboxNotificaciones } from "./pages/Notificaciones/OutboxNotificaciones";
 import { AccreditationPacksPage } from "./pages/Prevencion/AccreditationPacksPage";
+import { AccreditationsPage } from "./pages/Prevencion/AccreditationsPage";
 import { ContractorsPage } from "./pages/Prevencion/ContractorsPage";
 import { PermitTypeDetailPage } from "./pages/Prevencion/PermitTypeDetailPage";
 import { PermitTypesPage } from "./pages/Prevencion/PermitTypesPage";
@@ -159,6 +160,10 @@ export function App() {
           <Route
             path="prevencion/contratistas"
             element={<ContractorsPage />}
+          />
+          <Route
+            path="prevencion/habilitaciones"
+            element={<AccreditationsPage />}
           />
           <Route path="empresas" element={<Empresas />} />
           <Route path="ubicaciones" element={<Ubicaciones />} />

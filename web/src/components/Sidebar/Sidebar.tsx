@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Bell,
   Building2,
+  ClipboardCheck,
   ClipboardList,
   GraduationCap,
   HardHat,
@@ -165,6 +166,12 @@ const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
     to: "/prevencion/contratistas",
     icon: Building2,
     canShow: (u) => userHasPermission(u, "contractors", "read"),
+  },
+  {
+    label: "Habilitaciones",
+    to: "/prevencion/habilitaciones",
+    icon: ClipboardCheck,
+    canShow: (u) => userHasPermission(u, "accreditations", "read"),
   },
 ];
 

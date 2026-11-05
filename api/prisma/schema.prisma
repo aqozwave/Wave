@@ -38,6 +38,20 @@ enum ContractorRole {
 }
 
 /**
+ * Estado de una habilitación de org contratista (P2 · bandeja).
+ * Flujo: pending → in_review → approved | observed | rejected.
+ * invited = reservado para invitación sin docs aún.
+ */
+enum AccreditationStatus {
+  invited
+  pending
+  in_review
+  observed
+  approved
+  rejected
+}
+
+/**
  * Criticidad del tipo de permiso (P1 · P14/P15).
  * UI: chips Activo + Criticidad alta/media/baja.
  */
@@ -211,6 +225,8 @@ enum ActivityResource {
   training
   /// Organización contratista (P2).
   contractorOrganization
+  /// Habilitación de org contratista (P2 bandeja).
+  contractorAccreditation
   system
 }
 
@@ -355,6 +371,10 @@ model User {
   announcementsCreated SystemAnnouncement[] @relation("AnnouncementCreatedBy")
   /// Activaciones/desactivaciones de submódulos Prevención hechas por este usuario.
   businessModulesEnabled BusinessModule[] @relation("BusinessModuleEnabledBy")
+  /// Habilitaciones solicitadas por este usuario.
+  accreditationsRequested ContractorAccreditation[] @relation("AccreditationRequestedBy")
+  /// Habilitaciones revisadas (aprobar / devolver / rechazar) por este usuario.
+  accreditationsReviewed  ContractorAccreditation[] @relation("AccreditationReviewedBy")
 
   @@index([email])
   @@index([username])
@@ -1036,12 +1056,46 @@ model ContractorOrganization {
   deletedAt           DateTime?      @map("deleted_at") @db.Timestamptz
   createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+  /// Habilitaciones (solicitudes de documentación / revisión).
+  accreditations      ContractorAccreditation[]
 
   @@unique([businessId, rut])
   @@index([businessId])
   @@index([active])
   @@index([name])
   @@map("contractor_organizations")
+}
+
+/**
+ * Habilitación de una organización contratista (P2 · HAB-NNNN).
+ * Sin vencimiento propio: vencen los documentos. Docs/personal llegan después.
+ */
+model ContractorAccreditation {
+  id             String              @id @default(uuid()) @db.Uuid
+  /// Código estable único global (HAB-0020).
+  code           String              @unique
+  organizationId String              @map("organization_id") @db.Uuid
+  organization   ContractorOrganization @relation(fields: [organizationId], references: [id])
+  status         AccreditationStatus @default(pending)
+  /// Mensaje al solicitar documentación (POST create).
+  message        String?
+  /// Observaciones al devolver o motivo de rechazo.
+  reviewNote     String?             @map("review_note")
+  requestedAt    DateTime?           @map("requested_at") @db.Timestamptz
+  requestedById  String?             @map("requested_by_id") @db.Uuid
+  requestedBy    User?               @relation("AccreditationRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  dueAt          DateTime?           @map("due_at") @db.Timestamptz
+  submittedAt    DateTime?           @map("submitted_at") @db.Timestamptz
+  reviewedAt     DateTime?           @map("reviewed_at") @db.Timestamptz
+  reviewedById   String?             @map("reviewed_by_id") @db.Uuid
+  reviewedBy     User?               @relation("AccreditationReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("contractor_accreditations")
 }
 
 /**

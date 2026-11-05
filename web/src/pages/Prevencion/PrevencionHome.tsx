@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import {
   ArrowRight,
   Building2,
+  ClipboardCheck,
   ClipboardList,
   FileStack,
   GraduationCap,
@@ -75,6 +76,13 @@ const HUB_GROUPS: HubGroup[] = [
         icon: Building2,
         to: "/prevencion/contratistas",
         canShow: (u) => userHasPermission(u, "contractors", "read"),
+      },
+      {
+        label: "Habilitaciones",
+        legend: "Solicitar docs, revisar y aprobar (HAB-NNNN).",
+        icon: ClipboardCheck,
+        to: "/prevencion/habilitaciones",
+        canShow: (u) => userHasPermission(u, "accreditations", "read"),
       },
       {
         label: "Permisos de trabajo",

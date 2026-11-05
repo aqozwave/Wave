@@ -1,0 +1,43 @@
+meta {
+  name: Get accreditations
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/accreditations?page=1&limit=20
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Bandeja de habilitaciones (HAB-NNNN). Guarda accreditationId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && body && Array.isArray(body.items) && body.items[0]) {
+    bru.setEnvVar("accreditationId", body.items[0].id);
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

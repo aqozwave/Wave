@@ -167,6 +167,14 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     canShow: (u) => userHasPermission(u, "contractors", "read"),
   },
   {
+    id: "prevencion-habilitaciones",
+    label: "Habilitaciones",
+    group: "Prevención",
+    to: "/prevencion/habilitaciones",
+    keywords: ["HAB", "acreditación", "docs", "aprobar"],
+    canShow: (u) => userHasPermission(u, "accreditations", "read"),
+  },
+  {
     id: "notificaciones",
     label: "Notificaciones de vencimiento",
     group: "Cursos",

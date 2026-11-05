@@ -252,6 +252,14 @@ import {
   updateContractorResponseSchema,
 } from "../modules/contractors/contractors.schemas.js";
 import {
+  accreditationReviewNoteBodySchema,
+  createAccreditationBodySchema,
+  createAccreditationResponseSchema,
+  getAccreditationResponseSchema,
+  listAccreditationsQuerySchema,
+  listAccreditationsResponseSchema,
+} from "../modules/accreditations/accreditations.schemas.js";
+import {
   expiryNotificationSettingsSchema,
   updateExpiryNotificationSettingsBodySchema,
 } from "../modules/notificationSettings/notificationSettings.schemas.js";
@@ -2259,6 +2267,165 @@ registry.registerPath({
     401: { description: "Sin token" },
     403: { description: "Sin permiso" },
     404: { description: "No encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/accreditations",
+  tags: ["Accreditations"],
+  summary: "Listar habilitaciones de contratistas",
+  description:
+    "Bandeja P2 (HAB-NNNN). Filtros status/organizationId/businessId. Permiso accreditations.read.",
+  security: [{ bearerAuth: [] }],
+  request: { query: listAccreditationsQuerySchema },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listAccreditationsResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations",
+  tags: ["Accreditations"],
+  summary: "Solicitar documentación (crear habilitación)",
+  description:
+    "Crea HAB en pending. Body: organizationId, dueAt?, message?. Una sola abierta por org.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createAccreditationBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creada",
+      content: {
+        "application/json": { schema: createAccreditationResponseSchema },
+      },
+    },
+    400: { description: "Org inválida" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o MODULE_DISABLED" },
+    409: { description: "Ya hay habilitación abierta" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/accreditations/{id}",
+  tags: ["Accreditations"],
+  summary: "Detalle de habilitación",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Habilitación",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/submit",
+  tags: ["Accreditations"],
+  summary: "Enviar a revisión",
+  description: "pending|observed → in_review.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Actualizada",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    409: { description: "Transición inválida" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/approve",
+  tags: ["Accreditations"],
+  summary: "Aprobar habilitación",
+  description: "in_review → approved.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Aprobada",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    409: { description: "Transición inválida" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/return",
+  tags: ["Accreditations"],
+  summary: "Devolver con observaciones",
+  description: "in_review → observed. Body: reviewNote.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: accreditationReviewNoteBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Devuelta",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    409: { description: "Transición inválida" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/reject",
+  tags: ["Accreditations"],
+  summary: "Rechazar habilitación",
+  description: "in_review → rejected. Body: reviewNote (motivo).",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: accreditationReviewNoteBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Rechazada",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    409: { description: "Transición inválida" },
   },
 });
 

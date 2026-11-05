@@ -1,0 +1,37 @@
+meta {
+  name: Post accreditation submit
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/accreditations/{{accreditationId}}/submit
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  pending|observed → in_review.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("accreditationId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y accreditationId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq in_review
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
