@@ -38,8 +38,8 @@ import type {
   UpdateMyContractorOrganizationBody,
 } from "./contractors.schemas.js";
 
-/** Actor mínimo para reglas de tenant. */
-type Actor = Pick<AuthUser, "internalRol" | "businessId">;
+/** Actor mínimo para reglas de tenant (+ id para invitedBy). */
+type Actor = Pick<AuthUser, "id" | "internalRol" | "businessId">;
 
 /** HAB más reciente incluida en lecturas de org. */
 type LatestAccreditationRow = {
@@ -485,7 +485,14 @@ export async function deleteContractor(
   return toContractorResponse(updated);
 }
 
-/** Serializa usuario de org (P9b). */
+/** Include de quien invitó (listado / invite). */
+const invitedByInclude = {
+  invitedBy: {
+    select: { id: true, firstName: true, lastName: true },
+  },
+} as const;
+
+/** Serializa usuario de org (P9b) con Invitado por. */
 function toContractorUserResponse(row: {
   id: string;
   email: string;
@@ -499,6 +506,7 @@ function toContractorUserResponse(row: {
   lastLoginAt: Date | null;
   accessExpiresAt: Date | null;
   createdAt: Date;
+  invitedBy: { id: string; firstName: string; lastName: string } | null;
 }): ContractorUserResponse {
   return {
     id: row.id,
@@ -516,6 +524,13 @@ function toContractorUserResponse(row: {
       ? row.accessExpiresAt.toISOString()
       : null,
     createdAt: row.createdAt.toISOString(),
+    invitedBy: row.invitedBy
+      ? {
+          id: row.invitedBy.id,
+          firstName: row.invitedBy.firstName,
+          lastName: row.invitedBy.lastName,
+        }
+      : null,
   };
 }
 
@@ -605,6 +620,7 @@ export async function listContractorUsers(
   const [rows, total] = await Promise.all([
     prisma.user.findMany({
       where,
+      include: invitedByInclude,
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
       skip,
       take: query.limit,
@@ -698,6 +714,7 @@ export async function inviteContractorUser(
         businessId: existing.businessId ?? org.businessId,
         firstName: body.firstName,
         lastName: body.lastName,
+        invitedById: actor.id,
         ...(accessExpiresAt !== undefined
           ? { accessExpiresAt }
           : {}),
@@ -706,6 +723,7 @@ export async function inviteContractorUser(
           ? {}
           : { roleId: role.id, internalRol: role.key }),
       },
+      include: invitedByInclude,
     });
 
     if (!updated.confirmed) {
@@ -746,10 +764,12 @@ export async function inviteContractorUser(
         roleId: role.id,
         businessId: org.businessId,
         organizationId: org.id,
+        invitedById: actor.id,
         ...(accessExpiresAt !== undefined
           ? { accessExpiresAt }
           : {}),
       },
+      include: invitedByInclude,
     });
 
     await requestPasswordReset(created.email);

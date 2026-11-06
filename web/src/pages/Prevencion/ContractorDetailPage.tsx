@@ -1,21 +1,33 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
   type FormEvent,
 } from "react";
-import { Building2, Pencil } from "lucide-react";
+import { Building2, ClipboardCheck, Pencil, Plus } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router";
 import { Button } from "../../components/Button/Button";
+import {
+  DataTableCard,
+  DataTableOutlineButton,
+  DataTableSearch,
+} from "../../components/DataTableCard/DataTableCard";
 import { Modal } from "../../components/Modal/Modal";
-import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
+import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
+import {
+  TablePagination,
+  useClientTablePagination,
+} from "../../components/TablePagination/TablePagination";
 import { TextField } from "../../components/TextField/TextField";
 import { Toggle } from "../../components/Toggle/Toggle";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { useToast } from "../../components/Toast/ToastProvider";
+import { downloadXls } from "../../lib/exportXls";
 import {
+  createAccreditationRequest,
   listAccreditationsRequest,
   type AccreditationStatus,
   type ContractorAccreditation,
@@ -46,10 +58,90 @@ function displayName(value: string): string {
     .join(" ");
 }
 
-/** Etiqueta role. */
-function roleLabel(role: ContractorRole): string {
+/** Iniciales avatar (P9c). */
+function orgInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
+
+/** Meta header P9c. */
+function roleMeta(role: ContractorRole): string {
+  return role === "permanent"
+    ? "Contratista permanente"
+    : "Contratista ocasional";
+}
+
+/** Rol corto en grilla Datos. */
+function roleShort(role: ContractorRole): string {
   return role === "permanent" ? "Permanente" : "Ocasional";
 }
+
+/** Fecha dd-mm-yyyy. */
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}-${mm}-${d.getFullYear()}`;
+}
+
+/** Chip “Habilitada desde …” si HAB aprobada. */
+function habilitadaChip(org: ContractorOrganization): string | null {
+  const hab = org.latestAccreditation;
+  if (!hab || hab.status !== "approved") return null;
+  const from = formatDate(
+    hab.reviewedAt ?? hab.submittedAt ?? hab.requestedAt,
+  );
+  if (from === "—") return "Habilitada";
+  return `Habilitada desde ${from}`;
+}
+
+/** Iniciales de usuario (celda Persona P9). */
+function userInitials(firstName: string, lastName: string): string {
+  const a = firstName.trim()[0] ?? "";
+  const b = lastName.trim()[0] ?? "";
+  const s = `${a}${b}`.toUpperCase();
+  return s || "?";
+}
+
+/** Rol visible en tabla Usuarios. */
+function userRoleLabel(internalRol: string): string {
+  if (!internalRol) return "—";
+  if (internalRol === "contratista") return "Contratista";
+  return displayName(internalRol.replace(/_/g, " "));
+}
+
+/** Último acceso relativo corto (hoy / ayer / fecha). */
+function formatLastAccess(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startThat = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round(
+    (startToday.getTime() - startThat.getTime()) / 86_400_000,
+  );
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const time = `${hh}:${mm}`;
+  if (diffDays === 0) return `hoy ${time}`;
+  if (diffDays === 1) return `ayer ${time}`;
+  return `${formatDate(iso)} ${time}`;
+}
+
+/** Filtro select compacto toolbar. */
+const filterSelectClass =
+  "h-8 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-2.5 text-[12px] text-[var(--color-nachipa-body)] outline-none";
+
+/** Filtro de estado en tab Usuarios (P9). */
+type UserStatusFilter = "" | "active" | "invited" | "inactive";
+
+/** Filtro estado tab Habilitación (vacío = todos). */
+type HabStatusFilter = "" | AccreditationStatus;
 
 /** Etiqueta estado HAB. */
 function statusLabel(status: AccreditationStatus): string {
@@ -91,8 +183,13 @@ function statusTone(
   }
 }
 
-/** Tabs de la ficha (P9 + personal). */
-type TabId = "datos" | "habilitaciones" | "personal" | "usuarios";
+/** Tabs P9c (+ Personal cableado; Permisos placeholder). */
+type TabId =
+  | "datos"
+  | "usuarios"
+  | "habilitaciones"
+  | "personal"
+  | "permisos";
 
 /** Form alta/edición de persona. */
 type PersonForm = {
@@ -131,20 +228,6 @@ const selectClass =
 const outlineBtnClass =
   "inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60";
 
-/** Fila de dato en la ficha. */
-function DataRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5 border-b border-[var(--color-tremor-border)] py-2.5 last:border-b-0 sm:flex-row sm:gap-4">
-      <dt className="w-44 shrink-0 text-[12px] font-medium text-[var(--color-nachipa-secondary)]">
-        {label}
-      </dt>
-      <dd className="m-0 min-w-0 text-[13px] text-[var(--color-nachipa-body)]">
-        {value || "—"}
-      </dd>
-    </div>
-  );
-}
-
 /** Formulario de invitación (P9b). */
 type InviteForm = {
   email: string;
@@ -175,6 +258,7 @@ export function ContractorDetailPage() {
   const canDeactivatePeople =
     canManage && userHasPermission(user, "contractors", "deactivate");
   const canReadHab = userHasPermission(user, "accreditations", "read");
+  const canCreateHab = userHasPermission(user, "accreditations", "create");
 
   const [org, setOrg] = useState<ContractorOrganization | null>(null);
   const [habs, setHabs] = useState<ContractorAccreditation[]>([]);
@@ -212,6 +296,158 @@ export function ContractorDetailPage() {
   const [personSaving, setPersonSaving] = useState(false);
   const [pendingDeactivatePerson, setPendingDeactivatePerson] =
     useState<ContractorPerson | null>(null);
+
+  /** Toolbar tab Usuarios (P9). */
+  const [userSearch, setUserSearch] = useState("");
+  const [userStatusFilter, setUserStatusFilter] =
+    useState<UserStatusFilter>("");
+
+  /** Toolbar tab Habilitación (DataTable como Usuarios / bandeja). */
+  const [habSearch, setHabSearch] = useState("");
+  const [habStatusFilter, setHabStatusFilter] = useState<HabStatusFilter>("");
+  const [habRequestOpen, setHabRequestOpen] = useState(false);
+  const [habMessage, setHabMessage] = useState(
+    "Favor subir la documentación del pack empresa para habilitación.",
+  );
+  const [habRequesting, setHabRequesting] = useState(false);
+
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    return orgUsers.filter((u) => {
+      if (userStatusFilter === "active" && (!u.state || u.invitePending)) {
+        return false;
+      }
+      if (userStatusFilter === "invited" && !u.invitePending) return false;
+      if (userStatusFilter === "inactive" && u.state) return false;
+      if (!q) return true;
+      const hay = `${u.firstName} ${u.lastName} ${u.email} ${u.run}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [orgUsers, userSearch, userStatusFilter]);
+
+  const {
+    pageItems: userPageItems,
+    page: userPage,
+    setPage: setUserPage,
+    pageSize: userPageSize,
+    setPageSize: setUserPageSize,
+    pageCount: userPageCount,
+    total: userTotal,
+  } = useClientTablePagination(filteredUsers);
+
+  const filteredHabs = useMemo(() => {
+    const q = habSearch.trim().toLowerCase();
+    return habs.filter((h) => {
+      if (habStatusFilter && h.status !== habStatusFilter) return false;
+      if (!q) return true;
+      const hay = `${h.code} ${h.message ?? ""} ${h.reviewNote ?? ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [habs, habSearch, habStatusFilter]);
+
+  const {
+    pageItems: habPageItems,
+    page: habPage,
+    setPage: setHabPage,
+    pageSize: habPageSize,
+    setPageSize: setHabPageSize,
+    pageCount: habPageCount,
+    total: habTotal,
+  } = useClientTablePagination(filteredHabs);
+
+  /** Exporta XLS del listado filtrado de usuarios. */
+  function onExportUsers() {
+    if (filteredUsers.length === 0) {
+      showToast("No hay filas para exportar.", "info");
+      return;
+    }
+    downloadXls(
+      filteredUsers,
+      [
+        {
+          header: "Usuario",
+          value: (u) => displayName(`${u.firstName} ${u.lastName}`),
+        },
+        { header: "RUN", value: (u) => u.run },
+        { header: "Correo", value: (u) => u.email },
+        { header: "Rol", value: (u) => userRoleLabel(u.internalRol) },
+        {
+          header: "Último acceso",
+          value: (u) => formatLastAccess(u.lastLoginAt),
+        },
+        {
+          header: "Invitado por",
+          value: (u) =>
+            u.invitedBy
+              ? displayName(
+                  `${u.invitedBy.firstName} ${u.invitedBy.lastName}`,
+                )
+              : "",
+        },
+        {
+          header: "Estado",
+          value: (u) =>
+            !u.state ? "Inactivo" : u.invitePending ? "Invitado" : "Activo",
+        },
+      ],
+      `usuarios-${org?.rut ?? "org"}`,
+    );
+  }
+
+  /** Abre modal solicitar documentación (org de la ficha). */
+  function openHabRequest() {
+    setHabMessage(
+      "Favor subir la documentación del pack empresa para habilitación.",
+    );
+    setHabRequestOpen(true);
+  }
+
+  /** POST /accreditations para esta organización. */
+  async function onRequestHab(e: FormEvent) {
+    e.preventDefault();
+    if (!accessToken || !org || habRequesting || !canCreateHab) return;
+    setHabRequesting(true);
+    try {
+      await createAccreditationRequest(accessToken, {
+        organizationId: org.id,
+        message: habMessage.trim() || null,
+        dueAt: null,
+      });
+      showToast("Solicitud de documentación creada.", "success");
+      setHabRequestOpen(false);
+      setTab("habilitaciones");
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo solicitar.",
+        "danger",
+      );
+    } finally {
+      setHabRequesting(false);
+    }
+  }
+
+  /** Exporta HABs filtradas de la ficha. */
+  function onExportHabs() {
+    if (filteredHabs.length === 0) {
+      showToast("No hay filas para exportar.", "info");
+      return;
+    }
+    downloadXls(
+      filteredHabs,
+      [
+        { header: "Código", value: (h) => h.code },
+        { header: "Estado", value: (h) => statusLabel(h.status) },
+        {
+          header: "Solicitada",
+          value: (h) => formatDate(h.requestedAt),
+        },
+        { header: "Plazo", value: (h) => formatDate(h.dueAt) },
+        { header: "Mensaje", value: (h) => h.message ?? "" },
+      ],
+      `habilitaciones-${org?.rut ?? "org"}`,
+    );
+  }
 
   const load = useCallback(async () => {
     if (!accessToken || !id || !canRead) return;
@@ -510,11 +746,13 @@ export function ContractorDetailPage() {
     );
   }
 
-  const tabs: { id: TabId; label: string }[] = [
+  const habChip = habilitadaChip(org);
+  const tabs: Array<{ id: TabId; label: string; count?: number }> = [
     { id: "datos", label: "Datos" },
-    { id: "habilitaciones", label: "Habilitaciones" },
-    { id: "personal", label: "Personal" },
-    { id: "usuarios", label: "Usuarios" },
+    { id: "usuarios", label: "Usuarios", count: orgUsers.length },
+    { id: "habilitaciones", label: "Habilitación", count: habs.length },
+    { id: "personal", label: "Personal", count: people.length },
+    { id: "permisos", label: "Permisos de trabajo" },
   ];
 
   return (
@@ -525,26 +763,98 @@ export function ContractorDetailPage() {
         actions={<UserMenu />}
       />
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
-        <PageHeader
-          crumbs={[
-            { label: "Prevención", to: "/prevencion" },
-            { label: "Contratistas", to: "/prevencion/contratistas" },
-            { label: displayName(org.name) },
-          ]}
-          title={displayName(org.name)}
-          description={`${org.rut} · ${roleLabel(org.role)}`}
-          actions={
-            canManage && tab === "datos" ? (
-              <Button
+        {/* Breadcrumb (el título vive en el header P9c abajo). */}
+        <nav
+          aria-label="Ruta"
+          className="flex flex-wrap items-center gap-1.5 text-[12px] leading-4 text-[var(--color-nachipa-muted)]"
+        >
+          <Link
+            to="/prevencion"
+            className="hover:text-[var(--color-nachipa-body)] hover:underline"
+          >
+            Prevención
+          </Link>
+          <span aria-hidden className="text-[var(--color-nachipa-placeholder)]">
+            /
+          </span>
+          <Link
+            to="/prevencion/contratistas"
+            className="hover:text-[var(--color-nachipa-body)] hover:underline"
+          >
+            Contratistas
+          </Link>
+          <span aria-hidden className="text-[var(--color-nachipa-placeholder)]">
+            /
+          </span>
+          <span
+            className="text-[var(--color-nachipa-secondary)]"
+            aria-current="page"
+          >
+            {displayName(org.name)}
+          </span>
+        </nav>
+
+        {/* Header P9c: avatar + meta + chips + acciones. */}
+        <div className="flex flex-wrap items-start justify-between gap-4 rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white px-5 py-4">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <span
+              className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-nachipa-primary)_18%,white)] text-[14px] font-semibold text-[var(--color-nachipa-primary)]"
+              aria-hidden
+            >
+              {orgInitials(org.name)}
+            </span>
+            <div className="min-w-0">
+              <h1 className="m-0 text-[20px] font-semibold leading-tight text-[var(--color-nachipa-title)]">
+                {displayName(org.name)}
+              </h1>
+              <p className="mt-1 m-0 text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
+                {[
+                  `RUT ${org.rut}`,
+                  roleMeta(org.role),
+                  `${org.personCount} ${org.personCount === 1 ? "persona" : "personas"}`,
+                  org.contactEmail?.trim() || null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {habChip ? (
+                  <StatusChip tone="success">{habChip}</StatusChip>
+                ) : (
+                  <StatusChip tone={org.active ? "success" : "neutral"}>
+                    {org.active ? "Activa" : "Inactiva"}
+                  </StatusChip>
+                )}
+                <StatusChip tone="neutral">
+                  {orgUsers.length}{" "}
+                  {orgUsers.length === 1 ? "usuario" : "usuarios"}
+                </StatusChip>
+              </div>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {canManage ? (
+              <button
                 type="button"
-                size="medium"
-                className="!w-auto"
+                className={`${outlineBtnClass} gap-1.5`}
                 onClick={openEdit}
               >
                 <Pencil className="size-4" strokeWidth={1.5} aria-hidden />
                 Editar datos
+              </button>
+            ) : null}
+            {canInvite ? (
+              <Button
+                type="button"
+                size="medium"
+                className="!w-auto"
+                onClick={openInvite}
+              >
+                <Plus className="size-4" strokeWidth={1.5} aria-hidden />
+                Invitar usuario
               </Button>
-            ) : canCreatePeople && tab === "personal" ? (
+            ) : null}
+            {canCreatePeople && tab === "personal" ? (
               <Button
                 type="button"
                 size="medium"
@@ -553,139 +863,253 @@ export function ContractorDetailPage() {
               >
                 Agregar persona
               </Button>
-            ) : canInvite && tab === "usuarios" ? (
-              <Button
-                type="button"
-                size="medium"
-                className="!w-auto"
-                onClick={openInvite}
-              >
-                Invitar usuario
-              </Button>
-            ) : null
-          }
-        />
-
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusChip tone={org.active ? "success" : "neutral"}>
-            {org.active ? "Activa" : "Inactiva"}
-          </StatusChip>
-          <StatusChip tone={org.role === "permanent" ? "info" : "neutral"}>
-            {roleLabel(org.role)}
-          </StatusChip>
-          {org.specialty ? (
-            <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
-              {org.specialty}
-            </span>
-          ) : null}
+            ) : null}
+          </div>
         </div>
 
-        <div
-          role="tablist"
-          className="flex gap-1 border-b border-[var(--color-tremor-border)]"
-        >
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              className={[
-                "px-3 py-2 text-[13px] font-medium",
-                tab === t.id
-                  ? "border-b-2 border-[var(--color-nachipa-primary)] text-[var(--color-nachipa-title)]"
-                  : "text-[var(--color-nachipa-secondary)] hover:text-[var(--color-nachipa-title)]",
-              ].join(" ")}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
+        {/* Tabs pill P9c. */}
+        <div role="tablist" className="flex flex-wrap gap-2">
+          {tabs.map((t) => {
+            const selected = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                className={[
+                  "inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-full)] px-3 text-[13px] font-medium transition",
+                  selected
+                    ? "bg-[var(--color-nachipa-primary)] text-white"
+                    : "bg-[var(--color-nachipa-bg-page)] text-[var(--color-nachipa-secondary)] hover:text-[var(--color-nachipa-title)]",
+                ].join(" ")}
+                onClick={() => setTab(t.id)}
+              >
+                {t.label}
+                {typeof t.count === "number" ? (
+                  <span
+                    className={[
+                      "inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums",
+                      selected
+                        ? "bg-white/20 text-white"
+                        : "bg-white text-[var(--color-nachipa-secondary)]",
+                    ].join(" ")}
+                  >
+                    {t.count}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
 
         {tab === "datos" ? (
-          <dl className="m-0 max-w-2xl rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white px-4 py-1">
-            <DataRow label="RUT" value={org.rut} />
-            <DataRow label="Razón social" value={displayName(org.name)} />
-            <DataRow label="Relación" value={roleLabel(org.role)} />
-            <DataRow label="Especialidad" value={org.specialty ?? ""} />
-            <DataRow label="Contacto" value={org.contactName ?? ""} />
-            <DataRow label="Email" value={org.contactEmail ?? ""} />
-            <DataRow label="Teléfono" value={org.contactPhone ?? ""} />
-            <DataRow
-              label="Rep. legal"
-              value={org.legalRepresentative ?? ""}
-            />
-            <DataRow label="Dirección" value={org.address ?? ""} />
-            <DataRow label="Mutual" value={org.mutual ?? ""} />
-            <DataRow label="Supervisor" value={org.supervisorName ?? ""} />
-            <DataRow
-              label="Email supervisor"
-              value={org.supervisorEmail ?? ""}
-            />
-            <DataRow
-              label="Prevencionista"
-              value={org.prevencionistName ?? ""}
-            />
-            <DataRow
-              label="Email prevencionista"
-              value={org.prevencionistEmail ?? ""}
-            />
-            <DataRow label="Subcontratos" value={org.subcontractors ?? ""} />
-            <DataRow
-              label="Descripción trabajo"
-              value={org.workDescription ?? ""}
-            />
-          </dl>
+          <section className="rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-5">
+            <header className="mb-4">
+              <h2 className="m-0 text-[15px] font-semibold text-[var(--color-nachipa-title)]">
+                Datos de la organización
+              </h2>
+              <p className="mt-1 m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
+                Los declaró la empresa y los revisó Prevención.
+              </p>
+            </header>
+            <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+              <TextField
+                label="Razón social"
+                value={displayName(org.name)}
+                readOnly
+              />
+              <TextField label="RUT" value={org.rut} readOnly />
+              <TextField label="Rol" value={roleShort(org.role)} readOnly />
+              <TextField
+                label="Especialidad"
+                value={org.specialty?.trim() || "—"}
+                readOnly
+              />
+              <TextField
+                label="Contacto"
+                value={org.contactName?.trim() || "—"}
+                readOnly
+              />
+              <TextField
+                label="Correo de contacto"
+                value={org.contactEmail?.trim() || "—"}
+                readOnly
+              />
+              <TextField
+                label="Dirección"
+                value={org.address?.trim() || "—"}
+                readOnly
+              />
+              <TextField
+                label="Mutualidad"
+                value={org.mutual?.trim() || "—"}
+                readOnly
+              />
+              <TextField
+                label="Habilitada desde"
+                value={
+                  habChip
+                    ? formatDate(
+                        org.latestAccreditation?.reviewedAt ??
+                          org.latestAccreditation?.submittedAt ??
+                          org.latestAccreditation?.requestedAt,
+                      )
+                    : "—"
+                }
+                readOnly
+              />
+              <TextField
+                label="Estado"
+                value={
+                  org.latestAccreditation?.status === "approved"
+                    ? "Habilitada"
+                    : org.active
+                      ? "Activa"
+                      : "Inactiva"
+                }
+                readOnly
+              />
+            </div>
+          </section>
         ) : null}
 
         {tab === "habilitaciones" ? (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
-                Habilitaciones de esta organización.
-              </p>
-              {canReadHab ? (
-                <Link
-                  to="/prevencion/habilitaciones"
-                  className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
-                >
-                  Ir a bandeja
-                </Link>
-              ) : null}
-            </div>
-            {!canReadHab ? (
-              <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
-                Sin permiso accreditations.read.
-              </p>
-            ) : habs.length === 0 ? (
-              <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
-                Todavía no hay HAB. Solicitala desde Habilitaciones.
-              </p>
-            ) : (
-              <ul className="m-0 list-none divide-y divide-[var(--color-tremor-border)] rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-0">
-                {habs.map((h) => (
-                  <li
-                    key={h.id}
-                    className="flex items-center gap-3 px-4 py-3"
+          !canReadHab ? (
+            <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+              Sin permiso accreditations.read.
+            </p>
+          ) : (
+            <DataTableCard
+              toolbar={
+                <div className="flex w-full flex-wrap items-center gap-2">
+                  <div className="min-w-[160px] flex-1">
+                    <DataTableSearch
+                      value={habSearch}
+                      onChange={setHabSearch}
+                      placeholder="Buscar HAB o mensaje…"
+                    />
+                  </div>
+                  <select
+                    className={filterSelectClass}
+                    value={habStatusFilter}
+                    aria-label="Filtro estado HAB"
+                    onChange={(e) =>
+                      setHabStatusFilter(e.target.value as HabStatusFilter)
+                    }
                   >
-                    <Link
-                      to={`/prevencion/habilitaciones/${h.id}`}
-                      className="w-24 shrink-0 font-semibold tabular-nums text-[var(--color-nachipa-primary)] hover:underline"
+                    <option value="">Estado: todos</option>
+                    <option value="invited">Invitada</option>
+                    <option value="pending">Pendiente</option>
+                    <option value="in_review">En revisión</option>
+                    <option value="observed">Observada</option>
+                    <option value="approved">Aprobada</option>
+                    <option value="rejected">Rechazada</option>
+                  </select>
+                  <DataTableOutlineButton
+                    onClick={onExportHabs}
+                    disabled={filteredHabs.length === 0}
+                  >
+                    Exportar
+                  </DataTableOutlineButton>
+                  <Link
+                    to="/prevencion/habilitaciones"
+                    className={`${outlineBtnClass} !h-8 !text-[12px]`}
+                  >
+                    Ir a bandeja
+                  </Link>
+                  {canCreateHab ? (
+                    <Button
+                      type="button"
+                      size="medium"
+                      className="!h-8 !w-auto !px-3 !text-[12px]"
+                      onClick={openHabRequest}
                     >
-                      {h.code}
-                    </Link>
-                    <StatusChip tone={statusTone(h.status)}>
-                      {statusLabel(h.status)}
-                    </StatusChip>
-                    <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--color-nachipa-secondary)]">
-                      {h.message ?? "—"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+                      <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
+                      Solicitar documentación
+                    </Button>
+                  ) : null}
+                </div>
+              }
+              footer={
+                <TablePagination
+                  totalLabel={`${habTotal} ${habTotal === 1 ? "habilitación" : "habilitaciones"}`}
+                  page={habPage}
+                  pageCount={habPageCount}
+                  pageSize={habPageSize}
+                  onPageChange={setHabPage}
+                  onPageSizeChange={setHabPageSize}
+                />
+              }
+            >
+              {habs.length === 0 ? (
+                <p className="m-0 px-1 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
+                  Todavía no hay HAB.
+                  {canCreateHab ? " Usá «Solicitar documentación»." : ""}
+                </p>
+              ) : habPageItems.length === 0 ? (
+                <p className="m-0 px-1 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
+                  Ninguna habilitación coincide con el filtro.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] border-collapse text-left text-[13px]">
+                    <thead>
+                      <tr>
+                        <TableHeaderCell rounded="left">Código</TableHeaderCell>
+                        <TableHeaderCell>Estado</TableHeaderCell>
+                        <TableHeaderCell>Solicitada</TableHeaderCell>
+                        <TableHeaderCell>Plazo</TableHeaderCell>
+                        <TableHeaderCell>Mensaje</TableHeaderCell>
+                        <TableHeaderCell rounded="right" align="right">
+                          Acciones
+                        </TableHeaderCell>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {habPageItems.map((h) => (
+                        <tr
+                          key={h.id}
+                          className="border-t border-[var(--color-tremor-border)]"
+                        >
+                          <td className="px-3 py-2.5 font-semibold tabular-nums text-[var(--color-nachipa-title)]">
+                            <Link
+                              to={`/prevencion/habilitaciones/${h.id}`}
+                              className="text-[var(--color-nachipa-primary)] hover:underline"
+                            >
+                              {h.code}
+                            </Link>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <StatusChip tone={statusTone(h.status)}>
+                              {statusLabel(h.status)}
+                            </StatusChip>
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
+                            {formatDate(h.requestedAt)}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
+                            {formatDate(h.dueAt)}
+                          </td>
+                          <td className="max-w-[220px] truncate px-3 py-2.5 text-[var(--color-nachipa-secondary)]">
+                            {h.message ?? "—"}
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <Link
+                              to={`/prevencion/habilitaciones/${h.id}`}
+                              className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                            >
+                              Ver
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </DataTableCard>
+          )
         ) : null}
 
         {tab === "personal" ? (
@@ -766,40 +1190,104 @@ export function ContractorDetailPage() {
         ) : null}
 
         {tab === "usuarios" ? (
-          <div className="flex flex-col gap-3">
-            <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
-              Usuarios invitados al portal de esta organización.
-            </p>
+          <DataTableCard
+            toolbar={
+              <div className="flex w-full flex-wrap items-center gap-2">
+                <div className="min-w-[200px] flex-1">
+                  <DataTableSearch
+                    value={userSearch}
+                    onChange={setUserSearch}
+                    placeholder="Buscar usuario…"
+                  />
+                </div>
+                <select
+                  className={filterSelectClass}
+                  value={userStatusFilter}
+                  aria-label="Filtro estado"
+                  onChange={(e) =>
+                    setUserStatusFilter(e.target.value as UserStatusFilter)
+                  }
+                >
+                  <option value="">Estado: todos</option>
+                  <option value="active">Activo</option>
+                  <option value="invited">Invitado</option>
+                  <option value="inactive">Inactivo</option>
+                </select>
+                <DataTableOutlineButton
+                  onClick={onExportUsers}
+                  disabled={filteredUsers.length === 0}
+                >
+                  Exportar
+                </DataTableOutlineButton>
+              </div>
+            }
+            footer={
+              <TablePagination
+                totalLabel={`${userTotal} ${userTotal === 1 ? "usuario" : "usuarios"}`}
+                page={userPage}
+                pageCount={userPageCount}
+                pageSize={userPageSize}
+                onPageChange={setUserPage}
+                onPageSizeChange={setUserPageSize}
+              />
+            }
+          >
             {orgUsers.length === 0 ? (
-              <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+              <p className="m-0 px-1 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
                 Todavía no hay invitados.
                 {canInvite ? " Usá «Invitar usuario»." : ""}
               </p>
+            ) : userPageItems.length === 0 ? (
+              <p className="m-0 px-1 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
+                Ningún usuario coincide con el filtro.
+              </p>
             ) : (
-              <div className="overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white">
-                <table className="w-full min-w-[640px] border-collapse text-left text-[13px]">
-                  <thead className="bg-[var(--color-table-head-bg,#f8f9fb)] text-[12px] text-[var(--color-nachipa-secondary)]">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[880px] border-collapse text-left text-[13px]">
+                  <thead>
                     <tr>
-                      <th className="px-3 py-2.5 font-medium">Nombre</th>
-                      <th className="px-3 py-2.5 font-medium">RUN</th>
-                      <th className="px-3 py-2.5 font-medium">Email</th>
-                      <th className="px-3 py-2.5 font-medium">Estado</th>
+                      <TableHeaderCell rounded="left">Usuario</TableHeaderCell>
+                      <TableHeaderCell>Correo</TableHeaderCell>
+                      <TableHeaderCell>Rol</TableHeaderCell>
+                      <TableHeaderCell>Último acceso</TableHeaderCell>
+                      <TableHeaderCell>Invitado por</TableHeaderCell>
+                      <TableHeaderCell rounded="right">Estado</TableHeaderCell>
                     </tr>
                   </thead>
                   <tbody>
-                    {orgUsers.map((u) => (
+                    {userPageItems.map((u) => (
                       <tr
                         key={u.id}
                         className="border-t border-[var(--color-tremor-border)]"
                       >
-                        <td className="px-3 py-2.5 text-[var(--color-nachipa-title)]">
-                          {displayName(`${u.firstName} ${u.lastName}`)}
-                        </td>
-                        <td className="px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
-                          {u.run}
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-nachipa-primary)_16%,white)] text-[11px] font-semibold text-[var(--color-nachipa-primary)]"
+                              aria-hidden
+                            >
+                              {userInitials(u.firstName, u.lastName)}
+                            </span>
+                            <span className="font-medium text-[var(--color-nachipa-title)]">
+                              {displayName(`${u.firstName} ${u.lastName}`)}
+                            </span>
+                          </div>
                         </td>
                         <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
                           {u.email}
+                        </td>
+                        <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                          {userRoleLabel(u.internalRol)}
+                        </td>
+                        <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                          {formatLastAccess(u.lastLoginAt)}
+                        </td>
+                        <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                          {u.invitedBy
+                            ? displayName(
+                                `${u.invitedBy.firstName} ${u.invitedBy.lastName}`,
+                              )
+                            : "—"}
                         </td>
                         <td className="px-3 py-2.5">
                           <StatusChip
@@ -814,7 +1302,7 @@ export function ContractorDetailPage() {
                             {!u.state
                               ? "Inactivo"
                               : u.invitePending
-                                ? "Invitación pendiente"
+                                ? "Invitado"
                                 : "Activo"}
                           </StatusChip>
                         </td>
@@ -824,7 +1312,13 @@ export function ContractorDetailPage() {
                 </table>
               </div>
             )}
-          </div>
+          </DataTableCard>
+        ) : null}
+
+        {tab === "permisos" ? (
+          <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+            Permisos de trabajo: UI pendiente (sin API en este paso).
+          </p>
         ) : null}
       </div>
 
@@ -1143,6 +1637,57 @@ export function ContractorDetailPage() {
         <p className="m-0 text-[13px] text-[var(--color-nachipa-body)]">
           Soft delete: queda fuera del listado activo.
         </p>
+      </Modal>
+
+      {/* Solicitar documentación HAB desde la ficha. */}
+      <Modal
+        open={habRequestOpen}
+        onClose={() => {
+          if (!habRequesting) setHabRequestOpen(false);
+        }}
+        icon={ClipboardCheck}
+        title="Solicitar documentación"
+        subtitle={`Se crea una HAB para ${displayName(org.name)}.`}
+        maxWidthClass="w-full max-w-[520px] sm:w-[520px]"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={habRequesting}
+              onClick={() => setHabRequestOpen(false)}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="submit"
+              form="contractor-detail-hab-request"
+              size="medium"
+              className="!w-auto"
+              disabled={habRequesting}
+            >
+              {habRequesting ? "Solicitando…" : "Solicitar"}
+            </Button>
+          </div>
+        }
+      >
+        <form
+          id="contractor-detail-hab-request"
+          className="flex flex-col gap-3"
+          onSubmit={(e) => void onRequestHab(e)}
+        >
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+              Mensaje al contratista
+            </span>
+            <textarea
+              className="min-h-[96px] w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3.5 py-2.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-brand-sky)_25%,transparent)]"
+              value={habMessage}
+              onChange={(e) => setHabMessage(e.target.value)}
+              placeholder="Indicaciones para subir el pack de documentos…"
+            />
+          </label>
+        </form>
       </Modal>
     </div>
   );

@@ -55,6 +55,8 @@ assert {
   res.body.id: isDefined
   res.body.email: isDefined
   res.body.invitePending: eq true
+  res.body.invitedBy: isDefined
+  res.body.invitedBy.id: isDefined
 }
 
 settings {

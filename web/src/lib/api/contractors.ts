@@ -190,6 +190,13 @@ export async function deleteContractorRequest(
   return body as ContractorOrganization;
 }
 
+/** Quién invitó (P9 · Invitado por). */
+export type ContractorUserInvitedBy = {
+  id: string;
+  firstName: string;
+  lastName: string;
+};
+
 /** Usuario invitado de una org (P9b). */
 export type ContractorUser = {
   id: string;
@@ -205,6 +212,8 @@ export type ContractorUser = {
   lastLoginAt: string | null;
   accessExpiresAt: string | null;
   createdAt: string;
+  /** Null si legado o sin invitación registrada. */
+  invitedBy: ContractorUserInvitedBy | null;
 };
 
 /** Listado de usuarios de la org. */

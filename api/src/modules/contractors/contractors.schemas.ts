@@ -178,6 +178,15 @@ export const deleteContractorRequestSchema = z.object({
 export const deleteContractorResponseSchema =
   contractorOrganizationResponseSchema;
 
+/** Quién invitó (columna P9 «Invitado por»). */
+export const contractorUserInvitedBySchema = z
+  .object({
+    id: z.uuid(),
+    firstName: z.string(),
+    lastName: z.string(),
+  })
+  .openapi("ContractorUserInvitedBy");
+
 /**
  * Usuario invitado de una org contratista (P9b).
  * invitePending = aún no confirmó / no definió clave.
@@ -197,6 +206,8 @@ export const contractorUserResponseSchema = z
     lastLoginAt: z.string().datetime().nullable(),
     accessExpiresAt: z.string().datetime().nullable(),
     createdAt: z.string().datetime(),
+    /** Null en usuarios legados o sin invitación registrada. */
+    invitedBy: contractorUserInvitedBySchema.nullable(),
   })
   .openapi("ContractorUser");
 

@@ -1,13 +1,31 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Building2, Pencil, Plus } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
+import { Building2, ClipboardCheck, Pencil, Plus } from "lucide-react";
 import { Link } from "react-router";
 import { Button } from "../../components/Button/Button";
+import {
+  DataTableCard,
+  DataTableOutlineButton,
+  DataTableSearch,
+} from "../../components/DataTableCard/DataTableCard";
 import { Modal } from "../../components/Modal/Modal";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
+import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
+import {
+  TablePagination,
+  useClientTablePagination,
+} from "../../components/TablePagination/TablePagination";
 import { TextField } from "../../components/TextField/TextField";
 import { Toggle } from "../../components/Toggle/Toggle";
 import { useToast } from "../../components/Toast/ToastProvider";
+import { downloadXls } from "../../lib/exportXls";
 import {
+  createAccreditationRequest,
   listAccreditationsRequest,
   type AccreditationStatus,
   type ContractorAccreditation,
@@ -157,6 +175,47 @@ function habilitadaChip(org: ContractorOrganization): string | null {
   return `Habilitada desde ${from}`;
 }
 
+/** Iniciales celda Usuario (P9). */
+function userInitials(firstName: string, lastName: string): string {
+  const a = firstName.trim()[0] ?? "";
+  const b = lastName.trim()[0] ?? "";
+  return `${a}${b}`.toUpperCase() || "?";
+}
+
+/** Rol visible en tabla Usuarios. */
+function userRoleLabel(internalRol: string): string {
+  if (!internalRol) return "—";
+  if (internalRol === "contratista") return "Contratista";
+  return displayName(internalRol.replace(/_/g, " "));
+}
+
+/** Último acceso relativo corto. */
+function formatLastAccess(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startThat = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round(
+    (startToday.getTime() - startThat.getTime()) / 86_400_000,
+  );
+  const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  if (diffDays === 0) return `hoy ${time}`;
+  if (diffDays === 1) return `ayer ${time}`;
+  return `${formatDate(iso)} ${time}`;
+}
+
+/** Select filtro toolbar Usuarios. */
+const filterSelectClass =
+  "h-8 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-2.5 text-[12px] text-[var(--color-nachipa-body)] outline-none";
+
+/** Filtro estado tab Usuarios. */
+type UserStatusFilter = "" | "active" | "invited" | "inactive";
+
+/** Filtro estado tab Habilitación (vacío = todos). */
+type HabStatusFilter = "" | AccreditationStatus;
+
 type Props = {
   /** Id de org; null = cerrado. */
   organizationId: string | null;
@@ -175,6 +234,7 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
   const canInvite =
     canManage && userHasPermission(user, "contractors", "create");
   const canReadHab = userHasPermission(user, "accreditations", "read");
+  const canCreateHab = userHasPermission(user, "accreditations", "create");
 
   const [tab, setTab] = useState<TabId>("datos");
   const [loading, setLoading] = useState(false);
@@ -195,6 +255,159 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
     run: "",
   });
   const [inviting, setInviting] = useState(false);
+
+  /** Toolbar Usuarios (P9) dentro del drawer. */
+  const [userSearch, setUserSearch] = useState("");
+  const [userStatusFilter, setUserStatusFilter] =
+    useState<UserStatusFilter>("");
+
+  /** Toolbar Habilitación (mismo patrón DataTable que Usuarios / bandeja). */
+  const [habSearch, setHabSearch] = useState("");
+  const [habStatusFilter, setHabStatusFilter] = useState<HabStatusFilter>("");
+  const [habRequestOpen, setHabRequestOpen] = useState(false);
+  const [habMessage, setHabMessage] = useState(
+    "Favor subir la documentación del pack empresa para habilitación.",
+  );
+  const [habRequesting, setHabRequesting] = useState(false);
+
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    return users.filter((u) => {
+      if (userStatusFilter === "active" && (!u.state || u.invitePending)) {
+        return false;
+      }
+      if (userStatusFilter === "invited" && !u.invitePending) return false;
+      if (userStatusFilter === "inactive" && u.state) return false;
+      if (!q) return true;
+      const hay =
+        `${u.firstName} ${u.lastName} ${u.email} ${u.run}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [users, userSearch, userStatusFilter]);
+
+  const {
+    pageItems: userPageItems,
+    page: userPage,
+    setPage: setUserPage,
+    pageSize: userPageSize,
+    setPageSize: setUserPageSize,
+    pageCount: userPageCount,
+    total: userTotal,
+  } = useClientTablePagination(filteredUsers);
+
+  const filteredHabs = useMemo(() => {
+    const q = habSearch.trim().toLowerCase();
+    return habs.filter((h) => {
+      if (habStatusFilter && h.status !== habStatusFilter) return false;
+      if (!q) return true;
+      const hay = `${h.code} ${h.message ?? ""} ${h.reviewNote ?? ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [habs, habSearch, habStatusFilter]);
+
+  const {
+    pageItems: habPageItems,
+    page: habPage,
+    setPage: setHabPage,
+    pageSize: habPageSize,
+    setPageSize: setHabPageSize,
+    pageCount: habPageCount,
+    total: habTotal,
+  } = useClientTablePagination(filteredHabs);
+
+  /** Exporta usuarios filtrados del drawer. */
+  function onExportUsers() {
+    if (filteredUsers.length === 0) {
+      showToast("No hay filas para exportar.", "info");
+      return;
+    }
+    downloadXls(
+      filteredUsers,
+      [
+        {
+          header: "Usuario",
+          value: (u) => displayName(`${u.firstName} ${u.lastName}`),
+        },
+        { header: "RUN", value: (u) => u.run },
+        { header: "Correo", value: (u) => u.email },
+        { header: "Rol", value: (u) => userRoleLabel(u.internalRol) },
+        {
+          header: "Último acceso",
+          value: (u) => formatLastAccess(u.lastLoginAt),
+        },
+        {
+          header: "Invitado por",
+          value: (u) =>
+            u.invitedBy
+              ? displayName(
+                  `${u.invitedBy.firstName} ${u.invitedBy.lastName}`,
+                )
+              : "",
+        },
+        {
+          header: "Estado",
+          value: (u) =>
+            !u.state ? "Inactivo" : u.invitePending ? "Invitado" : "Activo",
+        },
+      ],
+      `usuarios-${org?.rut ?? "org"}`,
+    );
+  }
+
+  /** Abre modal solicitar documentación (org ya fijada). */
+  function openHabRequest() {
+    setHabMessage(
+      "Favor subir la documentación del pack empresa para habilitación.",
+    );
+    setHabRequestOpen(true);
+  }
+
+  /** POST /accreditations para esta organización. */
+  async function onRequestHab(e: FormEvent) {
+    e.preventDefault();
+    if (!accessToken || !org || habRequesting || !canCreateHab) return;
+    setHabRequesting(true);
+    try {
+      await createAccreditationRequest(accessToken, {
+        organizationId: org.id,
+        message: habMessage.trim() || null,
+        dueAt: null,
+      });
+      showToast("Solicitud de documentación creada.", "success");
+      setHabRequestOpen(false);
+      setTab("habilitacion");
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo solicitar.",
+        "danger",
+      );
+    } finally {
+      setHabRequesting(false);
+    }
+  }
+
+  /** Exporta HABs filtradas del drawer. */
+  function onExportHabs() {
+    if (filteredHabs.length === 0) {
+      showToast("No hay filas para exportar.", "info");
+      return;
+    }
+    downloadXls(
+      filteredHabs,
+      [
+        { header: "Código", value: (h) => h.code },
+        { header: "Estado", value: (h) => statusLabel(h.status) },
+        {
+          header: "Solicitada",
+          value: (h) => formatDate(h.requestedAt),
+        },
+        { header: "Plazo", value: (h) => formatDate(h.dueAt) },
+        { header: "Mensaje", value: (h) => h.message ?? "" },
+      ],
+      `habilitaciones-${org?.rut ?? "org"}`,
+    );
+  }
 
   const load = useCallback(async () => {
     if (!accessToken || !organizationId) return;
@@ -239,6 +452,8 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
       setEditOpen(false);
       setInviteOpen(false);
       setForm(null);
+      setUserSearch("");
+      setUserStatusFilter("");
       return;
     }
     void load();
@@ -356,7 +571,7 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
   const tabs: Array<{ id: TabId; label: string; count?: number }> = [
     { id: "datos", label: "Datos" },
     { id: "usuarios", label: "Usuarios", count: userCount },
-    { id: "habilitacion", label: "Habilitación" },
+    { id: "habilitacion", label: "Habilitación", count: habs.length },
     { id: "permisos", label: "Permisos de trabajo" },
   ];
 
@@ -557,71 +772,262 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
               </div>
             </section>
           ) : tab === "usuarios" ? (
-            users.length === 0 ? (
-              <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
-                Todavía no hay usuarios invitados.
-              </p>
-            ) : (
-              <ul className="m-0 list-none divide-y divide-[var(--color-tremor-border)] rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-0">
-                {users.map((u) => (
-                  <li
-                    key={u.id}
-                    className="flex flex-wrap items-center gap-3 px-4 py-3"
+            <DataTableCard
+              toolbar={
+                <div className="flex w-full flex-wrap items-center gap-2">
+                  <div className="min-w-[160px] flex-1">
+                    <DataTableSearch
+                      value={userSearch}
+                      onChange={setUserSearch}
+                      placeholder="Buscar usuario…"
+                    />
+                  </div>
+                  <select
+                    className={filterSelectClass}
+                    value={userStatusFilter}
+                    aria-label="Filtro estado"
+                    onChange={(e) =>
+                      setUserStatusFilter(e.target.value as UserStatusFilter)
+                    }
                   >
-                    <span className="min-w-0 flex-1 font-medium text-[var(--color-nachipa-title)]">
-                      {displayName(`${u.firstName} ${u.lastName}`)}
-                    </span>
-                    <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
-                      {u.email}
-                    </span>
-                    <StatusChip
-                      tone={
-                        u.invitePending
-                          ? "warning"
-                          : u.state
-                            ? "success"
-                            : "neutral"
-                      }
-                    >
-                      {u.invitePending
-                        ? "Invitado"
-                        : u.state
-                          ? "Activo"
-                          : "Inactivo"}
-                    </StatusChip>
-                  </li>
-                ))}
-              </ul>
-            )
+                    <option value="">Estado: todos</option>
+                    <option value="active">Activo</option>
+                    <option value="invited">Invitado</option>
+                    <option value="inactive">Inactivo</option>
+                  </select>
+                  <DataTableOutlineButton
+                    onClick={onExportUsers}
+                    disabled={filteredUsers.length === 0}
+                  >
+                    Exportar
+                  </DataTableOutlineButton>
+                </div>
+              }
+              footer={
+                <TablePagination
+                  totalLabel={`${userTotal} ${userTotal === 1 ? "usuario" : "usuarios"}`}
+                  page={userPage}
+                  pageCount={userPageCount}
+                  pageSize={userPageSize}
+                  onPageChange={setUserPage}
+                  onPageSizeChange={setUserPageSize}
+                />
+              }
+            >
+              {users.length === 0 ? (
+                <p className="m-0 px-1 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
+                  Todavía no hay usuarios invitados.
+                  {canInvite ? " Usá «Invitar usuario»." : ""}
+                </p>
+              ) : userPageItems.length === 0 ? (
+                <p className="m-0 px-1 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
+                  Ningún usuario coincide con el filtro.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] border-collapse text-left text-[13px]">
+                    <thead>
+                      <tr>
+                        <TableHeaderCell rounded="left">Usuario</TableHeaderCell>
+                        <TableHeaderCell>Correo</TableHeaderCell>
+                        <TableHeaderCell>Rol</TableHeaderCell>
+                        <TableHeaderCell>Último acceso</TableHeaderCell>
+                        <TableHeaderCell>Invitado por</TableHeaderCell>
+                        <TableHeaderCell rounded="right">Estado</TableHeaderCell>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {userPageItems.map((u) => (
+                        <tr
+                          key={u.id}
+                          className="border-t border-[var(--color-tremor-border)]"
+                        >
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2.5">
+                              <span
+                                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-nachipa-primary)_16%,white)] text-[11px] font-semibold text-[var(--color-nachipa-primary)]"
+                                aria-hidden
+                              >
+                                {userInitials(u.firstName, u.lastName)}
+                              </span>
+                              <span className="font-medium text-[var(--color-nachipa-title)]">
+                                {displayName(`${u.firstName} ${u.lastName}`)}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                            {u.email}
+                          </td>
+                          <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                            {userRoleLabel(u.internalRol)}
+                          </td>
+                          <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                            {formatLastAccess(u.lastLoginAt)}
+                          </td>
+                          <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                            {u.invitedBy
+                              ? displayName(
+                                  `${u.invitedBy.firstName} ${u.invitedBy.lastName}`,
+                                )
+                              : "—"}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <StatusChip
+                              tone={
+                                !u.state
+                                  ? "neutral"
+                                  : u.invitePending
+                                    ? "warning"
+                                    : "success"
+                              }
+                            >
+                              {!u.state
+                                ? "Inactivo"
+                                : u.invitePending
+                                  ? "Invitado"
+                                  : "Activo"}
+                            </StatusChip>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </DataTableCard>
           ) : tab === "habilitacion" ? (
             !canReadHab ? (
               <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
                 Sin permiso accreditations.read.
               </p>
-            ) : habs.length === 0 ? (
-              <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
-                Todavía no hay HAB.
-              </p>
             ) : (
-              <ul className="m-0 list-none divide-y divide-[var(--color-tremor-border)] rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-0">
-                {habs.map((h) => (
-                  <li key={h.id} className="flex items-center gap-3 px-4 py-3">
-                    <Link
-                      to={`/prevencion/habilitaciones/${h.id}`}
-                      className="w-24 shrink-0 font-semibold tabular-nums text-[var(--color-nachipa-primary)] hover:underline"
-                      onClick={onClose}
+              <DataTableCard
+                toolbar={
+                  <div className="flex w-full flex-wrap items-center gap-2">
+                    <div className="min-w-[160px] flex-1">
+                      <DataTableSearch
+                        value={habSearch}
+                        onChange={setHabSearch}
+                        placeholder="Buscar HAB o mensaje…"
+                      />
+                    </div>
+                    <select
+                      className={filterSelectClass}
+                      value={habStatusFilter}
+                      aria-label="Filtro estado HAB"
+                      onChange={(e) =>
+                        setHabStatusFilter(e.target.value as HabStatusFilter)
+                      }
                     >
-                      {h.code}
-                    </Link>
-                    <StatusChip tone={statusTone(h.status)}>
-                      {statusLabel(h.status)}
-                    </StatusChip>
-                    <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--color-nachipa-secondary)]">
-                      {h.message ?? "—"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                      <option value="">Estado: todos</option>
+                      <option value="invited">Invitada</option>
+                      <option value="pending">Pendiente</option>
+                      <option value="in_review">En revisión</option>
+                      <option value="observed">Observada</option>
+                      <option value="approved">Aprobada</option>
+                      <option value="rejected">Rechazada</option>
+                    </select>
+                    <DataTableOutlineButton
+                      onClick={onExportHabs}
+                      disabled={filteredHabs.length === 0}
+                    >
+                      Exportar
+                    </DataTableOutlineButton>
+                    {canCreateHab ? (
+                      <Button
+                        type="button"
+                        size="medium"
+                        className="!h-8 !w-auto !px-3 !text-[12px]"
+                        onClick={openHabRequest}
+                      >
+                        <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
+                        Solicitar documentación
+                      </Button>
+                    ) : null}
+                  </div>
+                }
+                footer={
+                  <TablePagination
+                    totalLabel={`${habTotal} ${habTotal === 1 ? "habilitación" : "habilitaciones"}`}
+                    page={habPage}
+                    pageCount={habPageCount}
+                    pageSize={habPageSize}
+                    onPageChange={setHabPage}
+                    onPageSizeChange={setHabPageSize}
+                  />
+                }
+              >
+                {habs.length === 0 ? (
+                  <p className="m-0 px-1 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
+                    Todavía no hay HAB.
+                    {canCreateHab
+                      ? " Usá «Solicitar documentación»."
+                      : ""}
+                  </p>
+                ) : habPageItems.length === 0 ? (
+                  <p className="m-0 px-1 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
+                    Ninguna habilitación coincide con el filtro.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[640px] border-collapse text-left text-[13px]">
+                      <thead>
+                        <tr>
+                          <TableHeaderCell rounded="left">Código</TableHeaderCell>
+                          <TableHeaderCell>Estado</TableHeaderCell>
+                          <TableHeaderCell>Solicitada</TableHeaderCell>
+                          <TableHeaderCell>Plazo</TableHeaderCell>
+                          <TableHeaderCell>Mensaje</TableHeaderCell>
+                          <TableHeaderCell rounded="right" align="right">
+                            Acciones
+                          </TableHeaderCell>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {habPageItems.map((h) => (
+                          <tr
+                            key={h.id}
+                            className="border-t border-[var(--color-tremor-border)]"
+                          >
+                            <td className="px-3 py-2.5 font-semibold tabular-nums text-[var(--color-nachipa-title)]">
+                              <Link
+                                to={`/prevencion/habilitaciones/${h.id}`}
+                                className="text-[var(--color-nachipa-primary)] hover:underline"
+                                onClick={onClose}
+                              >
+                                {h.code}
+                              </Link>
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <StatusChip tone={statusTone(h.status)}>
+                                {statusLabel(h.status)}
+                              </StatusChip>
+                            </td>
+                            <td className="px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
+                              {formatDate(h.requestedAt)}
+                            </td>
+                            <td className="px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
+                              {formatDate(h.dueAt)}
+                            </td>
+                            <td className="max-w-[220px] truncate px-3 py-2.5 text-[var(--color-nachipa-secondary)]">
+                              {h.message ?? "—"}
+                            </td>
+                            <td className="px-3 py-2.5 text-right">
+                              <Link
+                                to={`/prevencion/habilitaciones/${h.id}`}
+                                className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                                onClick={onClose}
+                              >
+                                Ver
+                              </Link>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </DataTableCard>
             )
           ) : (
             <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
@@ -809,6 +1215,61 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
             }
             required
           />
+        </form>
+      </Modal>
+
+      {/* Solicitar documentación HAB (org fijada; mismo contrato que bandeja). */}
+      <Modal
+        open={habRequestOpen}
+        onClose={() => {
+          if (!habRequesting) setHabRequestOpen(false);
+        }}
+        icon={ClipboardCheck}
+        title="Solicitar documentación"
+        subtitle={
+          org
+            ? `Se crea una HAB para ${displayName(org.name)}.`
+            : "Se crea una HAB para esta organización."
+        }
+        maxWidthClass="w-full max-w-[520px] sm:w-[520px]"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={habRequesting}
+              onClick={() => setHabRequestOpen(false)}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="submit"
+              form="contractor-ficha-hab-request"
+              size="medium"
+              className="!w-auto"
+              disabled={habRequesting}
+            >
+              {habRequesting ? "Solicitando…" : "Solicitar"}
+            </Button>
+          </div>
+        }
+      >
+        <form
+          id="contractor-ficha-hab-request"
+          className="flex flex-col gap-3"
+          onSubmit={(e) => void onRequestHab(e)}
+        >
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+              Mensaje al contratista
+            </span>
+            <textarea
+              className="min-h-[96px] w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3.5 py-2.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-brand-sky)_25%,transparent)]"
+              value={habMessage}
+              onChange={(e) => setHabMessage(e.target.value)}
+              placeholder="Indicaciones para subir el pack de documentos…"
+            />
+          </label>
         </form>
       </Modal>
     </>

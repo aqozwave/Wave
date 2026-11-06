@@ -365,6 +365,11 @@ model User {
   /// Org contratista si es usuario externo invitado (P2 · P9b). null = usuario del tenant.
   organizationId  String?          @map("organization_id") @db.Uuid
   organization    ContractorOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  /// Quién invitó a este usuario al portal contratista (P9 · Invitado por). null = legado / no invitado.
+  invitedById     String?          @map("invited_by_id") @db.Uuid
+  invitedBy       User?            @relation("UserInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  /// Usuarios que este actor invitó (inverso de invitedBy).
+  usersInvited    User[]           @relation("UserInvitedBy")
   tokenVersion    Int              @default(0) @map("token_version")
   lastLoginAt     DateTime?        @map("last_login_at") @db.Timestamptz
   lastLoginIp     String?          @map("last_login_ip")
@@ -410,6 +415,7 @@ model User {
   @@index([locationId])
   @@index([areaId])
   @@index([organizationId])
+  @@index([invitedById])
   @@map("users")
 }
 
