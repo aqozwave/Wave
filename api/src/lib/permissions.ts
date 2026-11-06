@@ -62,7 +62,7 @@ export const PERMISSION_RESOURCE = {
   CONTRACTORS: "contractors",
   /** Habilitaciones y documentos de contratistas (módulo contractors). */
   ACCREDITATIONS: "accreditations",
-  /** Avisos de trabajo (Área Técnica → Prevención; módulo work_permits). */
+  /** Avisos de trabajo (solicitante con área → Prevención; módulo work_permits). */
   WORK_NOTICES: "work_notices",
   /** Permisos de trabajo (módulo work_permits). */
   WORK_PERMITS: "work_permits",
@@ -274,6 +274,7 @@ export const PERMISSION_CATALOG: PermissionCatalogModule[] = [
       {
         resource: PERMISSION_RESOURCE.WORK_NOTICES,
         label: "Avisos de trabajo",
+        hint: "Permiso extra · cualquier área · indica el área solicitante (User.areaId).",
         actions: PERMISSION_ACTIONS,
       },
       {
@@ -340,8 +341,11 @@ export const SYSTEM_ROLE_KEY = {
   RRHH: "rrhh",
   /** Prevención de riesgos; tag de documento `prevention`. */
   PREVENCIONISTA: "prevencionista",
-  /** Activos / área técnica; tag de documento `assets`. */
-  AREA_TECNICA: "area_tecnica",
+  /**
+   * Preset: solicitante de avisos/PT (cualquier área vía User.areaId).
+   * Tag de documento `assets` (legado de activos / área técnica).
+   */
+  WORK_REQUESTER: "work_requester",
   USER: "user",
   COLABORADOR: "colaborador",
   CONTRATISTA: "contratista",
@@ -456,7 +460,7 @@ export const SYSTEM_ROLE_DEFS = [
       allActions(PERMISSION_RESOURCE.EMBARCADOS_DOCS),
       allActions(PERMISSION_RESOURCE.CONTRACTORS),
       allActions(PERMISSION_RESOURCE.ACCREDITATIONS),
-      /** Avisos: solo lectura (los crea Área Técnica). */
+      /** Avisos: solo lectura (los crea el solicitante con área). */
       readOnly(PERMISSION_RESOURCE.WORK_NOTICES),
       /** PT: CRUD sin receive (eso es del capitán). */
       crudOnly(PERMISSION_RESOURCE.WORK_PERMITS),
@@ -479,10 +483,10 @@ export const SYSTEM_ROLE_DEFS = [
     ],
   },
   {
-    key: SYSTEM_ROLE_KEY.AREA_TECNICA,
-    name: "Área Técnica",
+    key: SYSTEM_ROLE_KEY.WORK_REQUESTER,
+    name: "Solicitante de trabajos",
     description:
-      "Activos / área técnica: consulta y edición de embarcados y docs.",
+      "Crea avisos de trabajo desde su área (User.areaId). Ve contratistas, habilitaciones y permisos en solo lectura.",
     dataScope: ROLE_DATA_SCOPE.BUSINESS,
     permissions: [
       readOnly(PERMISSION_RESOURCE.DASHBOARD),
@@ -503,7 +507,7 @@ export const SYSTEM_ROLE_DEFS = [
       readOnly(PERMISSION_RESOURCE.MAESTROS_RANKS),
       readOnly(PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES),
       readOnly(PERMISSION_RESOURCE.MAESTROS_CERTIFICATES),
-      /** Prevención: avisos propios + lectura de contratistas/habilitación/PT. */
+      /** Avisos: crear/editar; el área solicitante sale del usuario. */
       {
         resource: PERMISSION_RESOURCE.WORK_NOTICES,
         actions: [

@@ -5,7 +5,7 @@ import { TripulanteHome } from "./TripulanteHome";
 
 /**
  * Entrada de `/`: elige el home según el rol (Figma S1 / D1 / C1 / E3 / T*).
- * Admin, RR.HH., prevencionista y área técnica usan el Panel OMI (empresa).
+ * Admin, RR.HH., prevencionista y solicitante de trabajos usan el Panel OMI (empresa).
  */
 export function HomeIndex() {
   const { user } = useAuth();

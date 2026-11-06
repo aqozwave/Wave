@@ -21,6 +21,7 @@ import { Vencimientos } from "./pages/Cursos/Vencimientos";
 import { Empresas } from "./pages/Empresas/Empresas";
 import { ContractorPortalAccreditationPage } from "./pages/Home/ContractorPortalAccreditationPage";
 import { ContractorPortalPeoplePage } from "./pages/Home/ContractorPortalPeoplePage";
+import { ContractorPortalPermitsPage } from "./pages/Home/ContractorPortalPermitsPage";
 import { HomeIndex } from "./pages/Home/HomeIndex";
 import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmation";
 import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
@@ -39,6 +40,8 @@ import { PermitTypeDetailPage } from "./pages/Prevencion/PermitTypeDetailPage";
 import { PermitTypesPage } from "./pages/Prevencion/PermitTypesPage";
 import { PrevencionHome } from "./pages/Prevencion/PrevencionHome";
 import { TrainingsPage } from "./pages/Prevencion/TrainingsPage";
+import { WorkNoticesPage } from "./pages/Prevencion/WorkNoticesPage";
+import { WorkPermitsPage } from "./pages/Prevencion/WorkPermitsPage";
 import { Ubicaciones } from "./pages/Ubicaciones/Ubicaciones";
 import { Usuarios } from "./pages/Usuarios/Usuarios";
 
@@ -146,6 +149,10 @@ export function App() {
             path="portal/personal"
             element={<ContractorPortalPeoplePage />}
           />
+          <Route
+            path="portal/permisos"
+            element={<ContractorPortalPermitsPage />}
+          />
           <Route path="embarcados" element={<Embarcados />} />
           <Route path="embarcados/:id" element={<FichaTripulante />} />
           <Route
@@ -184,6 +191,14 @@ export function App() {
           <Route
             path="prevencion/habilitaciones/:id"
             element={<AccreditationDetailPage />}
+          />
+          <Route
+            path="prevencion/avisos"
+            element={<WorkNoticesPage />}
+          />
+          <Route
+            path="prevencion/permisos"
+            element={<WorkPermitsPage />}
           />
           <Route path="empresas" element={<Empresas />} />
           <Route path="ubicaciones" element={<Ubicaciones />} />

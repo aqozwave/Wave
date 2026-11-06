@@ -173,6 +173,18 @@ const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
     icon: ClipboardCheck,
     canShow: (u) => userHasPermission(u, "accreditations", "read"),
   },
+  {
+    label: "Avisos de trabajo",
+    to: "/prevencion/avisos",
+    icon: Bell,
+    canShow: (u) => userHasPermission(u, "work_notices", "read"),
+  },
+  {
+    label: "Permisos de trabajo",
+    to: "/prevencion/permisos",
+    icon: ShieldCheck,
+    canShow: (u) => userHasPermission(u, "work_permits", "read"),
+  },
 ];
 
 /** Activo exacto en Presentación; prefijo en subrutas. */
@@ -286,6 +298,8 @@ export function Sidebar() {
   const onPortalHab = location.pathname.startsWith("/portal/habilitacion");
   /** Mi personal del portal contratista (E5). */
   const onPortalPeople = location.pathname.startsWith("/portal/personal");
+  /** Permisos del portal contratista (enviar a aprobación). */
+  const onPortalPermits = location.pathname.startsWith("/portal/permisos");
   const [crewOpen, setCrewOpen] = useState(onCrewSection);
   const [cursosOpen, setCursosOpen] = useState(onCursosSection);
   const [prevencionOpen, setPrevencionOpen] = useState(onPrevencionSection);
@@ -423,6 +437,13 @@ export function Sidebar() {
                   active={onPortalPeople}
                   collapsed
                 />
+                <SidebarItem
+                  label="Permisos"
+                  icon={ClipboardList}
+                  to="/portal/permisos"
+                  active={onPortalPermits}
+                  collapsed
+                />
               </>
             ) : null}
             <div className="h-1.5" aria-hidden />
@@ -529,6 +550,12 @@ export function Sidebar() {
                   icon={Users}
                   to="/portal/personal"
                   active={onPortalPeople}
+                />
+                <SidebarItem
+                  label="Permisos"
+                  icon={ClipboardList}
+                  to="/portal/permisos"
+                  active={onPortalPermits}
                 />
               </>
             ) : null}

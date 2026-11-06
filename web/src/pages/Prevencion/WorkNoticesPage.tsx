@@ -1,0 +1,669 @@
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
+import { Bell, Plus } from "lucide-react";
+import { Button } from "../../components/Button/Button";
+import {
+  DataTableCard,
+  DataTableSearch,
+} from "../../components/DataTableCard/DataTableCard";
+import { Modal } from "../../components/Modal/Modal";
+import { PageHeader } from "../../components/PageHeader/PageHeader";
+import { StatusChip } from "../../components/StatusChip/StatusChip";
+import {
+  TablePagination,
+  useClientTablePagination,
+} from "../../components/TablePagination/TablePagination";
+import { TextField } from "../../components/TextField/TextField";
+import { Toggle } from "../../components/Toggle/Toggle";
+import { Topbar } from "../../components/Topbar/Topbar";
+import { UserMenu } from "../../components/UserMenu/UserMenu";
+import { useToast } from "../../components/Toast/ToastProvider";
+import {
+  listContractorsRequest,
+  type ContractorOrganization,
+} from "../../lib/api/contractors";
+import { listLocationsRequest, type Location } from "../../lib/api/locations";
+import {
+  listPermitTypesRequest,
+  type PermitType,
+} from "../../lib/api/permitTypes";
+import { userHasPermission } from "../../lib/api/auth";
+import {
+  createWorkNoticeRequest,
+  listWorkNoticesRequest,
+  type WorkNotice,
+} from "../../lib/api/workNotices";
+import { createWorkPermitRequest } from "../../lib/api/workPermits";
+import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+
+/** Capitaliza nombre. */
+function displayName(value: string): string {
+  if (!value) return "—";
+  return value
+    .split(" ")
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
+/** Fecha dd-mm-yyyy. */
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const day = iso.slice(0, 10);
+  const [y, m, d] = day.split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}-${m}-${y}`;
+}
+
+/** Chip HAB de la org (solo lectura; no es toggle). */
+function habLabel(
+  status: WorkNotice["organization"]["latestAccreditationStatus"],
+): string {
+  if (!status) return "Sin HAB";
+  switch (status) {
+    case "approved":
+      return "Habilitada";
+    case "rejected":
+      return "Rechazada";
+    case "in_review":
+      return "Por revisar";
+    case "observed":
+      return "Observada";
+    case "pending":
+    case "invited":
+      return "Pendiente";
+    default:
+      return status;
+  }
+}
+
+/** Tono chip HAB. */
+function habTone(
+  status: WorkNotice["organization"]["latestAccreditationStatus"],
+): "success" | "warning" | "danger" | "info" | "neutral" {
+  if (!status) return "neutral";
+  if (status === "approved") return "success";
+  if (status === "rejected") return "danger";
+  if (status === "in_review") return "info";
+  return "warning";
+}
+
+const selectClass =
+  "h-[42px] w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-brand-sky)_25%,transparent)]";
+
+const outlineBtnClass =
+  "inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60";
+
+/**
+ * Bandeja de avisos de trabajo (P4 · AT1) + modal AT2.
+ * Área solicitante = área del usuario; sin área no se crea.
+ * Sin toggle de HAB: el estado sale de la org elegida.
+ */
+export function WorkNoticesPage() {
+  const { accessToken, user } = useAuth();
+  const { showToast } = useToast();
+  const canRead = userHasPermission(user, "work_notices", "read");
+  const canCreate = userHasPermission(user, "work_notices", "create");
+  const canCreatePermit = userHasPermission(user, "work_permits", "create");
+
+  const [items, setItems] = useState<WorkNotice[]>([]);
+  const [orgs, setOrgs] = useState<ContractorOrganization[]>([]);
+  const [permitTypes, setPermitTypes] = useState<PermitType[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [organizationId, setOrganizationId] = useState("");
+  const [permitTypeId, setPermitTypeId] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const [tentativeDate, setTentativeDate] = useState("");
+  const [durationDays, setDurationDays] = useState("");
+  const [description, setDescription] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [notifyByEmail, setNotifyByEmail] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [creatingPermitId, setCreatingPermitId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!accessToken || !canRead) return;
+    setLoading(true);
+    try {
+      const result = await listWorkNoticesRequest(accessToken, 1, 100);
+      setItems(result.items);
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudieron cargar avisos",
+        "danger",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken, canRead, showToast]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    if (!accessToken || !canCreate) return;
+    void Promise.all([
+      listContractorsRequest(accessToken, 1, 100, { active: true }),
+      listPermitTypesRequest(accessToken, 1, 100, { active: true }),
+      listLocationsRequest(accessToken, 1, 100),
+    ])
+      .then(([o, p, l]) => {
+        setOrgs(o.items);
+        setPermitTypes(p.items);
+        setLocations(l.items.filter((loc) => loc.kind === "vessel" || !loc.kind));
+      })
+      .catch(() => {
+        setOrgs([]);
+        setPermitTypes([]);
+        setLocations([]);
+      });
+  }, [accessToken, canCreate]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(
+      (row) =>
+        row.code.toLowerCase().includes(q) ||
+        row.organization.name.toLowerCase().includes(q) ||
+        row.organization.rut.toLowerCase().includes(q) ||
+        row.permitType.name.toLowerCase().includes(q) ||
+        row.location.name.toLowerCase().includes(q),
+    );
+  }, [items, search]);
+
+  const {
+    pageItems,
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    pageCount,
+    total,
+  } = useClientTablePagination(filtered);
+
+  /** Org elegida en el modal (para contacto y chip HAB). */
+  const selectedOrg = useMemo(
+    () => orgs.find((o) => o.id === organizationId) ?? null,
+    [orgs, organizationId],
+  );
+
+  /** Abre AT2 con defaults. */
+  function openCreate() {
+    setOrganizationId("");
+    setPermitTypeId("");
+    setLocationId("");
+    setTentativeDate("");
+    setDurationDays("");
+    setDescription("");
+    setContactName("");
+    setContactEmail("");
+    setContactPhone("");
+    setNotifyByEmail(true);
+    setCreateOpen(true);
+  }
+
+  /** Al elegir org, completa contacto desde la ficha. */
+  function onPickOrg(id: string) {
+    setOrganizationId(id);
+    const org = orgs.find((o) => o.id === id);
+    if (!org) return;
+    setContactName(org.contactName ?? "");
+    setContactEmail(org.contactEmail ?? "");
+    setContactPhone(org.contactPhone ?? "");
+  }
+
+  /** Prevención crea PT desde aviso pending. */
+  async function onCreatePermit(row: WorkNotice) {
+    if (!accessToken || creatingPermitId || !canCreatePermit) return;
+    if (row.workPermit || row.status !== "pending") return;
+    setCreatingPermitId(row.id);
+    try {
+      const permit = await createWorkPermitRequest(accessToken, {
+        workNoticeId: row.id,
+      });
+      showToast(`Permiso ${permit.code} creado (Por completar).`, "success");
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo crear el permiso.",
+        "danger",
+      );
+    } finally {
+      setCreatingPermitId(null);
+    }
+  }
+
+  /** POST aviso. */
+  async function onCreate(e: FormEvent) {
+    e.preventDefault();
+    if (!accessToken || submitting) return;
+    if (!organizationId || !permitTypeId || !locationId || !tentativeDate) {
+      showToast("Completá org, tipo, nave y fecha.", "danger");
+      return;
+    }
+    const daysRaw = durationDays.trim();
+    let estimatedDurationDays: number | null = null;
+    if (daysRaw) {
+      const n = Number(daysRaw);
+      if (!Number.isInteger(n) || n < 1) {
+        showToast("Duración debe ser un número entero de días.", "danger");
+        return;
+      }
+      estimatedDurationDays = n;
+    }
+    setSubmitting(true);
+    try {
+      await createWorkNoticeRequest(accessToken, {
+        organizationId,
+        permitTypeId,
+        locationId,
+        tentativeDate,
+        estimatedDurationDays,
+        description: description.trim() || null,
+        contactName: contactName.trim() || null,
+        contactEmail: contactEmail.trim() || null,
+        contactPhone: contactPhone.trim() || null,
+        notifyByEmail,
+      });
+      showToast("Aviso enviado a Prevención.", "success");
+      setCreateOpen(false);
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo crear el aviso.",
+        "danger",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (!canRead) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <Topbar
+          breadcrumb="Prevención"
+          breadcrumbIcon={Bell}
+          actions={<UserMenu />}
+        />
+        <div className="px-6 py-5">
+          <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+            No tenés permiso work_notices.read, o el módulo work_permits está
+            apagado.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Topbar
+        breadcrumb="Prevención"
+        breadcrumbIcon={Bell}
+        actions={<UserMenu />}
+      />
+      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
+        <PageHeader
+          crumbs={[
+            { label: "Prevención", to: "/prevencion" },
+            { label: "Avisos de trabajo" },
+          ]}
+          title="Avisos de trabajo"
+          description="Informa a Prevención qué trabajos y empresas irán a bordo. La habilitación se lee de la organización (sin toggle)."
+          actions={
+            canCreate ? (
+              <Button
+                type="button"
+                size="medium"
+                className="!w-auto"
+                onClick={openCreate}
+              >
+                <Plus className="size-4" strokeWidth={1.5} aria-hidden />
+                Nuevo aviso de trabajo
+              </Button>
+            ) : null
+          }
+        />
+
+        <DataTableCard
+          toolbar={
+            <DataTableSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="Buscar por aviso o empresa…"
+            />
+          }
+          footer={
+            <TablePagination
+              totalLabel={
+                loading
+                  ? "Cargando…"
+                  : `${total} ${total === 1 ? "aviso" : "avisos"}`
+              }
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          }
+        >
+          <table className="w-full min-w-[940px] border-collapse text-left text-[13px]">
+            <thead>
+              <tr className="bg-[var(--color-table-head-bg,#f8f9fb)] text-[12px] font-medium text-[var(--color-nachipa-secondary)]">
+                <th className="px-3 py-2.5">Aviso</th>
+                <th className="px-3 py-2.5">Empresa</th>
+                <th className="px-3 py-2.5">Trabajo</th>
+                <th className="px-3 py-2.5">Nave</th>
+                <th className="px-3 py-2.5">Área</th>
+                <th className="px-3 py-2.5">Fecha</th>
+                <th className="px-3 py-2.5">Habilitación</th>
+                <th className="px-3 py-2.5">Estado</th>
+                <th className="px-3 py-2.5 text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="px-3 py-8 text-[var(--color-nachipa-secondary)]"
+                  >
+                    Cargando…
+                  </td>
+                </tr>
+              ) : pageItems.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="px-3 py-8 text-[var(--color-nachipa-secondary)]"
+                  >
+                    No hay avisos. Creá uno con «Nuevo aviso de trabajo».
+                  </td>
+                </tr>
+              ) : (
+                pageItems.map((row) => (
+                  <tr
+                    key={row.id}
+                    className="border-t border-[var(--color-tremor-border)] hover:bg-[var(--color-nachipa-bg-page)]"
+                  >
+                    <td className="px-3 py-2.5 font-semibold tabular-nums text-[var(--color-nachipa-title)]">
+                      {row.code}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className="block font-medium text-[var(--color-nachipa-title)]">
+                        {displayName(row.organization.name)}
+                      </span>
+                      <span className="text-[12px] tabular-nums text-[var(--color-nachipa-secondary)]">
+                        {row.organization.rut}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                      {row.permitType.code} · {displayName(row.permitType.name)}
+                    </td>
+                    <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                      {displayName(row.location.name)}
+                    </td>
+                    <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                      {displayName(row.requestingArea.name)}
+                    </td>
+                    <td className="px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
+                      {formatDate(row.tentativeDate)}
+                      {row.estimatedDurationDays
+                        ? ` · ${row.estimatedDurationDays} d`
+                        : ""}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <StatusChip
+                        tone={habTone(
+                          row.organization.latestAccreditationStatus,
+                        )}
+                      >
+                        {habLabel(row.organization.latestAccreditationStatus)}
+                      </StatusChip>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <StatusChip
+                        tone={
+                          row.status === "pending"
+                            ? "info"
+                            : row.status === "linked"
+                              ? "success"
+                              : "neutral"
+                        }
+                      >
+                        {row.status === "pending"
+                          ? "Enviado"
+                          : row.status === "linked"
+                            ? "Con permiso"
+                            : "Anulado"}
+                      </StatusChip>
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      {row.workPermit ? (
+                        <span className="text-[12px] font-medium tabular-nums text-[var(--color-nachipa-primary)]">
+                          {row.workPermit.code}
+                        </span>
+                      ) : canCreatePermit && row.status === "pending" ? (
+                        <button
+                          type="button"
+                          className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
+                          disabled={creatingPermitId === row.id}
+                          onClick={() => void onCreatePermit(row)}
+                        >
+                          {creatingPermitId === row.id
+                            ? "Creando…"
+                            : "Crear permiso"}
+                        </button>
+                      ) : (
+                        <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                          —
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </DataTableCard>
+      </div>
+
+      <Modal
+        open={createOpen}
+        onClose={() => {
+          if (!submitting) setCreateOpen(false);
+        }}
+        icon={Bell}
+        title="Nuevo aviso de trabajo"
+        subtitle="Informás a Prevención qué empresa y qué trabajo irán a bordo"
+        maxWidthClass="w-full max-w-[560px] sm:w-[560px]"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => setCreateOpen(false)}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="submit"
+              form="work-notice-create-form"
+              size="medium"
+              className="!w-auto"
+              disabled={submitting}
+            >
+              {submitting ? "Enviando…" : "Enviar aviso a Prevención"}
+            </Button>
+          </div>
+        }
+      >
+        <form
+          id="work-notice-create-form"
+          className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto"
+          onSubmit={(e) => void onCreate(e)}
+        >
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+              Empresa contratista
+            </span>
+            <select
+              className={selectClass}
+              required
+              value={organizationId}
+              onChange={(e) => onPickOrg(e.target.value)}
+            >
+              <option value="">Seleccionar…</option>
+              {orgs.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.rut} · {displayName(o.name)}
+                </option>
+              ))}
+            </select>
+            {selectedOrg ? (
+              <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                Habilitación:{" "}
+                {habLabel(
+                  selectedOrg.latestAccreditation?.status ?? null,
+                )}{" "}
+                (se lee de la org; no se elige acá)
+              </span>
+            ) : null}
+          </label>
+
+          <TextField
+            label="Contacto (nombre)"
+            value={contactName}
+            onChange={(e) => setContactName(e.target.value)}
+          />
+          <TextField
+            label="Contacto (correo)"
+            value={contactEmail}
+            onChange={(e) => setContactEmail(e.target.value)}
+          />
+          <TextField
+            label="Contacto (teléfono)"
+            value={contactPhone}
+            onChange={(e) => setContactPhone(e.target.value)}
+          />
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+              Tipo de permiso
+            </span>
+            <select
+              className={selectClass}
+              required
+              value={permitTypeId}
+              onChange={(e) => setPermitTypeId(e.target.value)}
+            >
+              <option value="">Seleccionar…</option>
+              {permitTypes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.code} · {displayName(t.name)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+              Nave
+            </span>
+            <select
+              className={selectClass}
+              required
+              value={locationId}
+              onChange={(e) => setLocationId(e.target.value)}
+            >
+              <option value="">Seleccionar…</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {displayName(l.name)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <TextField
+              label="Fecha tentativa"
+              type="date"
+              value={tentativeDate}
+              onChange={(e) => setTentativeDate(e.target.value)}
+              required
+            />
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                Duración estimada (opcional)
+              </span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  inputMode="numeric"
+                  className={selectClass}
+                  value={durationDays}
+                  onChange={(e) => setDurationDays(e.target.value)}
+                  placeholder="3"
+                />
+                <span className="shrink-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+                  días
+                </span>
+              </div>
+            </label>
+          </div>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+              Descripción del trabajo
+            </span>
+            <textarea
+              className="min-h-[80px] w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3.5 py-2.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-brand-sky)_25%,transparent)]"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Qué se hará a bordo…"
+            />
+          </label>
+
+          <div className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-[var(--color-nachipa-bg-page)] px-3 py-2.5">
+            <div>
+              <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                Avisar a Prevención por correo
+              </p>
+              <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
+                Llega a su bandeja de avisos y a su correo
+              </p>
+            </div>
+            <Toggle
+              checked={notifyByEmail}
+              onChange={setNotifyByEmail}
+              aria-label="Avisar por correo"
+            />
+          </div>
+
+          <p className="m-0 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--color-brand-sky)_12%,white)] px-3 py-2 text-[12px] text-[var(--color-nachipa-body)]">
+            El área se toma de tu usuario. Si la empresa aún no está habilitada,
+            Prevención pedirá la documentación.
+          </p>
+        </form>
+      </Modal>
+    </div>
+  );
+}

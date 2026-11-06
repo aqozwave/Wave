@@ -1,0 +1,40 @@
+meta {
+  name: Get work notice
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/work-notices/{{workNoticeId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Detalle de un aviso. Requiere workNoticeId (post-work-notice).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+  if (!bru.getEnvVar("workNoticeId")) {
+    throw new Error("Sin workNoticeId. Corré Post work notice antes.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+  res.body.code: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

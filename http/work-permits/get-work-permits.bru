@@ -1,0 +1,36 @@
+meta {
+  name: Get work permits
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/work-permits?page=1&limit=20
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Listado de permisos de trabajo. Requiere work_permits.read.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

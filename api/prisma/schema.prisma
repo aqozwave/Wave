@@ -233,7 +233,36 @@ enum ActivityResource {
   contractorOrgDocument
   /// Documento de persona externa en habilitación (P2 · pack person).
   contractorPersonDocument
+  /// Aviso de trabajo (solicitante con área → Prevención; P4 · AT1/AT2).
+  workNotice
+  /// Permiso de trabajo (ciclo Por completar → Cerrado).
+  workPermit
   system
+}
+
+/**
+ * Estado del aviso de trabajo (aún no es el ciclo del permiso).
+ * pending = enviado a Prevención; linked = ya tiene PT; cancelled = anulado.
+ */
+enum WorkNoticeStatus {
+  pending
+  linked
+  cancelled
+}
+
+/**
+ * Ciclo del permiso de trabajo (diagrama P4/P6).
+ * to_complete → to_approve → to_receive → active → to_verify → closed
+ * active → no_closure si vence sin registrar término.
+ */
+enum WorkPermitStatus {
+  to_complete
+  to_approve
+  to_receive
+  active
+  to_verify
+  closed
+  no_closure
 }
 
 /**
@@ -408,6 +437,10 @@ model User {
   contractorPersonDocumentsUploaded ContractorPersonDocument[] @relation("ContractorPersonDocUploadedBy")
   /// Docs de persona contratista validados/observados por este usuario.
   contractorPersonDocumentsValidated ContractorPersonDocument[] @relation("ContractorPersonDocValidatedBy")
+  /// Avisos de trabajo creados por este usuario (solicitante).
+  workNoticesCreated WorkNotice[] @relation("WorkNoticeCreatedBy")
+  /// Permisos de trabajo creados por este usuario (Prevención).
+  workPermitsCreated WorkPermit[] @relation("WorkPermitCreatedBy")
 
   @@index([email])
   @@index([username])
@@ -473,6 +506,10 @@ model Business {
   trainings              Training[]
   /// Organizaciones contratistas (empresas externas del módulo contractors).
   contractorOrganizations ContractorOrganization[]
+  /// Avisos de trabajo (área solicitante).
+  workNotices             WorkNotice[]
+  /// Permisos de trabajo en curso / historial.
+  workPermits             WorkPermit[]
 
   @@index([name])
   @@map("businesses")
@@ -681,6 +718,10 @@ model Location {
   users         User[]
   areas         Area[]
   crewMembers   CrewMember[]
+  /// Avisos de trabajo previstos en esta nave/lugar.
+  workNotices   WorkNotice[]
+  /// Permisos de trabajo en esta nave/lugar.
+  workPermits   WorkPermit[]
 
   @@index([businessId])
   @@index([name, businessId])
@@ -709,6 +750,8 @@ model Area {
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   users         User[]
   crewMembers   CrewMember[]
+  /// Avisos de trabajo donde esta área es la solicitante.
+  workNoticesRequested WorkNotice[]
 
   @@index([locationId])
   @@index([businessId])
@@ -1103,6 +1146,10 @@ model ContractorOrganization {
   people              ContractorPerson[]
   /// Documentos de empresa (pack habilitación).
   documents           ContractorOrgDocument[]
+  /// Avisos de trabajo que referencian esta org.
+  workNotices         WorkNotice[]
+  /// Permisos de trabajo de esta org.
+  workPermits         WorkPermit[]
 
   @@unique([businessId, rut])
   @@index([businessId])
@@ -1276,6 +1323,10 @@ model PermitType {
   requirements PermitTypeRequirement[]
   /// Ítems del checklist propio del tipo (P15 · Checklist N ítems).
   checklistItems PermitChecklistItem[]
+  /// Avisos de trabajo de este tipo.
+  workNotices    WorkNotice[]
+  /// Permisos emitidos de este tipo.
+  workPermits    WorkPermit[]
 
   @@unique([businessId, code])
   @@index([businessId])
@@ -1373,4 +1424,95 @@ model PermitChecklistItem {
   @@unique([permitTypeId, order])
   @@index([permitTypeId])
   @@map("permit_checklist_items")
+}
+
+/**
+ * Aviso de trabajo (P4 · AT1 / AT2).
+ * Lo crea un usuario con área (área solicitante); Prevención recibe la solicitud.
+ * La org debe existir; el estado de HAB se lee de la org (no es toggle).
+ * El ciclo Por completar→Cerrado vive en WorkPermit (paso siguiente).
+ */
+model WorkNotice {
+  id                     String                   @id @default(uuid()) @db.Uuid
+  businessId             String                   @map("business_id") @db.Uuid
+  business               Business                 @relation(fields: [businessId], references: [id])
+  /// Código estable AV-NNNN.
+  code                   String                   @unique
+  organizationId         String                   @map("organization_id") @db.Uuid
+  organization           ContractorOrganization   @relation(fields: [organizationId], references: [id])
+  permitTypeId           String                   @map("permit_type_id") @db.Uuid
+  permitType             PermitType               @relation(fields: [permitTypeId], references: [id])
+  /// Nave / lugar donde se hará el trabajo.
+  locationId             String                   @map("location_id") @db.Uuid
+  location               Location                 @relation(fields: [locationId], references: [id])
+  /// Área solicitante (copia de User.areaId al crear; acumulador de KPIs).
+  requestingAreaId       String                   @map("requesting_area_id") @db.Uuid
+  requestingArea         Area                     @relation(fields: [requestingAreaId], references: [id])
+  /// Fecha tentativa del trabajo (día, sin hora obligatoria).
+  tentativeDate          DateTime                 @map("tentative_date") @db.Date
+  /// Duración estimada en días; null = no indicada (opcional).
+  estimatedDurationDays  Int?                     @map("estimated_duration_days")
+  description            String?
+  contactName            String?                  @map("contact_name")
+  contactEmail           String?                  @map("contact_email")
+  contactPhone           String?                  @map("contact_phone")
+  /// Si true, Prevención también recibe correo (envío real = paso posterior).
+  notifyByEmail          Boolean                  @default(true) @map("notify_by_email")
+  status                 WorkNoticeStatus         @default(pending)
+  /// Usuario que creó el aviso (autoría; conteo por persona).
+  createdById            String?                  @map("created_by_id") @db.Uuid
+  createdBy              User?                    @relation("WorkNoticeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  /// Permiso creado a partir de este aviso (1:1).
+  workPermit             WorkPermit?
+  deletedAt              DateTime?                @map("deleted_at") @db.Timestamptz
+  createdAt              DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([businessId])
+  @@index([organizationId])
+  @@index([permitTypeId])
+  @@index([locationId])
+  @@index([requestingAreaId])
+  @@index([status])
+  @@index([tentativeDate])
+  @@map("work_notices")
+}
+
+/**
+ * Permiso de trabajo (PT-NNNN).
+ * Nace desde un aviso (Prevención crea); el contratista completa y el capitán recibe/cierra.
+ * Firmas y checklists llegan en micro-pasos siguientes.
+ */
+model WorkPermit {
+  id             String                 @id @default(uuid()) @db.Uuid
+  businessId     String                 @map("business_id") @db.Uuid
+  business       Business               @relation(fields: [businessId], references: [id])
+  /// Código estable PT-NNNN.
+  code           String                 @unique
+  /// Aviso origen (único: un aviso → un PT).
+  workNoticeId   String                 @unique @map("work_notice_id") @db.Uuid
+  workNotice     WorkNotice             @relation(fields: [workNoticeId], references: [id])
+  organizationId String                 @map("organization_id") @db.Uuid
+  organization   ContractorOrganization @relation(fields: [organizationId], references: [id])
+  permitTypeId   String                 @map("permit_type_id") @db.Uuid
+  permitType     PermitType             @relation(fields: [permitTypeId], references: [id])
+  locationId     String                 @map("location_id") @db.Uuid
+  location       Location               @relation(fields: [locationId], references: [id])
+  /// Copia de la fecha tentativa del aviso al crear (se puede ajustar después).
+  scheduledDate  DateTime               @map("scheduled_date") @db.Date
+  description    String?
+  status         WorkPermitStatus       @default(to_complete)
+  createdById    String?                @map("created_by_id") @db.Uuid
+  createdBy      User?                  @relation("WorkPermitCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  deletedAt      DateTime?              @map("deleted_at") @db.Timestamptz
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([businessId])
+  @@index([organizationId])
+  @@index([permitTypeId])
+  @@index([locationId])
+  @@index([status])
+  @@index([scheduledDate])
+  @@map("work_permits")
 }

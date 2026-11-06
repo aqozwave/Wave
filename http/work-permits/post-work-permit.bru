@@ -1,0 +1,59 @@
+meta {
+  name: Post work permit from notice
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/work-permits
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "workNoticeId": "{{workNoticeId}}"
+  }
+}
+
+docs {
+  Prevención crea PT desde aviso pending → status to_complete; aviso pasa a linked.
+  Variable workNoticeId (post-work-notice).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken.");
+  }
+  if (!bru.getEnvVar("workNoticeId")) {
+    throw new Error("Sin workNoticeId. Corré Post work notice antes.");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if ((res.getStatus() === 201 || res.getStatus() === 200) && body && body.id) {
+    bru.setEnvVar("workPermitId", body.id);
+    bru.setEnvVar("workPermitCode", body.code);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.code: isDefined
+  res.body.status: eq to_complete
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

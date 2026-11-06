@@ -29,6 +29,8 @@ import { muellesRouter } from "./modules/muelles/muelles.routes.js";
 import { notificationOutboxRouter } from "./modules/notificationOutbox/notificationOutbox.routes.js";
 import { notificationSettingsRouter } from "./modules/notificationSettings/notificationSettings.routes.js";
 import { permitTypesRouter } from "./modules/permitTypes/permitTypes.routes.js";
+import { workNoticesRouter } from "./modules/workNotices/workNotices.routes.js";
+import { workPermitsRouter } from "./modules/workPermits/workPermits.routes.js";
 import { portsRouter } from "./modules/ports/ports.routes.js";
 import { trainingsRouter } from "./modules/trainings/trainings.routes.js";
 import { ranksRouter } from "./modules/ranks/ranks.routes.js";
@@ -155,6 +157,8 @@ export function createApp() {
   app.use("/api/v1/trainings", trainingsRouter);
   app.use("/api/v1/contractors", contractorsRouter);
   app.use("/api/v1/accreditations", accreditationsRouter);
+  app.use("/api/v1/work-notices", workNoticesRouter);
+  app.use("/api/v1/work-permits", workPermitsRouter);
   app.use("/api/v1/courses", coursesRouter);
   app.use("/api/v1/ports", portsRouter);
   app.use("/api/v1/muelles", muellesRouter);
