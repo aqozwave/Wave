@@ -1528,6 +1528,8 @@ model WorkPermit {
   status         WorkPermitStatus       @default(to_complete)
   /// Motivo al devolver a «Por completar»; se limpia al aprobar.
   reviewNote     String?                @map("review_note")
+  /// Exigencias/checklist congelados al crear el PT (R-13 · P13b).
+  requirementsSnapshot Json?            @map("requirements_snapshot")
   createdById    String?                @map("created_by_id") @db.Uuid
   createdBy      User?                  @relation("WorkPermitCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   deletedAt      DateTime?              @map("deleted_at") @db.Timestamptz

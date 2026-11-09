@@ -160,8 +160,10 @@ export function ContractorPortalPeoplePage() {
   const [pendingDeactivate, setPendingDeactivate] =
     useState<ContractorPortalPerson | null>(null);
 
-  const canUpload =
+  /** Editar/reemplazar en HAB abierta; approved solo completar huecos. */
+  const canUploadEditable =
     hab?.status === "pending" || hab?.status === "observed";
+  const canUploadApprovedGaps = hab?.status === "approved";
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -488,7 +490,8 @@ export function ContractorPortalPeoplePage() {
                       row={row}
                       open={open}
                       chip={chip}
-                      canUpload={Boolean(canUpload)}
+                      canUploadEditable={canUploadEditable}
+                      canUploadApprovedGaps={canUploadApprovedGaps}
                       docsLoading={docsLoading && open}
                       personDocs={open ? personDocs : []}
                       uploadingTypeId={uploadingTypeId}
@@ -688,7 +691,8 @@ function PersonRows({
   row,
   open,
   chip,
-  canUpload,
+  canUploadEditable,
+  canUploadApprovedGaps,
   docsLoading,
   personDocs,
   uploadingTypeId,
@@ -703,7 +707,8 @@ function PersonRows({
   row: ContractorPortalPerson;
   open: boolean;
   chip: { label: string; tone: "success" | "warning" | "danger" | "info" | "neutral" };
-  canUpload: boolean;
+  canUploadEditable: boolean;
+  canUploadApprovedGaps: boolean;
   docsLoading: boolean;
   personDocs: ContractorPortalPersonDocChecklistItem[];
   uploadingTypeId: string | null;
@@ -852,7 +857,8 @@ function PersonRows({
                             Descargar
                           </button>
                         ) : null}
-                        {canUpload ? (
+                        {canUploadEditable ||
+                        (canUploadApprovedGaps && !doc) ? (
                           <label className="cursor-pointer text-[11px] font-medium text-[var(--color-nachipa-title)] hover:underline">
                             {uploadingTypeId === item.documentType.id
                               ? "Subiendo…"

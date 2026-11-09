@@ -1,0 +1,46 @@
+meta {
+  name: Get work permit requirements-check
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/work-permits/requirements-check?organizationId={{organizationId}}&permitTypeId={{permitTypeId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  P13b: verifica exigencias de empresa antes de crear el PT.
+  Variables organizationId + permitTypeId (aviso o contratista + tipo).
+  canCreate=false si HAB no approved o falta exigencia company/before obligatoria.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken.");
+  }
+  if (!bru.getEnvVar("organizationId")) {
+    throw new Error("Sin organizationId.");
+  }
+  if (!bru.getEnvVar("permitTypeId")) {
+    throw new Error("Sin permitTypeId.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.canCreate: isDefined
+  res.body.items: isDefined
+  res.body.summary: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

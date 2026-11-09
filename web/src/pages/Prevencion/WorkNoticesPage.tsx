@@ -6,6 +6,7 @@ import {
   type FormEvent,
 } from "react";
 import { Bell, Plus } from "lucide-react";
+import { useNavigate } from "react-router";
 import { Button } from "../../components/Button/Button";
 import {
   DataTableCard,
@@ -19,7 +20,6 @@ import {
   useClientTablePagination,
 } from "../../components/TablePagination/TablePagination";
 import { TextField } from "../../components/TextField/TextField";
-import { Toggle } from "../../components/Toggle/Toggle";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { useToast } from "../../components/Toast/ToastProvider";
@@ -42,8 +42,8 @@ import {
   listWorkNoticesRequest,
   type WorkNotice,
 } from "../../lib/api/workNotices";
-import { createWorkPermitRequest } from "../../lib/api/workPermits";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { WorkPermitCreateModal } from "./WorkPermitCreateModal";
 
 /** Capitaliza nombre. */
 function displayName(value: string): string {
@@ -119,9 +119,12 @@ const outlineBtnClass =
 export function WorkNoticesPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const canRead = userHasPermission(user, "work_notices", "read");
   const canCreate = userHasPermission(user, "work_notices", "create");
   const canCreatePermit = userHasPermission(user, "work_permits", "create");
+  /** Crear PT es solo staff (no portal). */
+  const isStaff = !user?.organizationId;
 
   const [items, setItems] = useState<WorkNotice[]>([]);
   const [orgs, setOrgs] = useState<ContractorOrganization[]>([]);
@@ -129,6 +132,10 @@ export function WorkNoticesPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  /** Aviso preseleccionado para el modal P13. */
+  const [permitFromNotice, setPermitFromNotice] = useState<WorkNotice | null>(
+    null,
+  );
 
   const [createOpen, setCreateOpen] = useState(false);
   const [organizationId, setOrganizationId] = useState("");
@@ -140,9 +147,7 @@ export function WorkNoticesPage() {
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
-  const [notifyByEmail, setNotifyByEmail] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [creatingPermitId, setCreatingPermitId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!accessToken || !canRead) return;
@@ -249,7 +254,6 @@ export function WorkNoticesPage() {
     setContactName("");
     setContactEmail("");
     setContactPhone("");
-    setNotifyByEmail(true);
     setCreateOpen(true);
   }
 
@@ -263,25 +267,11 @@ export function WorkNoticesPage() {
     setContactPhone(org.contactPhone ?? "");
   }
 
-  /** Prevención crea PT desde aviso pending. */
-  async function onCreatePermit(row: WorkNotice) {
-    if (!accessToken || creatingPermitId || !canCreatePermit) return;
+  /** Abre P13b con el aviso pendiente. */
+  function openCreatePermit(row: WorkNotice) {
+    if (!canCreatePermit || !isStaff) return;
     if (row.workPermit || row.status !== "pending") return;
-    setCreatingPermitId(row.id);
-    try {
-      const permit = await createWorkPermitRequest(accessToken, {
-        workNoticeId: row.id,
-      });
-      showToast(`Permiso ${permit.code} creado · Por completar.`, "success");
-      await load();
-    } catch (err) {
-      showToast(
-        err instanceof ApiError ? err.message : "No se pudo crear el permiso.",
-        "danger",
-      );
-    } finally {
-      setCreatingPermitId(null);
-    }
+    setPermitFromNotice(row);
   }
 
   /** POST aviso. */
@@ -314,7 +304,7 @@ export function WorkNoticesPage() {
         contactName: contactName.trim() || null,
         contactEmail: contactEmail.trim() || null,
         contactPhone: contactPhone.trim() || null,
-        notifyByEmail,
+        notifyByEmail: true,
       });
       showToast("Aviso enviado a Prevención.", "success");
       setCreateOpen(false);
@@ -496,16 +486,15 @@ export function WorkNoticesPage() {
                         <span className="text-[12px] font-medium tabular-nums text-[var(--color-nachipa-primary)]">
                           {row.workPermit.code}
                         </span>
-                      ) : canCreatePermit && row.status === "pending" ? (
+                      ) : canCreatePermit &&
+                        isStaff &&
+                        row.status === "pending" ? (
                         <button
                           type="button"
-                          className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
-                          disabled={creatingPermitId === row.id}
-                          onClick={() => void onCreatePermit(row)}
+                          className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                          onClick={() => openCreatePermit(row)}
                         >
-                          {creatingPermitId === row.id
-                            ? "Creando…"
-                            : "Crear permiso"}
+                          Crear permiso
                         </button>
                       ) : (
                         <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
@@ -681,20 +670,14 @@ export function WorkNoticesPage() {
             />
           </label>
 
-          <div className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-[var(--color-nachipa-bg-page)] px-3 py-2.5">
-            <div>
-              <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                Avisar a Prevención por correo
-              </p>
-              <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
-                Llega a su bandeja de avisos y a su correo
-              </p>
-            </div>
-            <Toggle
-              checked={notifyByEmail}
-              onChange={setNotifyByEmail}
-              aria-label="Avisar por correo"
-            />
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-[var(--color-nachipa-bg-page)] px-3 py-2.5">
+            <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
+              Prevención siempre recibe el aviso
+            </p>
+            <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
+              Llega a su bandeja y a su correo: ella valida la documentación de
+              la contratista antes de habilitar el trabajo.
+            </p>
           </div>
 
           <p className="m-0 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--color-brand-sky)_12%,white)] px-3 py-2 text-[12px] text-[var(--color-nachipa-body)]">
@@ -703,6 +686,19 @@ export function WorkNoticesPage() {
           </p>
         </form>
       </Modal>
+
+      {accessToken && canCreatePermit && isStaff ? (
+        <WorkPermitCreateModal
+          open={Boolean(permitFromNotice)}
+          accessToken={accessToken}
+          initialNotice={permitFromNotice}
+          onClose={() => setPermitFromNotice(null)}
+          onCreated={(permitId) => {
+            void load();
+            navigate(`/prevencion/permisos/${permitId}`);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

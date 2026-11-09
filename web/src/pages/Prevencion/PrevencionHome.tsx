@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   ArrowRight,
+  Bell,
   Building2,
   ClipboardCheck,
   ClipboardList,
@@ -34,10 +35,44 @@ type HubGroup = {
 };
 
 /**
- * Mapa del módulo Prevención (P1 catálogos + P2 orgs).
- * Habilitación / PT llegan en micro-pasos siguientes.
+ * Hub Prevención en orden de proceso:
+ * operación primero, catálogos al final.
  */
 const HUB_GROUPS: HubGroup[] = [
+  {
+    title: "Operación",
+    legend: "De la empresa externa al permiso a bordo.",
+    items: [
+      {
+        label: "Contratistas",
+        legend: "Organizaciones externas del tenant (alta, ficha, estado).",
+        icon: Building2,
+        to: "/prevencion/contratistas",
+        canShow: (u) => userHasPermission(u, "contractors", "read"),
+      },
+      {
+        label: "Habilitaciones",
+        legend: "Solicitar docs, revisar y aprobar (HAB-NNNN).",
+        icon: ClipboardCheck,
+        to: "/prevencion/habilitaciones",
+        canShow: (u) => userHasPermission(u, "accreditations", "read"),
+      },
+      {
+        label: "Avisos de trabajo",
+        legend: "Avisar a Prevención qué trabajo y empresa van a un lugar.",
+        icon: Bell,
+        to: "/prevencion/avisos",
+        canShow: (u) => userHasPermission(u, "work_notices", "read"),
+      },
+      {
+        label: "Permisos de trabajo",
+        legend: "Crear, aprobar y autorizar a bordo (flujos configurables).",
+        icon: ClipboardList,
+        to: "/prevencion/permisos",
+        canShow: (u) => userHasPermission(u, "work_permits", "read"),
+      },
+    ],
+  },
   {
     title: "Catálogos",
     legend: "Maestros por empresa para armar permisos de trabajo.",
@@ -63,33 +98,6 @@ const HUB_GROUPS: HubGroup[] = [
         to: "/prevencion/packs",
         canShow: (u) =>
           userHasPermission(u, "maestros.document_types", "read"),
-      },
-    ],
-  },
-  {
-    title: "Operación",
-    legend: "Contratistas y flujos de emisión.",
-    items: [
-      {
-        label: "Contratistas",
-        legend: "Organizaciones externas del tenant (alta, ficha, estado).",
-        icon: Building2,
-        to: "/prevencion/contratistas",
-        canShow: (u) => userHasPermission(u, "contractors", "read"),
-      },
-      {
-        label: "Habilitaciones",
-        legend: "Solicitar docs, revisar y aprobar (HAB-NNNN).",
-        icon: ClipboardCheck,
-        to: "/prevencion/habilitaciones",
-        canShow: (u) => userHasPermission(u, "accreditations", "read"),
-      },
-      {
-        label: "Permisos de trabajo",
-        legend: "Crear, aprobar y autorizar a bordo (flujos configurables).",
-        icon: ClipboardList,
-        to: "/prevencion/permisos",
-        canShow: (u) => userHasPermission(u, "work_permits", "read"),
       },
     ],
   },

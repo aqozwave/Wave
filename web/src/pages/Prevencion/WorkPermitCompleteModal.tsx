@@ -6,7 +6,13 @@ import {
   listContractorPeopleRequest,
   listContractorPortalPeopleRequest,
   type ContractorPerson,
+  type ContractorPortalPerson,
 } from "../../lib/api/contractors";
+
+/** Persona en el modal con progreso opcional del pack (portal). */
+type SelectablePerson = ContractorPerson & {
+  documents?: ContractorPortalPerson["documents"];
+};
 import {
   getWorkPermitChecklistRequest,
   listWorkPermitPeopleRequest,
@@ -49,12 +55,19 @@ export function WorkPermitCompleteModal({
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [available, setAvailable] = useState<ContractorPerson[]>([]);
+  const [available, setAvailable] = useState<SelectablePerson[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [checklist, setChecklist] = useState<WorkPermitChecklistItem[]>([]);
   const [answers, setAnswers] = useState<
     Record<string, WorkPermitChecklistAnswerValue>
   >({});
+
+  /** Pack persona incompleto (portal: uploaded < required). */
+  function isPersonDocsIncomplete(p: SelectablePerson): boolean {
+    if (!p.documents) return false;
+    if (p.documents.required <= 0) return true;
+    return p.documents.uploaded < p.documents.required;
+  }
 
   useEffect(() => {
     if (!open || !permit || !accessToken) return;
@@ -80,8 +93,21 @@ export function WorkPermitCompleteModal({
           getWorkPermitChecklistRequest(accessToken, permit!.id, "contractor"),
         ]);
         if (cancelled) return;
-        setAvailable(peopleRes.items);
-        setSelectedIds(new Set(assignedRes.items.map((p) => p.personId)));
+        const people = peopleRes.items as SelectablePerson[];
+        setAvailable(people);
+        /** Quita del set a quienes no tienen pack (no se pueden guardar). */
+        const allowed = new Set(
+          people
+            .filter((p) => !isPersonDocsIncomplete(p))
+            .map((p) => p.id),
+        );
+        setSelectedIds(
+          new Set(
+            assignedRes.items
+              .map((p) => p.personId)
+              .filter((id) => allowed.has(id) || mode === "staff"),
+          ),
+        );
         setChecklist(checklistRes.items);
         const next: Record<string, WorkPermitChecklistAnswerValue> = {};
         for (const item of checklistRes.items) {
@@ -108,12 +134,13 @@ export function WorkPermitCompleteModal({
     };
   }, [open, permit, accessToken, mode, showToast]);
 
-  /** Marca/desmarca persona. */
-  function togglePerson(personId: string) {
+  /** Marca/desmarca persona (no permite elegir pack incompleto en portal). */
+  function togglePerson(person: SelectablePerson) {
+    if (isPersonDocsIncomplete(person)) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(personId)) next.delete(personId);
-      else next.add(personId);
+      if (next.has(person.id)) next.delete(person.id);
+      else next.add(person.id);
       return next;
     });
   }
@@ -222,33 +249,51 @@ export function WorkPermitCompleteModal({
             <h3 className="m-0 mb-2 text-[13px] font-semibold text-[var(--color-nachipa-title)]">
               Personal ({selectedIds.size})
             </h3>
+            <p className="m-0 mb-2 text-[12px] text-[var(--color-nachipa-secondary)]">
+              Solo personal con pack de documentos completo (validados y
+              vigentes). Sin docs no se puede asignar ni enviar.
+            </p>
             {available.length === 0 ? (
               <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
                 No hay personas activas en la organización.
               </p>
             ) : (
               <ul className="m-0 flex max-h-48 list-none flex-col gap-1 overflow-y-auto p-0">
-                {available.map((p) => (
-                  <li key={p.id}>
-                    <label className="flex cursor-pointer items-start gap-2 rounded-[var(--radius-md)] px-2 py-1.5 hover:bg-[var(--color-nachipa-bg-page)]">
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={selectedIds.has(p.id)}
-                        onChange={() => togglePerson(p.id)}
-                      />
-                      <span>
-                        <span className="block text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                          {p.fullName}
+                {available.map((p) => {
+                  const incomplete = isPersonDocsIncomplete(p);
+                  return (
+                    <li key={p.id}>
+                      <label
+                        className={`flex items-start gap-2 rounded-[var(--radius-md)] px-2 py-1.5 ${
+                          incomplete
+                            ? "cursor-not-allowed opacity-60"
+                            : "cursor-pointer hover:bg-[var(--color-nachipa-bg-page)]"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={selectedIds.has(p.id)}
+                          disabled={incomplete}
+                          onChange={() => togglePerson(p)}
+                        />
+                        <span>
+                          <span className="block text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                            {p.fullName}
+                          </span>
+                          <span className="text-[12px] tabular-nums text-[var(--color-nachipa-secondary)]">
+                            {p.rut}
+                            {p.position ? ` · ${p.position}` : ""}
+                            {p.documents
+                              ? ` · docs ${p.documents.uploaded}/${p.documents.required}`
+                              : ""}
+                            {incomplete ? " · Faltan documentos" : ""}
+                          </span>
                         </span>
-                        <span className="text-[12px] tabular-nums text-[var(--color-nachipa-secondary)]">
-                          {p.rut}
-                          {p.position ? ` · ${p.position}` : ""}
-                        </span>
-                      </span>
-                    </label>
-                  </li>
-                ))}
+                      </label>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>

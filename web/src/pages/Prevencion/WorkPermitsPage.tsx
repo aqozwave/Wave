@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ClipboardCheck } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Button } from "../../components/Button/Button";
 import {
   DataTableCard,
@@ -30,6 +30,7 @@ import {
 } from "../../lib/api/workPermits";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { WorkPermitCompleteModal } from "./WorkPermitCompleteModal";
+import { WorkPermitCreateModal } from "./WorkPermitCreateModal";
 
 /** Capitaliza. */
 function displayName(value: string): string {
@@ -81,7 +82,9 @@ const outlineBtnClass =
 export function WorkPermitsPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const canRead = userHasPermission(user, "work_permits", "read");
+  const canCreate = userHasPermission(user, "work_permits", "create");
   const canUpdate = userHasPermission(user, "work_permits", "update");
   const canReceive = userHasPermission(user, "work_permits", "receive");
   /** Portal contratista no aprueba ni recibe. */
@@ -99,6 +102,8 @@ export function WorkPermitsPage() {
   const [reviewNote, setReviewNote] = useState("");
   /** Modal completar personal + checklist (también staff, opción B). */
   const [completeRow, setCompleteRow] = useState<WorkPermit | null>(null);
+  /** Modal Nuevo permiso P13/P13b. */
+  const [createOpen, setCreateOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken || !canRead) return;
@@ -270,12 +275,24 @@ export function WorkPermitsPage() {
           title="Permisos de trabajo"
           description="Prevención crea cada permiso desde un aviso, aprueba o devuelve; el capitán recibe y fiscaliza el cierre."
           actions={
-            <Link
-              to="/prevencion/avisos"
-              className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-            >
-              Ir a avisos
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                to="/prevencion/avisos"
+                className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+              >
+                Ir a avisos
+              </Link>
+              {canCreate && isStaff ? (
+                <Button
+                  type="button"
+                  size="medium"
+                  className="!w-auto"
+                  onClick={() => setCreateOpen(true)}
+                >
+                  Nuevo permiso
+                </Button>
+              ) : null}
+            </div>
           }
         />
 
@@ -461,6 +478,18 @@ export function WorkPermitsPage() {
           mode="staff"
           onClose={() => setCompleteRow(null)}
           onDone={() => void load()}
+        />
+      ) : null}
+
+      {accessToken && canCreate && isStaff ? (
+        <WorkPermitCreateModal
+          open={createOpen}
+          accessToken={accessToken}
+          onClose={() => setCreateOpen(false)}
+          onCreated={(permitId) => {
+            void load();
+            navigate(`/prevencion/permisos/${permitId}`);
+          }}
         />
       ) : null}
 

@@ -132,8 +132,8 @@ function canSeePrevencion(user: AuthUser | null): boolean {
 }
 
 /**
- * Subítems de Prevención (P1 catálogos).
- * Permisos de trabajo / contratistas llegan en P2+.
+ * Subítems de Prevención en orden de proceso:
+ * operación (contratista → HAB → aviso → PT) y después catálogos.
  */
 const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
   {
@@ -141,25 +141,6 @@ const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
     to: "/prevencion",
     icon: HardHat,
     canShow: (u) => canSeePrevencion(u),
-  },
-  {
-    label: "Tipos de permiso",
-    to: "/prevencion/tipos",
-    icon: ClipboardList,
-    canShow: (u) => userHasPermission(u, "permit_types", "read"),
-  },
-  {
-    label: "Capacitaciones",
-    to: "/prevencion/capacitaciones",
-    icon: GraduationCap,
-    canShow: (u) => userHasPermission(u, "trainings", "read"),
-  },
-  {
-    label: "Packs de habilitación",
-    to: "/prevencion/packs",
-    icon: Package,
-    canShow: (u) =>
-      userHasPermission(u, "maestros.document_types", "read"),
   },
   {
     label: "Contratistas",
@@ -184,6 +165,25 @@ const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
     to: "/prevencion/permisos",
     icon: ShieldCheck,
     canShow: (u) => userHasPermission(u, "work_permits", "read"),
+  },
+  {
+    label: "Tipos de permiso",
+    to: "/prevencion/tipos",
+    icon: ClipboardList,
+    canShow: (u) => userHasPermission(u, "permit_types", "read"),
+  },
+  {
+    label: "Capacitaciones",
+    to: "/prevencion/capacitaciones",
+    icon: GraduationCap,
+    canShow: (u) => userHasPermission(u, "trainings", "read"),
+  },
+  {
+    label: "Packs de habilitación",
+    to: "/prevencion/packs",
+    icon: Package,
+    canShow: (u) =>
+      userHasPermission(u, "maestros.document_types", "read"),
   },
 ];
 

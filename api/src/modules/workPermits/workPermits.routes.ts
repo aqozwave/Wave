@@ -5,6 +5,7 @@ import { requirePermission } from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   approveWorkPermitHandler,
+  checkWorkPermitRequirementsHandler,
   createWorkPermitHandler,
   getWorkPermitChecklistHandler,
   getWorkPermitHandler,
@@ -32,6 +33,7 @@ import {
   rejectReceiptWorkPermitRequestSchema,
   returnWorkPermitRequestSchema,
   submitWorkPermitRequestSchema,
+  workPermitRequirementsCheckRequestSchema,
 } from "./workPermits.schemas.js";
 
 /**
@@ -61,6 +63,18 @@ workPermitsRouter.post(
   ),
   validate(createWorkPermitRequestSchema),
   createWorkPermitHandler,
+);
+
+/** Antes de /:id para no capturar "requirements-check" como uuid. */
+workPermitsRouter.get(
+  "/requirements-check",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.WORK_PERMITS,
+    PERMISSION_ACTION.CREATE,
+  ),
+  validate(workPermitRequirementsCheckRequestSchema),
+  checkWorkPermitRequirementsHandler,
 );
 
 workPermitsRouter.get(

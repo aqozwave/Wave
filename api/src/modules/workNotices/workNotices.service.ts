@@ -365,7 +365,8 @@ export async function createWorkNotice(
         contactName,
         contactEmail: resolvedEmail,
         contactPhone,
-        notifyByEmail: body.notifyByEmail ?? true,
+        // Siempre avisa a Prevención: ella valida docs y habilita el trabajo.
+        notifyByEmail: true,
         status: "pending",
         createdById: actor.id,
       },

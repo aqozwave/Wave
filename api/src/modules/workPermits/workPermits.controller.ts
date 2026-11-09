@@ -15,16 +15,19 @@ import {
   rejectReceiptWorkPermitResponseSchema,
   returnWorkPermitResponseSchema,
   submitWorkPermitResponseSchema,
+  workPermitRequirementsCheckResponseSchema,
   type CreateWorkPermitBody,
   type ListWorkPermitHistoryQuery,
   type ListWorkPermitsQuery,
   type PutWorkPermitChecklistBody,
   type PutWorkPermitPeopleBody,
   type WorkPermitChecklistStage,
+  type WorkPermitRequirementsCheckQuery,
   type WorkPermitReviewNoteBody,
 } from "./workPermits.schemas.js";
 import {
   approveWorkPermit,
+  checkWorkPermitRequirements,
   createWorkPermitFromNotice,
   getWorkPermitById,
   getWorkPermitChecklist,
@@ -48,6 +51,19 @@ export async function listWorkPermitsHandler(
   const query = req.query as unknown as ListWorkPermitsQuery;
   const result = await listWorkPermits(req.user, query);
   res.status(200).json(listWorkPermitsResponseSchema.parse(result));
+}
+
+/** GET /work-permits/requirements-check — P13b. */
+export async function checkWorkPermitRequirementsHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const query = req.query as unknown as WorkPermitRequirementsCheckQuery;
+  const result = await checkWorkPermitRequirements(req.user, query);
+  res
+    .status(200)
+    .json(workPermitRequirementsCheckResponseSchema.parse(result));
 }
 
 /** POST /work-permits — crear desde aviso. */

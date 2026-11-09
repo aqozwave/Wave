@@ -328,7 +328,152 @@ export async function submitAccreditation(
   return toAccreditationResponse(updated);
 }
 
-/** Prevención aprueba: in_review → approved. */
+/**
+ * Pack persona de una HAB: tipos del catálogo vs docs validados vigentes de esa persona.
+ * Usado al asignar personal a un PT (no operar sin documentación).
+ */
+export async function evaluatePersonPack(
+  businessId: string,
+  accreditationId: string,
+  personId: string,
+): Promise<{
+  total: number;
+  ok: number;
+  missingCodes: string[];
+  complete: boolean;
+}> {
+  const [packTypes, docs] = await Promise.all([
+    prisma.documentType.findMany({
+      where: {
+        businessId,
+        deletedAt: null,
+        state: true,
+        accreditationPack: "person",
+      },
+      select: { id: true, code: true },
+      orderBy: { code: "asc" },
+    }),
+    prisma.contractorPersonDocument.findMany({
+      where: {
+        accreditationId,
+        personId,
+        deletedAt: null,
+        status: { not: "replaced" },
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        documentTypeId: true,
+        status: true,
+        expiresAt: true,
+      },
+    }),
+  ]);
+
+  const now = Date.now();
+  const byType = new Map<string, { status: string; expiresAt: Date | null }>();
+  for (const doc of docs) {
+    if (!byType.has(doc.documentTypeId)) {
+      byType.set(doc.documentTypeId, {
+        status: doc.status,
+        expiresAt: doc.expiresAt,
+      });
+    }
+  }
+
+  /** Validado y sin vencimiento pasado. */
+  function isOk(documentTypeId: string): boolean {
+    const row = byType.get(documentTypeId);
+    if (!row || row.status !== "validated") return false;
+    if (row.expiresAt && row.expiresAt.getTime() < now) return false;
+    return true;
+  }
+
+  const missingCodes = packTypes
+    .filter((t) => !isOk(t.id))
+    .map((t) => t.code);
+  const total = packTypes.length;
+  const ok = total - missingCodes.length;
+  return {
+    total,
+    ok,
+    missingCodes,
+    complete: total > 0 && missingCodes.length === 0,
+  };
+}
+
+/**
+ * Estado del pack empresa de una HAB: tipos del catálogo vs docs validados vigentes.
+ * Usado al aprobar HAB y al crear PT (no operar con pack incompleto).
+ */
+export async function evaluateCompanyPack(
+  businessId: string,
+  accreditationId: string,
+): Promise<{
+  total: number;
+  ok: number;
+  missingCodes: string[];
+  complete: boolean;
+}> {
+  const [packTypes, docs] = await Promise.all([
+    prisma.documentType.findMany({
+      where: {
+        businessId,
+        deletedAt: null,
+        state: true,
+        accreditationPack: "company",
+      },
+      select: { id: true, code: true },
+      orderBy: { code: "asc" },
+    }),
+    prisma.contractorOrgDocument.findMany({
+      where: {
+        accreditationId,
+        deletedAt: null,
+        status: { not: "replaced" },
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        documentTypeId: true,
+        status: true,
+        expiresAt: true,
+      },
+    }),
+  ]);
+
+  const now = Date.now();
+  /** Primer doc no replaced por tipo (más reciente por orderBy). */
+  const byType = new Map<string, { status: string; expiresAt: Date | null }>();
+  for (const doc of docs) {
+    if (!byType.has(doc.documentTypeId)) {
+      byType.set(doc.documentTypeId, {
+        status: doc.status,
+        expiresAt: doc.expiresAt,
+      });
+    }
+  }
+
+  /** Validado y sin vencimiento pasado. */
+  function isOk(documentTypeId: string): boolean {
+    const row = byType.get(documentTypeId);
+    if (!row || row.status !== "validated") return false;
+    if (row.expiresAt && row.expiresAt.getTime() < now) return false;
+    return true;
+  }
+
+  const missingCodes = packTypes
+    .filter((t) => !isOk(t.id))
+    .map((t) => t.code);
+  const total = packTypes.length;
+  const ok = total - missingCodes.length;
+  return {
+    total,
+    ok,
+    missingCodes,
+    complete: total > 0 && missingCodes.length === 0,
+  };
+}
+
+/** Prevención aprueba: in_review → approved. Exige pack empresa 100% vigente. */
 export async function approveAccreditation(
   actor: Actor,
   id: string,
@@ -355,6 +500,26 @@ export async function approveAccreditation(
       409,
       "invalid_accreditation_transition",
       `Solo se aprueba desde in_review (ahora: ${existing.status})`,
+    );
+  }
+
+  const pack = await evaluateCompanyPack(
+    existing.organization.businessId,
+    existing.id,
+  );
+  if (pack.total === 0) {
+    throw new AppError(
+      422,
+      "company_pack_empty",
+      "No hay tipos en el pack empresa; configurá Packs de habilitación antes de aprobar",
+    );
+  }
+  if (!pack.complete) {
+    throw new AppError(
+      422,
+      "company_pack_incomplete",
+      `No se puede aprobar: faltan documentos del pack empresa (${pack.ok} de ${pack.total} vigentes)`,
+      { missingCodes: pack.missingCodes, ok: pack.ok, total: pack.total },
     );
   }
 

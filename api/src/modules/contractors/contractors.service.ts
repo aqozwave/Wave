@@ -583,16 +583,19 @@ function generateInvitePassword(): string {
   return `Wave${randomBytes(9).toString("hex")}9a`;
 }
 
-/** Resuelve rol de sistema `user` para invitados del portal contratista. */
+/**
+ * Rol de sistema `contratista` para invitados del portal externo.
+ * Incluye work_permits + accreditations (no el rol `user` de tripulante).
+ */
 async function resolveContractorInviteRole() {
   const role = await prisma.role.findFirst({
-    where: { key: "user", deletedAt: null, state: true },
+    where: { key: "contratista", deletedAt: null, state: true },
   });
   if (!role) {
     throw new AppError(
       500,
       "role_missing",
-      'Rol de sistema "user" no encontrado',
+      'Rol de sistema "contratista" no encontrado',
     );
   }
   return role;
@@ -707,6 +710,7 @@ export async function inviteContractorUser(
     }
 
     // No pisa RUN de una cuenta ya existente (evita choque con unique).
+    // Siempre deja rol contratista: el portal necesita work_permits/accreditations.
     const updated = await prisma.user.update({
       where: { id: existing.id },
       data: {
@@ -715,13 +719,11 @@ export async function inviteContractorUser(
         firstName: body.firstName,
         lastName: body.lastName,
         invitedById: actor.id,
+        roleId: role.id,
+        internalRol: role.key,
         ...(accessExpiresAt !== undefined
           ? { accessExpiresAt }
           : {}),
-        // Si no tenía rol, asigna user.
-        ...(existing.roleId
-          ? {}
-          : { roleId: role.id, internalRol: role.key }),
       },
       include: invitedByInclude,
     });

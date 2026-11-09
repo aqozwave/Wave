@@ -63,6 +63,8 @@ export const workPermitResponseSchema = z
     status: workPermitStatusSchema,
     /** Motivo de la última devolución; null si nunca se devolvió o se aprobó después. */
     reviewNote: z.string().nullable(),
+    /** Snapshot de exigencias al crear (R-13); null en PT viejos. */
+    requirementsSnapshot: z.unknown().nullable(),
     createdById: z.uuid().nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -307,4 +309,66 @@ export const listWorkPermitHistoryResponseSchema = z
 
 export type ListWorkPermitHistoryQuery = z.infer<
   typeof listWorkPermitHistoryQuerySchema
+>;
+
+/** Estado de una exigencia en P13b. */
+export const workPermitRequirementCheckStatusSchema = z.enum([
+  "ok",
+  "later",
+  "missing",
+  "not_applicable",
+]);
+
+/** Ítem de verificación de exigencias. */
+export const workPermitRequirementCheckItemSchema = z
+  .object({
+    requirementId: z.uuid(),
+    key: z.string(),
+    kind: z.enum(["document", "training", "checklist"]),
+    scope: z.enum(["company", "person", "permit"]),
+    moment: z.enum(["before", "closure"]),
+    mandatory: z.boolean(),
+    label: z.string(),
+    status: workPermitRequirementCheckStatusSchema,
+    detail: z.string().nullable(),
+  })
+  .openapi("WorkPermitRequirementCheckItem");
+
+/** GET /work-permits/requirements-check (P13b). */
+export const workPermitRequirementsCheckQuerySchema = z.object({
+  organizationId: z.uuid(),
+  permitTypeId: z.uuid(),
+});
+
+export const workPermitRequirementsCheckRequestSchema = z.object({
+  query: workPermitRequirementsCheckQuerySchema,
+});
+
+export const workPermitRequirementsCheckResponseSchema = z
+  .object({
+    organizationId: z.uuid(),
+    organization: workPermitOrganizationSchema,
+    permitTypeId: z.uuid(),
+    permitType: workPermitPermitTypeSchema,
+    accreditation: z
+      .object({
+        id: z.uuid(),
+        code: z.string(),
+        status: z.string(),
+      })
+      .nullable(),
+    summary: z.object({
+      ok: z.number().int().nonnegative(),
+      later: z.number().int().nonnegative(),
+      missing: z.number().int().nonnegative(),
+      notApplicable: z.number().int().nonnegative(),
+    }),
+    items: z.array(workPermitRequirementCheckItemSchema),
+    /** false si HAB no approved o hay missing mandatory before de empresa. */
+    canCreate: z.boolean(),
+  })
+  .openapi("WorkPermitRequirementsCheckResponse");
+
+export type WorkPermitRequirementsCheckQuery = z.infer<
+  typeof workPermitRequirementsCheckQuerySchema
 >;

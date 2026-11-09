@@ -3,6 +3,10 @@ import { assertBusinessModuleEnabled } from "../../lib/businessModules.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
+import {
+  evaluateCompanyPack,
+  evaluatePersonPack,
+} from "../accreditations/accreditations.service.js";
 import type {
   CreateWorkPermitBody,
   ListWorkPermitHistoryQuery,
@@ -10,6 +14,7 @@ import type {
   PutWorkPermitChecklistBody,
   PutWorkPermitPeopleBody,
   WorkPermitChecklistStage,
+  WorkPermitRequirementsCheckQuery,
   WorkPermitResponse,
   WorkPermitReviewNoteBody,
 } from "./workPermits.schemas.js";
@@ -74,6 +79,7 @@ function toWorkPermitResponse(row: PermitRow): WorkPermitResponse {
     description: row.description,
     status: row.status,
     reviewNote: row.reviewNote,
+    requirementsSnapshot: row.requirementsSnapshot ?? null,
     createdById: row.createdById,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -247,9 +253,331 @@ export async function getWorkPermitById(
   return toWorkPermitResponse(row);
 }
 
+/** Estado de verificación de una exigencia (P13b). */
+type RequirementCheckStatus =
+  | "ok"
+  | "later"
+  | "missing"
+  | "not_applicable";
+
+/** Ítem serializado del check. */
+type RequirementCheckItem = {
+  requirementId: string;
+  key: string;
+  kind: "document" | "training" | "checklist";
+  scope: "company" | "person" | "permit";
+  moment: "before" | "closure";
+  mandatory: boolean;
+  label: string;
+  status: RequirementCheckStatus;
+  detail: string | null;
+};
+
+/** Resultado completo del requirements-check. */
+type RequirementsCheckResult = {
+  organizationId: string;
+  organization: { id: string; name: string; rut: string };
+  permitTypeId: string;
+  permitType: { id: string; code: string; name: string };
+  accreditation: { id: string; code: string; status: string } | null;
+  summary: {
+    ok: number;
+    later: number;
+    missing: number;
+    notApplicable: number;
+  };
+  items: RequirementCheckItem[];
+  canCreate: boolean;
+};
+
+/**
+ * Evalúa exigencias de empresa al crear el PT (R-09 / R-11).
+ * Persona/capacitación/checklist → later; cierre → later.
+ */
+export async function checkWorkPermitRequirements(
+  actor: Actor,
+  query: WorkPermitRequirementsCheckQuery,
+): Promise<RequirementsCheckResult> {
+  const org = await prisma.contractorOrganization.findFirst({
+    where: { id: query.organizationId, deletedAt: null },
+  });
+  if (!org) {
+    throw new AppError(
+      404,
+      "contractor_not_found",
+      "Organización no encontrada",
+    );
+  }
+  // Check sin locationId: solo tenant/org (el PT se crea desde el aviso).
+  if (actor.internalRol !== "superadmin") {
+    if (actor.organizationId) {
+      if (actor.organizationId !== org.id) {
+        throw new AppError(
+          404,
+          "contractor_not_found",
+          "Organización no encontrada",
+        );
+      }
+    } else if (!actor.businessId || actor.businessId !== org.businessId) {
+      throw new AppError(
+        404,
+        "contractor_not_found",
+        "Organización no encontrada",
+      );
+    }
+  }
+  await assertBusinessModuleEnabled(org.businessId, "work_permits");
+
+  const permitType = await prisma.permitType.findFirst({
+    where: {
+      id: query.permitTypeId,
+      businessId: org.businessId,
+      deletedAt: null,
+      active: true,
+    },
+  });
+  if (!permitType) {
+    throw new AppError(
+      404,
+      "permit_type_not_found",
+      "Tipo de permiso no encontrado",
+    );
+  }
+
+  const hab = await prisma.contractorAccreditation.findFirst({
+    where: { organizationId: org.id },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, code: true, status: true },
+  });
+
+  const requirements = await prisma.permitTypeRequirement.findMany({
+    where: { permitTypeId: permitType.id, active: true },
+    include: {
+      documentType: { select: { id: true, code: true, name: true } },
+    },
+    orderBy: [{ moment: "asc" }, { kind: "asc" }, { key: "asc" }],
+  });
+
+  /** Docs validados de la HAB más reciente (si existe). */
+  const validatedByType = new Map<
+    string,
+    { status: string; expiresAt: Date | null }
+  >();
+  /** Pack empresa completo (aunque la HAB esté approved a mano). */
+  let packComplete = false;
+  let packOk = 0;
+  let packTotal = 0;
+  if (hab) {
+    const [docs, pack] = await Promise.all([
+      prisma.contractorOrgDocument.findMany({
+        where: {
+          accreditationId: hab.id,
+          deletedAt: null,
+          status: { not: "replaced" },
+        },
+        orderBy: { createdAt: "desc" },
+        select: {
+          documentTypeId: true,
+          status: true,
+          expiresAt: true,
+        },
+      }),
+      evaluateCompanyPack(org.businessId, hab.id),
+    ]);
+    packComplete = pack.complete;
+    packOk = pack.ok;
+    packTotal = pack.total;
+    for (const doc of docs) {
+      if (!validatedByType.has(doc.documentTypeId)) {
+        validatedByType.set(doc.documentTypeId, {
+          status: doc.status,
+          expiresAt: doc.expiresAt,
+        });
+      }
+    }
+  }
+
+  const now = Date.now();
+  /** Doc empresa vigente = validated y sin vencimiento pasado. */
+  function isCompanyDocOk(documentTypeId: string): boolean {
+    const row = validatedByType.get(documentTypeId);
+    if (!row || row.status !== "validated") return false;
+    if (row.expiresAt && row.expiresAt.getTime() < now) return false;
+    return true;
+  }
+
+  const items: RequirementCheckItem[] = requirements.map((req) => {
+    const base = {
+      requirementId: req.id,
+      key: req.key,
+      kind: req.kind,
+      scope: req.scope,
+      moment: req.moment,
+      mandatory: req.mandatory,
+      label: req.label,
+    };
+
+    if (req.moment === "closure") {
+      return { ...base, status: "later" as const, detail: "Se verifica al cierre" };
+    }
+    if (req.scope === "person") {
+      return {
+        ...base,
+        status: "later" as const,
+        detail: "Al asignar personal",
+      };
+    }
+    if (req.kind === "training") {
+      return {
+        ...base,
+        status: "later" as const,
+        detail: "Capacitaciones (paso posterior)",
+      };
+    }
+    if (req.kind === "checklist") {
+      return {
+        ...base,
+        status: "later" as const,
+        detail: "Lo completa el contratista",
+      };
+    }
+
+    // kind=document · scope=company
+    if (!hab || hab.status !== "approved") {
+      return {
+        ...base,
+        status: "missing" as const,
+        detail: hab
+          ? `Habilitación ${hab.code} · ${hab.status}`
+          : "Sin habilitación",
+      };
+    }
+
+    if (req.accreditationScope === "company") {
+      if (packTotal === 0) {
+        return {
+          ...base,
+          status: "missing" as const,
+          detail: "Pack empresa sin tipos configurados",
+        };
+      }
+      if (!packComplete) {
+        return {
+          ...base,
+          status: "missing" as const,
+          detail: `${packOk} de ${packTotal} vigentes`,
+        };
+      }
+      return {
+        ...base,
+        status: "ok" as const,
+        detail: `${packOk} de ${packTotal} vigentes`,
+      };
+    }
+
+    if (req.documentTypeId) {
+      if (isCompanyDocOk(req.documentTypeId)) {
+        const code = req.documentType?.code ?? "";
+        return {
+          ...base,
+          status: "ok" as const,
+          detail: code ? `${code} validado` : "Validado",
+        };
+      }
+      return {
+        ...base,
+        status: "missing" as const,
+        detail: req.documentType
+          ? `${req.documentType.code} pendiente o vencido`
+          : "Documento pendiente",
+      };
+    }
+
+    return {
+      ...base,
+      status: "not_applicable" as const,
+      detail: "Exigencia sin documento configurado",
+    };
+  });
+
+  /**
+   * Siempre exigir pack empresa completo al crear PT (aunque el tipo no tenga
+   * exigencia «pack»). UUID fijo solo para el ítem sintético de UI.
+   */
+  const hasPackExigencia = requirements.some(
+    (r) =>
+      r.kind === "document" &&
+      r.scope === "company" &&
+      r.moment === "before" &&
+      r.accreditationScope === "company",
+  );
+  if (!hasPackExigencia) {
+    const packStatus =
+      !hab || hab.status !== "approved"
+        ? ("missing" as const)
+        : packTotal === 0
+          ? ("missing" as const)
+          : packComplete
+            ? ("ok" as const)
+            : ("missing" as const);
+    const packDetail =
+      !hab
+        ? "Sin habilitación"
+        : hab.status !== "approved"
+          ? `Habilitación ${hab.code} · ${hab.status}`
+          : packTotal === 0
+            ? "Pack empresa sin tipos configurados"
+            : `${packOk} de ${packTotal} vigentes`;
+    items.unshift({
+      requirementId: "00000000-0000-4000-8000-0000000000c1",
+      key: "company_pack_baseline",
+      kind: "document",
+      scope: "company",
+      moment: "before",
+      mandatory: true,
+      label: "Documentos del pack empresa",
+      status: packStatus,
+      detail: packDetail,
+    });
+  }
+
+  const summary = {
+    ok: items.filter((i) => i.status === "ok").length,
+    later: items.filter((i) => i.status === "later").length,
+    missing: items.filter((i) => i.status === "missing").length,
+    notApplicable: items.filter((i) => i.status === "not_applicable").length,
+  };
+
+  const blockingMissing = items.some(
+    (i) =>
+      i.status === "missing" &&
+      i.mandatory &&
+      i.scope === "company" &&
+      i.moment === "before",
+  );
+  const habOk = Boolean(hab && hab.status === "approved");
+  /** No operar: HAB approved + pack completo + exigencias company/before. */
+  const canCreate = habOk && packComplete && !blockingMissing;
+
+  return {
+    organizationId: org.id,
+    organization: { id: org.id, name: org.name, rut: org.rut },
+    permitTypeId: permitType.id,
+    permitType: {
+      id: permitType.id,
+      code: permitType.code,
+      name: permitType.name,
+    },
+    accreditation: hab,
+    summary,
+    items,
+    canCreate,
+  };
+}
+
 /**
  * POST /work-permits — Prevención crea el PT desde un aviso pending.
- * Marca el aviso como linked. Status inicial: to_complete.
+ * R-09 HAB approved; R-11/R-13: check + snapshot. Status inicial: to_complete.
  */
 export async function createWorkPermitFromNotice(
   actor: Actor,
@@ -302,6 +630,39 @@ export async function createWorkPermitFromNotice(
     );
   }
 
+  const check = await checkWorkPermitRequirements(actor, {
+    organizationId: notice.organizationId,
+    permitTypeId: notice.permitTypeId,
+  });
+  if (!check.canCreate) {
+    const packItem = check.items.find(
+      (i) => i.key === "company_pack_baseline" || i.key.includes("docs_company"),
+    );
+    const packIncomplete =
+      check.accreditation?.status === "approved" &&
+      packItem?.status === "missing";
+    throw new AppError(
+      422,
+      "work_permit_requirements_unmet",
+      check.accreditation?.status !== "approved"
+        ? "La empresa debe tener habilitación aprobada para crear el permiso"
+        : packIncomplete
+          ? "No se puede crear: el pack empresa de la habilitación está incompleto o vencido"
+          : "Faltan exigencias de empresa obligatorias; revisá la verificación",
+      {
+        summary: check.summary,
+        missing: check.items.filter((i) => i.status === "missing"),
+      },
+    );
+  }
+
+  const snapshot: Prisma.InputJsonValue = {
+    checkedAt: new Date().toISOString(),
+    accreditation: check.accreditation,
+    summary: check.summary,
+    items: check.items,
+  };
+
   const created = await prisma.$transaction(async (tx) => {
     const code = await nextWorkPermitCode(tx);
     const permit = await tx.workPermit.create({
@@ -318,6 +679,7 @@ export async function createWorkPermitFromNotice(
             ? notice.description
             : body.description?.trim() || null,
         status: "to_complete",
+        requirementsSnapshot: snapshot,
         createdById: actor.id,
       },
       include: permitInclude,
@@ -333,14 +695,26 @@ export async function createWorkPermitFromNotice(
 }
 
 /**
- * Exige ≥1 persona y checklist contractor completo antes de enviar.
- * R-10 plena (solo habilitados) queda para P3; acá: persona activa de la org.
+ * Exige ≥1 persona con pack persona completo + checklist contractor.
+ * Sin documentación vigente no se puede enviar a aprobación.
  */
-async function assertReadyToSubmit(workPermitId: string, permitTypeId: string) {
-  const peopleCount = await prisma.workPermitPerson.count({
+async function assertReadyToSubmit(
+  workPermitId: string,
+  permitTypeId: string,
+  organizationId: string,
+  businessId: string,
+) {
+  const assigned = await prisma.workPermitPerson.findMany({
     where: { workPermitId },
+    select: {
+      personId: true,
+      person: { select: { fullName: true, deletedAt: true, active: true } },
+    },
   });
-  if (peopleCount < 1) {
+  const activePeople = assigned.filter(
+    (r) => r.person.active && !r.person.deletedAt,
+  );
+  if (activePeople.length < 1) {
     throw new AppError(
       422,
       "work_permit_incomplete",
@@ -348,6 +722,15 @@ async function assertReadyToSubmit(workPermitId: string, permitTypeId: string) {
       { missing: "people" },
     );
   }
+
+  await assertPeoplePersonPackComplete(
+    businessId,
+    organizationId,
+    activePeople.map((p) => ({
+      id: p.personId,
+      fullName: p.person.fullName,
+    })),
+  );
 
   const activeItems = await prisma.permitChecklistItem.findMany({
     where: { permitTypeId, active: true },
@@ -378,6 +761,76 @@ async function assertReadyToSubmit(workPermitId: string, permitTypeId: string) {
 }
 
 /**
+ * Todas las personas deben tener el pack persona validado y vigente en la HAB.
+ */
+async function assertPeoplePersonPackComplete(
+  businessId: string,
+  organizationId: string,
+  people: Array<{ id: string; fullName: string }>,
+): Promise<void> {
+  if (people.length === 0) return;
+
+  const hab = await prisma.contractorAccreditation.findFirst({
+    where: { organizationId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, code: true, status: true },
+  });
+  if (!hab) {
+    throw new AppError(
+      422,
+      "person_pack_incomplete",
+      "La organización no tiene habilitación; no se puede asignar personal sin pack persona",
+    );
+  }
+
+  const packTypesCount = await prisma.documentType.count({
+    where: {
+      businessId,
+      deletedAt: null,
+      state: true,
+      accreditationPack: "person",
+    },
+  });
+  if (packTypesCount === 0) {
+    throw new AppError(
+      422,
+      "person_pack_empty",
+      "No hay tipos en el pack persona; configurá Packs de habilitación",
+    );
+  }
+
+  const incomplete: Array<{
+    personId: string;
+    fullName: string;
+    ok: number;
+    total: number;
+    missingCodes: string[];
+  }> = [];
+  for (const person of people) {
+    const pack = await evaluatePersonPack(businessId, hab.id, person.id);
+    if (!pack.complete) {
+      incomplete.push({
+        personId: person.id,
+        fullName: person.fullName,
+        ok: pack.ok,
+        total: pack.total,
+        missingCodes: pack.missingCodes,
+      });
+    }
+  }
+
+  if (incomplete.length > 0) {
+    const names = incomplete.map((p) => p.fullName).join(", ");
+    throw new AppError(
+      422,
+      "person_pack_incomplete",
+      `No se puede operar con personal sin documentación completa: ${names}`,
+      { incomplete, accreditationCode: hab.code },
+    );
+  }
+}
+
+/**
  * POST /work-permits/:id/submit — contratista o Prevención envía a aprobación.
  * to_complete → to_approve (E13). Exige personal + checklist contractor.
  */
@@ -403,7 +856,12 @@ export async function submitWorkPermit(
     );
   }
 
-  await assertReadyToSubmit(existing.id, existing.permitTypeId);
+  await assertReadyToSubmit(
+    existing.id,
+    existing.permitTypeId,
+    existing.organizationId,
+    existing.businessId,
+  );
 
   const updated = await prisma.workPermit.update({
     where: { id },
@@ -653,7 +1111,7 @@ export async function listWorkPermitPeople(
 
 /**
  * PUT /work-permits/:id/people — reemplaza el set (contratista o Prevención).
- * Personas deben ser activas de la misma org del PT.
+ * Personas activas de la org + pack persona completo (docs validados vigentes).
  */
 export async function putWorkPermitPeople(
   actor: Actor,
@@ -671,7 +1129,7 @@ export async function putWorkPermitPeople(
         deletedAt: null,
         active: true,
       },
-      select: { id: true },
+      select: { id: true, fullName: true },
     });
     if (people.length !== uniqueIds.length) {
       throw new AppError(
@@ -680,6 +1138,11 @@ export async function putWorkPermitPeople(
         "Una o más personas no pertenecen a la organización o no están activas",
       );
     }
+    await assertPeoplePersonPackComplete(
+      existing.businessId,
+      existing.organizationId,
+      people,
+    );
   }
 
   await prisma.$transaction(async (tx) => {

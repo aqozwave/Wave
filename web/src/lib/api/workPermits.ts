@@ -53,9 +53,48 @@ export type WorkPermit = {
   status: WorkPermitStatus;
   /** Motivo de la última devolución. */
   reviewNote: string | null;
+  /** Snapshot de exigencias al crear (R-13); null en PT viejos. */
+  requirementsSnapshot: unknown | null;
   createdById: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+/** Estado de una exigencia en P13b. */
+export type WorkPermitRequirementCheckStatus =
+  | "ok"
+  | "later"
+  | "missing"
+  | "not_applicable";
+
+/** Ítem de verificación de exigencias. */
+export type WorkPermitRequirementCheckItem = {
+  requirementId: string;
+  key: string;
+  kind: "document" | "training" | "checklist";
+  scope: "company" | "person" | "permit";
+  moment: "before" | "closure";
+  mandatory: boolean;
+  label: string;
+  status: WorkPermitRequirementCheckStatus;
+  detail: string | null;
+};
+
+/** GET /work-permits/requirements-check. */
+export type WorkPermitRequirementsCheck = {
+  organizationId: string;
+  organization: { id: string; name: string; rut: string };
+  permitTypeId: string;
+  permitType: { id: string; code: string; name: string };
+  accreditation: { id: string; code: string; status: string } | null;
+  summary: {
+    ok: number;
+    later: number;
+    missing: number;
+    notApplicable: number;
+  };
+  items: WorkPermitRequirementCheckItem[];
+  canCreate: boolean;
 };
 
 export type ListWorkPermitsResult = {
@@ -121,6 +160,22 @@ export async function getWorkPermitRequest(
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw toApiError(res, body);
   return body as WorkPermit;
+}
+
+/** GET /api/v1/work-permits/requirements-check — P13b. */
+export async function checkWorkPermitRequirementsRequest(
+  accessToken: string,
+  organizationId: string,
+  permitTypeId: string,
+): Promise<WorkPermitRequirementsCheck> {
+  const params = new URLSearchParams({ organizationId, permitTypeId });
+  const res = await fetch(
+    `/api/v1/work-permits/requirements-check?${params}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as WorkPermitRequirementsCheck;
 }
 
 /** POST /api/v1/work-permits — crear desde aviso. */

@@ -188,15 +188,21 @@ export function ContractorPortalAccreditationPage() {
     hab.status === "observed" ||
     hab.status === "invited";
   /**
-   * Subir/reemplazar solo con HAB editable.
-   * Observar un doc (API) pasa la HAB a observed; si quedó in_review
-   * con docs observados (datos viejos), igual desbloqueamos.
+   * Subir/reemplazar con HAB editable.
+   * Approved: solo completar tipos vacíos (API reabre a in_review).
    */
   const hasObservedDoc = items.some((i) => i.document?.status === "observed");
-  const canUpload =
+  const canUploadEditable =
     hab?.status === "pending" ||
     hab?.status === "observed" ||
     (hab?.status === "in_review" && hasObservedDoc);
+  const canUploadApprovedGaps = hab?.status === "approved";
+  /** true si ese slot admite Subir/Reemplazar. */
+  function canUploadSlot(hasDocument: boolean): boolean {
+    if (canUploadEditable) return true;
+    if (canUploadApprovedGaps && !hasDocument) return true;
+    return false;
+  }
   const canSubmit =
     hab?.status === "pending" || hab?.status === "observed";
 
@@ -677,7 +683,7 @@ export function ContractorPortalAccreditationPage() {
                               Descargar
                             </button>
                           ) : null}
-                          {canUpload ? (
+                          {canUploadSlot(Boolean(doc)) ? (
                             <label className="cursor-pointer text-[12px] font-medium text-[var(--color-nachipa-title)] hover:underline">
                               {uploadingTypeId === item.documentType.id
                                 ? "Subiendo…"

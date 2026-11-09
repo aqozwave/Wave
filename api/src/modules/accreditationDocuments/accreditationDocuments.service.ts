@@ -174,6 +174,44 @@ export async function listAccreditationDocuments(
   return { items, total: items.length };
 }
 
+/**
+ * HAB rejected = cerrada.
+ * Approved: solo se permite completar un tipo vacío (no reemplazar vigentes);
+ * al subir, la HAB vuelve a in_review para que Prevención valide.
+ */
+async function assertHabAllowsCompanyUpload(
+  hab: { id: string; status: string },
+  documentTypeId: string,
+): Promise<{ reopenForReview: boolean }> {
+  if (hab.status === "rejected") {
+    throw new AppError(
+      400,
+      "accreditation_closed",
+      "No se pueden cargar documentos en una HAB cerrada",
+    );
+  }
+  if (hab.status !== "approved") {
+    return { reopenForReview: false };
+  }
+  const existing = await prisma.contractorOrgDocument.findFirst({
+    where: {
+      accreditationId: hab.id,
+      documentTypeId,
+      deletedAt: null,
+      status: { not: "replaced" },
+    },
+    select: { id: true },
+  });
+  if (existing) {
+    throw new AppError(
+      400,
+      "accreditation_closed",
+      "La HAB está aprobada; no se puede reemplazar un documento ya cargado. Pedile a Prevención que la observe.",
+    );
+  }
+  return { reopenForReview: true };
+}
+
 /** Sube un doc del pack company a la HAB (reemplaza el anterior del mismo tipo). */
 export async function createAccreditationDocument(
   actor: Actor,
@@ -181,17 +219,6 @@ export async function createAccreditationDocument(
   body: CreateAccreditationDocumentBody,
 ): Promise<ContractorOrgDocumentResponse> {
   const hab = await loadAccreditationForActor(actor, accreditationId);
-
-  if (
-    hab.status === "approved" ||
-    hab.status === "rejected"
-  ) {
-    throw new AppError(
-      400,
-      "accreditation_closed",
-      "No se pueden cargar documentos en una HAB cerrada",
-    );
-  }
 
   const docType = await prisma.documentType.findFirst({
     where: {
@@ -209,6 +236,11 @@ export async function createAccreditationDocument(
       "Tipo no válido o fuera del pack de empresa",
     );
   }
+
+  const { reopenForReview } = await assertHabAllowsCompanyUpload(
+    hab,
+    docType.id,
+  );
 
   if (docType.requiresExpiry && !body.expiresAt) {
     throw new AppError(
@@ -284,7 +316,7 @@ export async function createAccreditationDocument(
       data: { status: "replaced" },
     });
 
-    return tx.contractorOrgDocument.create({
+    const row = await tx.contractorOrgDocument.create({
       data: {
         organizationId: hab.organizationId,
         accreditationId: hab.id,
@@ -299,6 +331,21 @@ export async function createAccreditationDocument(
       },
       include: { documentType: true },
     });
+
+    // Completar huecos tras un approve incompleto → vuelve a revisión.
+    if (reopenForReview) {
+      await tx.contractorAccreditation.update({
+        where: { id: hab.id },
+        data: {
+          status: "in_review",
+          reviewedAt: null,
+          reviewedById: null,
+          reviewNote: null,
+        },
+      });
+    }
+
+    return row;
   });
 
   return toDocResponse(created);
@@ -584,6 +631,45 @@ export async function listAccreditationPersonDocuments(
   return { items, total: items.length };
 }
 
+/**
+ * Misma regla que empresa: approved solo permite completar tipo vacío;
+ * al subir, HAB → in_review.
+ */
+async function assertHabAllowsPersonUpload(
+  hab: { id: string; status: string },
+  personId: string,
+  documentTypeId: string,
+): Promise<{ reopenForReview: boolean }> {
+  if (hab.status === "rejected") {
+    throw new AppError(
+      400,
+      "accreditation_closed",
+      "No se pueden cargar documentos en una HAB cerrada",
+    );
+  }
+  if (hab.status !== "approved") {
+    return { reopenForReview: false };
+  }
+  const existing = await prisma.contractorPersonDocument.findFirst({
+    where: {
+      accreditationId: hab.id,
+      personId,
+      documentTypeId,
+      deletedAt: null,
+      status: { not: "replaced" },
+    },
+    select: { id: true },
+  });
+  if (existing) {
+    throw new AppError(
+      400,
+      "accreditation_closed",
+      "La HAB está aprobada; no se puede reemplazar un documento ya cargado. Pedile a Prevención que la observe.",
+    );
+  }
+  return { reopenForReview: true };
+}
+
 /** Sube doc pack person (reemplaza vigente del mismo tipo). */
 export async function createAccreditationPersonDocument(
   actor: Actor,
@@ -596,14 +682,6 @@ export async function createAccreditationPersonDocument(
     accreditationId,
     personId,
   );
-
-  if (hab.status === "approved" || hab.status === "rejected") {
-    throw new AppError(
-      400,
-      "accreditation_closed",
-      "No se pueden cargar documentos en una HAB cerrada",
-    );
-  }
 
   const docType = await prisma.documentType.findFirst({
     where: {
@@ -621,6 +699,12 @@ export async function createAccreditationPersonDocument(
       "Tipo no válido o fuera del pack de persona",
     );
   }
+
+  const { reopenForReview } = await assertHabAllowsPersonUpload(
+    hab,
+    person.id,
+    docType.id,
+  );
 
   if (docType.requiresExpiry && !body.expiresAt) {
     throw new AppError(
@@ -697,7 +781,7 @@ export async function createAccreditationPersonDocument(
       data: { status: "replaced" },
     });
 
-    return tx.contractorPersonDocument.create({
+    const row = await tx.contractorPersonDocument.create({
       data: {
         personId: person.id,
         accreditationId: hab.id,
@@ -712,6 +796,20 @@ export async function createAccreditationPersonDocument(
       },
       include: { documentType: true },
     });
+
+    if (reopenForReview) {
+      await tx.contractorAccreditation.update({
+        where: { id: hab.id },
+        data: {
+          status: "in_review",
+          reviewedAt: null,
+          reviewedById: null,
+          reviewNote: null,
+        },
+      });
+    }
+
+    return row;
   });
 
   return toPersonDocResponse(created);
