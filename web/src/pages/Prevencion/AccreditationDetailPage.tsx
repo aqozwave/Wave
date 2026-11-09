@@ -1064,13 +1064,19 @@ export function AccreditationDetailPage() {
                             </p>
                           ) : personDocItems.length === 0 ? (
                             <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
-                              No hay tipos con pack «person». Configuralos en
-                              Packs.
+                              No hay pack persona ni exigencias por persona.
+                              Configurá Packs o exigencias del tipo.
                             </p>
                           ) : (
                             <ul className="m-0 list-none space-y-2 p-0">
                               {personDocItems.map((item) => {
                                 const doc = item.document;
+                                const sourceHint =
+                                  item.source === "permit_requirement"
+                                    ? "Exigencia de faena"
+                                    : item.source === "both"
+                                      ? "Pack + faena"
+                                      : null;
                                 return (
                                   <li
                                     key={item.documentType.id}
@@ -1083,6 +1089,11 @@ export function AccreditationDetailPage() {
                                       <span className="ml-2 text-[11px] text-[var(--color-nachipa-secondary)]">
                                         {item.documentType.code}
                                       </span>
+                                      {sourceHint ? (
+                                        <span className="ml-2 text-[11px] text-[var(--color-nachipa-primary)]">
+                                          · {sourceHint}
+                                        </span>
+                                      ) : null}
                                       <div className="text-[11px] text-[var(--color-nachipa-body)]">
                                         {doc
                                           ? doc.originalName

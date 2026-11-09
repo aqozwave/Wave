@@ -564,7 +564,77 @@ async function loadPersonInHab(
   return { hab, person };
 }
 
-/** Checklist pack person para una persona en la HAB. */
+/**
+ * Tipos que una persona puede subir en la HAB: pack person +
+ * exigencias document/person de tipos de permiso activos (ej. BUC).
+ * No mezcla exigencias en el pack base: solo amplía el checklist de carga.
+ */
+async function resolvePersonUploadableDocTypes(businessId: string): Promise<
+  Array<{
+    type: DocumentType;
+    source: "pack" | "permit_requirement" | "both";
+  }>
+> {
+  const [packTypes, reqRows] = await Promise.all([
+    prisma.documentType.findMany({
+      where: {
+        businessId,
+        deletedAt: null,
+        state: true,
+        accreditationPack: "person",
+      },
+      orderBy: [{ code: "asc" }],
+    }),
+    prisma.permitTypeRequirement.findMany({
+      where: {
+        active: true,
+        kind: "document",
+        scope: "person",
+        documentTypeId: { not: null },
+        permitType: { businessId, deletedAt: null, active: true },
+        documentType: { deletedAt: null, state: true },
+      },
+      select: {
+        documentType: true,
+      },
+    }),
+  ]);
+
+  const byId = new Map<
+    string,
+    { type: DocumentType; pack: boolean; requirement: boolean }
+  >();
+  for (const t of packTypes) {
+    byId.set(t.id, { type: t, pack: true, requirement: false });
+  }
+  for (const row of reqRows) {
+    if (!row.documentType) continue;
+    const existing = byId.get(row.documentType.id);
+    if (existing) {
+      existing.requirement = true;
+    } else {
+      byId.set(row.documentType.id, {
+        type: row.documentType,
+        pack: false,
+        requirement: true,
+      });
+    }
+  }
+
+  return [...byId.values()]
+    .map((row) => ({
+      type: row.type,
+      source:
+        row.pack && row.requirement
+          ? ("both" as const)
+          : row.pack
+            ? ("pack" as const)
+            : ("permit_requirement" as const),
+    }))
+    .sort((a, b) => a.type.code.localeCompare(b.type.code));
+}
+
+/** Checklist pack person (+ exigencias por persona de tipos de permiso). */
 export async function listAccreditationPersonDocuments(
   actor: Actor,
   accreditationId: string,
@@ -577,6 +647,8 @@ export async function listAccreditationPersonDocuments(
       name: string;
       requiresExpiry: boolean;
     };
+    /** pack = habilitación; permit_requirement = exigencia de tipo (BUC…); both = ambos. */
+    source: "pack" | "permit_requirement" | "both";
     document: ContractorPersonDocumentResponse | null;
   }>;
   total: number;
@@ -587,15 +659,9 @@ export async function listAccreditationPersonDocuments(
     personId,
   );
 
-  const types = await prisma.documentType.findMany({
-    where: {
-      businessId: hab.organization.businessId,
-      deletedAt: null,
-      state: true,
-      accreditationPack: "person",
-    },
-    orderBy: [{ code: "asc" }],
-  });
+  const uploadable = await resolvePersonUploadableDocTypes(
+    hab.organization.businessId,
+  );
 
   const docs = await prisma.contractorPersonDocument.findMany({
     where: {
@@ -615,7 +681,7 @@ export async function listAccreditationPersonDocuments(
     }
   }
 
-  const items = types.map((t) => {
+  const items = uploadable.map(({ type: t, source }) => {
     const doc = latestByType.get(t.id) ?? null;
     return {
       documentType: {
@@ -624,6 +690,7 @@ export async function listAccreditationPersonDocuments(
         name: t.name,
         requiresExpiry: t.requiresExpiry,
       },
+      source,
       document: doc ? toPersonDocResponse(doc) : null,
     };
   });
@@ -683,20 +750,17 @@ export async function createAccreditationPersonDocument(
     personId,
   );
 
-  const docType = await prisma.documentType.findFirst({
-    where: {
-      id: body.documentTypeId,
-      businessId: hab.organization.businessId,
-      deletedAt: null,
-      state: true,
-      accreditationPack: "person",
-    },
-  });
+  /** Pack person o exigencia document/person de un tipo de permiso activo. */
+  const uploadable = await resolvePersonUploadableDocTypes(
+    hab.organization.businessId,
+  );
+  const allowed = uploadable.find((row) => row.type.id === body.documentTypeId);
+  const docType = allowed?.type ?? null;
   if (!docType) {
     throw new AppError(
       400,
       "document_type_not_found",
-      "Tipo no válido o fuera del pack de persona",
+      "Tipo no válido: debe ser pack persona o exigencia por persona de un tipo de permiso",
     );
   }
 

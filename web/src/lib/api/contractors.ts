@@ -600,6 +600,8 @@ export type ContractorPortalPerson = ContractorPerson & {
     uploaded: number;
     required: number;
     observed: number;
+    /** Validados vigentes del pack (habilitan asignar a PT). */
+    validated: number;
   };
 };
 
@@ -692,7 +694,7 @@ export async function deleteContractorPortalPersonRequest(
   return body as ContractorPerson;
 }
 
-/** Ítem checklist pack person en portal. */
+/** Ítem checklist pack person (+ exigencias por persona) en portal. */
 export type ContractorPortalPersonDocChecklistItem = {
   documentType: {
     id: string;
@@ -700,6 +702,8 @@ export type ContractorPortalPersonDocChecklistItem = {
     name: string;
     requiresExpiry: boolean;
   };
+  /** pack = HAB; permit_requirement = exigencia del tipo; both = ambos. */
+  source: "pack" | "permit_requirement" | "both";
   document: {
     id: string;
     originalName: string;

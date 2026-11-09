@@ -1,0 +1,44 @@
+meta {
+  name: Post work permit close
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{baseUrl}}/api/v1/work-permits/{{workPermitId}}/close
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+docs {
+  P6b: capitán (receive) cierra el trabajo.
+  to_verify → closed. Variable workPermitId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("workPermitId")) throw new Error("Sin workPermitId.");
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq closed
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

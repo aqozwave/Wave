@@ -6,31 +6,43 @@ import { validate } from "../../middlewares/validate.js";
 import {
   approveWorkPermitHandler,
   checkWorkPermitRequirementsHandler,
+  closeWorkPermitHandler,
   createWorkPermitHandler,
+  deleteWorkPermitHandler,
   getWorkPermitChecklistHandler,
+  getWorkPermitDocumentHandler,
   getWorkPermitHandler,
+  listWorkPermitAssignablePeopleHandler,
   listWorkPermitHistoryHandler,
   listWorkPermitPeopleHandler,
   listWorkPermitsHandler,
   putWorkPermitChecklistHandler,
   putWorkPermitPeopleHandler,
   receiveWorkPermitHandler,
+  rejectCloseWorkPermitHandler,
   rejectReceiptWorkPermitHandler,
+  requestCloseWorkPermitHandler,
   returnWorkPermitHandler,
   submitWorkPermitHandler,
 } from "./workPermits.controller.js";
 import {
   approveWorkPermitRequestSchema,
+  closeWorkPermitRequestSchema,
   createWorkPermitRequestSchema,
+  deleteWorkPermitRequestSchema,
   getWorkPermitChecklistRequestSchema,
+  getWorkPermitDocumentRequestSchema,
   getWorkPermitRequestSchema,
+  listWorkPermitAssignablePeopleRequestSchema,
   listWorkPermitHistoryRequestSchema,
   listWorkPermitPeopleRequestSchema,
   listWorkPermitsRequestSchema,
   putWorkPermitChecklistRequestSchema,
   putWorkPermitPeopleRequestSchema,
   receiveWorkPermitRequestSchema,
+  rejectCloseWorkPermitRequestSchema,
   rejectReceiptWorkPermitRequestSchema,
+  requestCloseWorkPermitRequestSchema,
   returnWorkPermitRequestSchema,
   submitWorkPermitRequestSchema,
   workPermitRequirementsCheckRequestSchema,
@@ -39,7 +51,7 @@ import {
 /**
  * Permisos de trabajo bajo /api/v1/work-permits.
  * Completar (people/checklist) = contratista o Prevención (update).
- * Aprobar/devolver = Prevención. Recibir = capitán (receive).
+ * Aprobar/devolver = Prevención. Recibir/cerrar = capitán (receive).
  */
 export const workPermitsRouter = Router();
 
@@ -75,6 +87,17 @@ workPermitsRouter.get(
   ),
   validate(workPermitRequirementsCheckRequestSchema),
   checkWorkPermitRequirementsHandler,
+);
+
+workPermitsRouter.get(
+  "/:id/assignable-people",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.WORK_PERMITS,
+    PERMISSION_ACTION.READ,
+  ),
+  validate(listWorkPermitAssignablePeopleRequestSchema),
+  listWorkPermitAssignablePeopleHandler,
 );
 
 workPermitsRouter.get(
@@ -176,6 +199,39 @@ workPermitsRouter.post(
   rejectReceiptWorkPermitHandler,
 );
 
+workPermitsRouter.post(
+  "/:id/request-close",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.WORK_PERMITS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(requestCloseWorkPermitRequestSchema),
+  requestCloseWorkPermitHandler,
+);
+
+workPermitsRouter.post(
+  "/:id/close",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.WORK_PERMITS,
+    PERMISSION_ACTION.RECEIVE,
+  ),
+  validate(closeWorkPermitRequestSchema),
+  closeWorkPermitHandler,
+);
+
+workPermitsRouter.post(
+  "/:id/reject-close",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.WORK_PERMITS,
+    PERMISSION_ACTION.RECEIVE,
+  ),
+  validate(rejectCloseWorkPermitRequestSchema),
+  rejectCloseWorkPermitHandler,
+);
+
 workPermitsRouter.get(
   "/:id/history",
   authenticate,
@@ -188,6 +244,17 @@ workPermitsRouter.get(
 );
 
 workPermitsRouter.get(
+  "/:id/document",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.WORK_PERMITS,
+    PERMISSION_ACTION.READ,
+  ),
+  validate(getWorkPermitDocumentRequestSchema),
+  getWorkPermitDocumentHandler,
+);
+
+workPermitsRouter.get(
   "/:id",
   authenticate,
   requirePermission(
@@ -196,4 +263,15 @@ workPermitsRouter.get(
   ),
   validate(getWorkPermitRequestSchema),
   getWorkPermitHandler,
+);
+
+workPermitsRouter.delete(
+  "/:id",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.WORK_PERMITS,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
+  validate(deleteWorkPermitRequestSchema),
+  deleteWorkPermitHandler,
 );

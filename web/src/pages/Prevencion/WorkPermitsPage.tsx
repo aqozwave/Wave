@@ -9,6 +9,7 @@ import {
 import { Modal } from "../../components/Modal/Modal";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
+import { WorkPermitProgressCell } from "../../components/WorkPermitProgressCell/WorkPermitProgressCell";
 import {
   TablePagination,
   useClientTablePagination,
@@ -20,9 +21,13 @@ import { useToast } from "../../components/Toast/ToastProvider";
 import { userHasPermission } from "../../lib/api/auth";
 import {
   approveWorkPermitRequest,
+  closeWorkPermitRequest,
+  deleteWorkPermitRequest,
   listWorkPermitsRequest,
   receiveWorkPermitRequest,
+  rejectCloseWorkPermitRequest,
   rejectReceiptWorkPermitRequest,
+  requestCloseWorkPermitRequest,
   returnWorkPermitRequest,
   workPermitStatusLabel,
   type WorkPermit,
@@ -87,6 +92,7 @@ export function WorkPermitsPage() {
   const canCreate = userHasPermission(user, "work_permits", "create");
   const canUpdate = userHasPermission(user, "work_permits", "update");
   const canReceive = userHasPermission(user, "work_permits", "receive");
+  const canDelete = userHasPermission(user, "work_permits", "deactivate");
   /** Portal contratista no aprueba ni recibe. */
   const isStaff = !user?.organizationId;
 
@@ -94,9 +100,9 @@ export function WorkPermitsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [actingId, setActingId] = useState<string | null>(null);
-  /** Modal con nota: devolver (Prevención) o no autorizar (capitán). */
+  /** Modal con nota: devolver / no autorizar / sin cierre. */
   const [noteModal, setNoteModal] = useState<{
-    kind: "return" | "reject-receipt";
+    kind: "return" | "reject-receipt" | "reject-close";
     row: WorkPermit;
   } | null>(null);
   const [reviewNote, setReviewNote] = useState("");
@@ -104,6 +110,9 @@ export function WorkPermitsPage() {
   const [completeRow, setCompleteRow] = useState<WorkPermit | null>(null);
   /** Modal Nuevo permiso P13/P13b. */
   const [createOpen, setCreateOpen] = useState(false);
+  /** Confirmación soft-delete. */
+  const [deleteRow, setDeleteRow] = useState<WorkPermit | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken || !canRead) return;
@@ -149,9 +158,9 @@ export function WorkPermitsPage() {
     }
   }
 
-  /** Abre modal con nota (devolver / no autorizar). */
+  /** Abre modal con nota (devolver / no autorizar / sin cierre). */
   function openNoteModal(
-    kind: "return" | "reject-receipt",
+    kind: "return" | "reject-receipt" | "reject-close",
     row: WorkPermit,
   ) {
     setReviewNote("");
@@ -180,6 +189,50 @@ export function WorkPermitsPage() {
     }
   }
 
+  /** Pedir cierre (active → to_verify). */
+  async function onRequestClose(row: WorkPermit) {
+    if (!accessToken || !canUpdate || actingId) return;
+    if (row.status !== "active") return;
+    setActingId(row.id);
+    try {
+      await requestCloseWorkPermitRequest(accessToken, row.id);
+      showToast(
+        `${row.code} · ${workPermitStatusLabel("to_verify")}.`,
+        "success",
+      );
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo pedir el cierre.",
+        "danger",
+      );
+    } finally {
+      setActingId(null);
+    }
+  }
+
+  /** Capitán: Verificar trabajo → Trabajo cerrado. */
+  async function onClose(row: WorkPermit) {
+    if (!accessToken || !canReceive || !isStaff || actingId) return;
+    if (row.status !== "to_verify") return;
+    setActingId(row.id);
+    try {
+      await closeWorkPermitRequest(accessToken, row.id);
+      showToast(
+        `${row.code} · ${workPermitStatusLabel("closed")}.`,
+        "success",
+      );
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo cerrar.",
+        "danger",
+      );
+    } finally {
+      setActingId(null);
+    }
+  }
+
   /** Confirma modal con nota. */
   async function confirmNoteModal() {
     if (!accessToken || !noteModal || !reviewNote.trim() || actingId) return;
@@ -193,6 +246,16 @@ export function WorkPermitsPage() {
         );
         showToast(
           `${noteModal.row.code} · ${workPermitStatusLabel("to_complete")}.`,
+          "success",
+        );
+      } else if (noteModal.kind === "reject-close") {
+        await rejectCloseWorkPermitRequest(
+          accessToken,
+          noteModal.row.id,
+          reviewNote.trim(),
+        );
+        showToast(
+          `${noteModal.row.code} · ${workPermitStatusLabel("no_closure")}.`,
           "success",
         );
       } else {
@@ -216,6 +279,27 @@ export function WorkPermitsPage() {
       );
     } finally {
       setActingId(null);
+    }
+  }
+
+  /** Soft-delete PT (+ aviso origen). */
+  async function onConfirmDelete() {
+    if (!accessToken || !deleteRow || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteWorkPermitRequest(accessToken, deleteRow.id);
+      showToast(`${deleteRow.code} eliminado.`, "success");
+      setDeleteRow(null);
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError
+          ? err.message
+          : "No se pudo eliminar el permiso.",
+        "danger",
+      );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -319,7 +403,7 @@ export function WorkPermitsPage() {
             />
           }
         >
-          <table className="w-full min-w-[800px] border-collapse text-left text-[13px]">
+          <table className="w-full min-w-[980px] border-collapse text-left text-[13px]">
             <thead>
               <tr className="bg-[var(--color-table-head-bg,#f8f9fb)] text-[12px] font-medium text-[var(--color-nachipa-secondary)]">
                 <th className="px-3 py-2.5">Permiso</th>
@@ -329,14 +413,17 @@ export function WorkPermitsPage() {
                 <th className="px-3 py-2.5">Nave</th>
                 <th className="px-3 py-2.5">Fecha</th>
                 <th className="px-3 py-2.5">Estado</th>
-                <th className="px-3 py-2.5 text-right">Acciones</th>
+                <th className="px-3 py-2.5">Avance</th>
+                <th className="sticky right-0 z-10 bg-[var(--color-table-head-bg,#f8f9fb)] px-3 py-2.5 text-right shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.08)]">
+                  Acciones
+                </th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-3 py-8 text-[var(--color-nachipa-secondary)]"
                   >
                     Cargando…
@@ -345,7 +432,7 @@ export function WorkPermitsPage() {
               ) : pageItems.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-3 py-8 text-[var(--color-nachipa-secondary)]"
                   >
                     No hay permisos. Creá uno desde un aviso en Avisos de
@@ -356,7 +443,7 @@ export function WorkPermitsPage() {
                 pageItems.map((row) => (
                   <tr
                     key={row.id}
-                    className="border-t border-[var(--color-tremor-border)] hover:bg-[var(--color-nachipa-bg-page)]"
+                    className="group border-t border-[var(--color-tremor-border)] hover:bg-[var(--color-nachipa-bg-page)]"
                   >
                     <td className="px-3 py-2.5 font-semibold tabular-nums text-[var(--color-nachipa-title)]">
                       <Link
@@ -391,76 +478,117 @@ export function WorkPermitsPage() {
                         {workPermitStatusLabel(row.status)}
                       </StatusChip>
                     </td>
-                    <td className="px-3 py-2.5 text-right">
-                      {canUpdate && row.status === "to_complete" ? (
-                        <button
-                          type="button"
+                    <td className="px-3 py-2.5">
+                      <WorkPermitProgressCell status={row.status} />
+                    </td>
+                    <td className="sticky right-0 z-10 whitespace-nowrap bg-white px-3 py-2.5 text-right shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.08)] group-hover:bg-[var(--color-nachipa-bg-page)]">
+                      <span className="inline-flex flex-wrap items-center justify-end gap-2">
+                        {/* Siempre visible: Acciones nunca queda vacía. */}
+                        <Link
+                          to={`/prevencion/permisos/${row.id}`}
                           className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
-                          onClick={() => setCompleteRow(row)}
                         >
-                          Completar
-                        </button>
-                      ) : canUpdate &&
+                          Ver
+                        </Link>
+                        {canUpdate && row.status === "to_complete" ? (
+                          <button
+                            type="button"
+                            className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                            onClick={() => setCompleteRow(row)}
+                          >
+                            Completar
+                          </button>
+                        ) : null}
+                        {canUpdate &&
                         isStaff &&
                         row.status === "to_approve" ? (
-                        <span className="inline-flex items-center gap-2">
-                          <button
-                            type="button"
-                            className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
-                            disabled={actingId === row.id}
-                            onClick={() => void onApprove(row)}
-                          >
-                            {actingId === row.id ? "…" : "Aprobar"}
-                          </button>
-                          <span
-                            aria-hidden
-                            className="text-[var(--color-nachipa-secondary)]"
-                          >
-                            ·
-                          </span>
-                          <button
-                            type="button"
-                            className="text-[13px] font-medium text-[var(--color-nachipa-title)] hover:underline disabled:opacity-60"
-                            disabled={actingId === row.id}
-                            onClick={() => openNoteModal("return", row)}
-                          >
-                            Devolver
-                          </button>
-                        </span>
-                      ) : canReceive &&
+                          <>
+                            <button
+                              type="button"
+                              className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
+                              disabled={actingId === row.id}
+                              onClick={() => void onApprove(row)}
+                            >
+                              {actingId === row.id ? "…" : "Aprobar"}
+                            </button>
+                            <button
+                              type="button"
+                              className="text-[13px] font-medium text-[var(--color-nachipa-title)] hover:underline disabled:opacity-60"
+                              disabled={actingId === row.id}
+                              onClick={() => openNoteModal("return", row)}
+                            >
+                              Devolver
+                            </button>
+                          </>
+                        ) : null}
+                        {canReceive &&
                         isStaff &&
                         row.status === "to_receive" ? (
-                        <span className="inline-flex items-center gap-2">
+                          <>
+                            <button
+                              type="button"
+                              className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
+                              disabled={actingId === row.id}
+                              onClick={() => void onReceive(row)}
+                            >
+                              {actingId === row.id ? "…" : "Autorizar a bordo"}
+                            </button>
+                            <button
+                              type="button"
+                              className="text-[13px] font-medium text-[var(--color-nachipa-title)] hover:underline disabled:opacity-60"
+                              disabled={actingId === row.id}
+                              onClick={() =>
+                                openNoteModal("reject-receipt", row)
+                              }
+                            >
+                              No autorizar
+                            </button>
+                          </>
+                        ) : null}
+                        {canUpdate && row.status === "active" ? (
                           <button
                             type="button"
                             className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
                             disabled={actingId === row.id}
-                            onClick={() => void onReceive(row)}
+                            onClick={() => void onRequestClose(row)}
                           >
-                            {actingId === row.id ? "…" : "Autorizar a bordo"}
+                            {actingId === row.id ? "…" : "Pedir cierre"}
                           </button>
-                          <span
-                            aria-hidden
-                            className="text-[var(--color-nachipa-secondary)]"
-                          >
-                            ·
-                          </span>
+                        ) : null}
+                        {canReceive &&
+                        isStaff &&
+                        row.status === "to_verify" ? (
+                          <>
+                            <button
+                              type="button"
+                              className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
+                              disabled={actingId === row.id}
+                              onClick={() => void onClose(row)}
+                            >
+                              {actingId === row.id ? "…" : "Cerrar trabajo"}
+                            </button>
+                            <button
+                              type="button"
+                              className="text-[13px] font-medium text-[var(--color-nachipa-title)] hover:underline disabled:opacity-60"
+                              disabled={actingId === row.id}
+                              onClick={() =>
+                                openNoteModal("reject-close", row)
+                              }
+                            >
+                              Sin cierre
+                            </button>
+                          </>
+                        ) : null}
+                        {canDelete ? (
                           <button
                             type="button"
-                            className="text-[13px] font-medium text-[var(--color-nachipa-title)] hover:underline disabled:opacity-60"
-                            disabled={actingId === row.id}
-                            onClick={() =>
-                              openNoteModal("reject-receipt", row)
-                            }
+                            className="text-[13px] font-medium text-[var(--color-nachipa-secondary)] hover:text-[var(--color-status-danger-fg,#b91c1c)] hover:underline"
+                            onClick={() => setDeleteRow(row)}
                           >
-                            No autorizar
+                            Eliminar
                           </button>
-                        </span>
-                      ) : (
-                        <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
-                          —
-                        </span>
-                      )}
+                        ) : null}
+                      </span>
                     </td>
                   </tr>
                 ))
@@ -501,7 +629,9 @@ export function WorkPermitsPage() {
         title={
           noteModal?.kind === "reject-receipt"
             ? "No autorizar recepción"
-            : "Devolver permiso al contratista"
+            : noteModal?.kind === "reject-close"
+              ? "Marcar sin cierre"
+              : "Devolver permiso al contratista"
         }
         subtitle={
           noteModal
@@ -529,7 +659,9 @@ export function WorkPermitsPage() {
                 ? "Guardando…"
                 : noteModal?.kind === "reject-receipt"
                   ? "No autorizar"
-                  : "Devolver"}
+                  : noteModal?.kind === "reject-close"
+                    ? "Confirmar sin cierre"
+                    : "Devolver"}
             </Button>
           </div>
         }
@@ -537,16 +669,62 @@ export function WorkPermitsPage() {
         <p className="m-0 mb-3 text-[13px] text-[var(--color-nachipa-secondary)]">
           {noteModal?.kind === "reject-receipt"
             ? "El permiso vuelve a «En revisión» (Prevención) con tu motivo."
-            : "El permiso vuelve a «Por completar» con tu observación."}
+            : noteModal?.kind === "reject-close"
+              ? "El permiso queda en «Sin cierre» con tu motivo."
+              : "El permiso vuelve a «Por completar» con tu observación."}
         </p>
         <TextField
           label={
-            noteModal?.kind === "reject-receipt" ? "Motivo" : "Observaciones"
+            noteModal?.kind === "reject-receipt" ||
+            noteModal?.kind === "reject-close"
+              ? "Motivo"
+              : "Observaciones"
           }
           value={reviewNote}
           onChange={(e) => setReviewNote(e.target.value)}
           required
         />
+      </Modal>
+
+      <Modal
+        open={Boolean(deleteRow)}
+        onClose={() => {
+          if (!deleting) setDeleteRow(null);
+        }}
+        title="Eliminar permiso"
+        subtitle={
+          deleteRow
+            ? `${deleteRow.code} · ${displayName(deleteRow.organization.name)}`
+            : undefined
+        }
+        maxWidthClass="max-w-[440px]"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => setDeleteRow(null)}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={deleting}
+              onClick={() => void onConfirmDelete()}
+            >
+              {deleting ? "Eliminando…" : "Eliminar"}
+            </Button>
+          </div>
+        }
+      >
+        <p className="m-0 text-[13px] text-[var(--color-nachipa-body)]">
+          Se quita de la bandeja junto con el aviso{" "}
+          {deleteRow ? deleteRow.workNotice.code : ""}. Esta acción no se puede
+          deshacer desde la UI.
+        </p>
       </Modal>
     </div>
   );

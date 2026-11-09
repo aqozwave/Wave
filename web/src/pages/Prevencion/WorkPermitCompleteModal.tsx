@@ -3,23 +3,14 @@ import { Button } from "../../components/Button/Button";
 import { Modal } from "../../components/Modal/Modal";
 import { useToast } from "../../components/Toast/ToastProvider";
 import {
-  listContractorPeopleRequest,
-  listContractorPortalPeopleRequest,
-  type ContractorPerson,
-  type ContractorPortalPerson,
-} from "../../lib/api/contractors";
-
-/** Persona en el modal con progreso opcional del pack (portal). */
-type SelectablePerson = ContractorPerson & {
-  documents?: ContractorPortalPerson["documents"];
-};
-import {
   getWorkPermitChecklistRequest,
+  listWorkPermitAssignablePeopleRequest,
   listWorkPermitPeopleRequest,
   putWorkPermitChecklistRequest,
   putWorkPermitPeopleRequest,
   submitWorkPermitRequest,
   type WorkPermit,
+  type WorkPermitAssignablePerson,
   type WorkPermitChecklistAnswerValue,
   type WorkPermitChecklistItem,
 } from "../../lib/api/workPermits";
@@ -33,7 +24,7 @@ type Props = {
   open: boolean;
   permit: WorkPermit | null;
   accessToken: string;
-  /** Portal contratista usa /me/people; staff usa /contractors/:orgId/people. */
+  /** Portal contratista o staff Prevención (misma API de readiness). */
   mode: "portal" | "staff";
   onClose: () => void;
   /** Tras guardar o enviar. */
@@ -42,32 +33,26 @@ type Props = {
 
 /**
  * Modal para completar personal + checklist (E12 / E12b) y enviar (E13).
- * Usable desde portal contratista y bandeja Prevención (opción B).
+ * Muestra pack y exigencias de faena faltantes por persona antes de guardar.
  */
 export function WorkPermitCompleteModal({
   open,
   permit,
   accessToken,
-  mode,
+  mode: _mode,
   onClose,
   onDone,
 }: Props) {
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [available, setAvailable] = useState<SelectablePerson[]>([]);
+  const [available, setAvailable] = useState<WorkPermitAssignablePerson[]>([]);
+  const [requirementLabels, setRequirementLabels] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [checklist, setChecklist] = useState<WorkPermitChecklistItem[]>([]);
   const [answers, setAnswers] = useState<
     Record<string, WorkPermitChecklistAnswerValue>
   >({});
-
-  /** Pack persona incompleto (portal: uploaded < required). */
-  function isPersonDocsIncomplete(p: SelectablePerson): boolean {
-    if (!p.documents) return false;
-    if (p.documents.required <= 0) return true;
-    return p.documents.uploaded < p.documents.required;
-  }
 
   useEffect(() => {
     if (!open || !permit || !accessToken) return;
@@ -76,36 +61,22 @@ export function WorkPermitCompleteModal({
     async function load() {
       setLoading(true);
       try {
-        const [peopleRes, assignedRes, checklistRes] = await Promise.all([
-          mode === "portal"
-            ? listContractorPortalPeopleRequest(accessToken, {
-                limit: 100,
-                active: true,
-              })
-            : listContractorPeopleRequest(
-                accessToken,
-                permit!.organizationId,
-                1,
-                100,
-                { active: true },
-              ),
+        const [assignableRes, assignedRes, checklistRes] = await Promise.all([
+          listWorkPermitAssignablePeopleRequest(accessToken, permit!.id),
           listWorkPermitPeopleRequest(accessToken, permit!.id),
           getWorkPermitChecklistRequest(accessToken, permit!.id, "contractor"),
         ]);
         if (cancelled) return;
-        const people = peopleRes.items as SelectablePerson[];
-        setAvailable(people);
-        /** Quita del set a quienes no tienen pack (no se pueden guardar). */
-        const allowed = new Set(
-          people
-            .filter((p) => !isPersonDocsIncomplete(p))
-            .map((p) => p.id),
+        setAvailable(assignableRes.items);
+        setRequirementLabels(assignableRes.personRequirementLabels);
+        const assignableIds = new Set(
+          assignableRes.items.filter((p) => p.canAssign).map((p) => p.personId),
         );
         setSelectedIds(
           new Set(
             assignedRes.items
               .map((p) => p.personId)
-              .filter((id) => allowed.has(id) || mode === "staff"),
+              .filter((id) => assignableIds.has(id)),
           ),
         );
         setChecklist(checklistRes.items);
@@ -132,17 +103,39 @@ export function WorkPermitCompleteModal({
     return () => {
       cancelled = true;
     };
-  }, [open, permit, accessToken, mode, showToast]);
+  }, [open, permit, accessToken, showToast]);
 
-  /** Marca/desmarca persona (no permite elegir pack incompleto en portal). */
-  function togglePerson(person: SelectablePerson) {
-    if (isPersonDocsIncomplete(person)) return;
+  /** Marca/desmarca persona (solo si canAssign). */
+  function togglePerson(person: WorkPermitAssignablePerson) {
+    if (!person.canAssign) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(person.id)) next.delete(person.id);
-      else next.add(person.id);
+      if (next.has(person.personId)) next.delete(person.personId);
+      else next.add(person.personId);
       return next;
     });
+  }
+
+  /** Texto corto: distingue sin subir vs pendiente de validación. */
+  function missingHint(person: WorkPermitAssignablePerson): string {
+    const parts: string[] = [];
+    if (person.absentPackCodes.length > 0) {
+      parts.push(`subir pack: ${person.absentPackCodes.join(", ")}`);
+    }
+    if (person.pendingPackCodes.length > 0) {
+      parts.push(
+        `pack en revisión Prevención: ${person.pendingPackCodes.join(", ")}`,
+      );
+    }
+    if (person.absentRequirementLabels.length > 0) {
+      parts.push(`subir faena: ${person.absentRequirementLabels.join(", ")}`);
+    }
+    if (person.pendingRequirementLabels.length > 0) {
+      parts.push(
+        `faena en revisión: ${person.pendingRequirementLabels.join(", ")}`,
+      );
+    }
+    return parts.join(" · ");
   }
 
   /** Guarda personal + checklist; opcionalmente envía a aprobación. */
@@ -250,31 +243,35 @@ export function WorkPermitCompleteModal({
               Personal ({selectedIds.size})
             </h3>
             <p className="m-0 mb-2 text-[12px] text-[var(--color-nachipa-secondary)]">
-              Solo personal con pack de documentos completo (validados y
-              vigentes). Sin docs no se puede asignar ni enviar.
+              Solo personal con pack
+              {requirementLabels.length > 0
+                ? ` y docs de faena (${requirementLabels.join(", ")})`
+                : ""}{" "}
+              validados por Prevención. Subir el archivo no alcanza: tienen que
+              estar vigentes.
             </p>
             {available.length === 0 ? (
               <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
                 No hay personas activas en la organización.
               </p>
             ) : (
-              <ul className="m-0 flex max-h-48 list-none flex-col gap-1 overflow-y-auto p-0">
+              <ul className="m-0 flex max-h-56 list-none flex-col gap-1 overflow-y-auto p-0">
                 {available.map((p) => {
-                  const incomplete = isPersonDocsIncomplete(p);
+                  const hint = missingHint(p);
                   return (
-                    <li key={p.id}>
+                    <li key={p.personId}>
                       <label
                         className={`flex items-start gap-2 rounded-[var(--radius-md)] px-2 py-1.5 ${
-                          incomplete
-                            ? "cursor-not-allowed opacity-60"
-                            : "cursor-pointer hover:bg-[var(--color-nachipa-bg-page)]"
+                          p.canAssign
+                            ? "cursor-pointer hover:bg-[var(--color-nachipa-bg-page)]"
+                            : "cursor-not-allowed opacity-60"
                         }`}
                       >
                         <input
                           type="checkbox"
                           className="mt-1"
-                          checked={selectedIds.has(p.id)}
-                          disabled={incomplete}
+                          checked={selectedIds.has(p.personId)}
+                          disabled={!p.canAssign}
                           onChange={() => togglePerson(p)}
                         />
                         <span>
@@ -284,10 +281,7 @@ export function WorkPermitCompleteModal({
                           <span className="text-[12px] tabular-nums text-[var(--color-nachipa-secondary)]">
                             {p.rut}
                             {p.position ? ` · ${p.position}` : ""}
-                            {p.documents
-                              ? ` · docs ${p.documents.uploaded}/${p.documents.required}`
-                              : ""}
-                            {incomplete ? " · Faltan documentos" : ""}
+                            {p.canAssign ? " · Listo" : hint ? ` · Falta ${hint}` : " · No asignable"}
                           </span>
                         </span>
                       </label>

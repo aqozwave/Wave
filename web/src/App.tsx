@@ -154,6 +154,10 @@ export function App() {
             path="portal/permisos"
             element={<ContractorPortalPermitsPage />}
           />
+          <Route
+            path="portal/permisos/:id"
+            element={<WorkPermitDetailPage />}
+          />
           <Route path="embarcados" element={<Embarcados />} />
           <Route path="embarcados/:id" element={<FichaTripulante />} />
           <Route

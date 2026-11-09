@@ -3,6 +3,7 @@ import { AppError } from "../../lib/errors.js";
 import { auditWrite } from "../activityLogs/activityLogs.service.js";
 import {
   createWorkNoticeResponseSchema,
+  deleteWorkNoticeResponseSchema,
   getWorkNoticeResponseSchema,
   listWorkNoticesResponseSchema,
   type CreateWorkNoticeBody,
@@ -10,6 +11,7 @@ import {
 } from "./workNotices.schemas.js";
 import {
   createWorkNotice,
+  deleteWorkNoticeById,
   getWorkNoticeById,
   listWorkNotices,
 } from "./workNotices.service.js";
@@ -50,4 +52,20 @@ export async function getWorkNoticeHandler(
   if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
   const result = await getWorkNoticeById(req.user, req.params.id as string);
   res.status(200).json(getWorkNoticeResponseSchema.parse(result));
+}
+
+/** DELETE /work-notices/:id — soft-delete (+ PT vinculado si hay). */
+export async function deleteWorkNoticeHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await deleteWorkNoticeById(req.user, req.params.id as string);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "workNotice",
+    resourceId: result.id,
+    targetLabel: `${result.code} · delete`,
+  });
+  res.status(200).json(deleteWorkNoticeResponseSchema.parse(result));
 }

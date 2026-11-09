@@ -1213,14 +1213,17 @@ export async function listMyContractorPeople(
     );
   }
 
-  const required = await prisma.documentType.count({
+  const packTypes = await prisma.documentType.findMany({
     where: {
       businessId: org.businessId,
       accreditationPack: "person",
       state: true,
       deletedAt: null,
     },
+    select: { id: true },
   });
+  const packTypeIds = new Set(packTypes.map((t) => t.id));
+  const required = packTypes.length;
 
   const hab = await prisma.contractorAccreditation.findFirst({
     where: { organizationId },
@@ -1231,6 +1234,7 @@ export async function listMyContractorPeople(
   const personIds = listed.items.map((p) => p.id);
   const uploadedByPerson = new Map<string, number>();
   const observedByPerson = new Map<string, number>();
+  const validatedByPerson = new Map<string, number>();
 
   if (hab && personIds.length > 0) {
     const docs = await prisma.contractorPersonDocument.findMany({
@@ -1239,14 +1243,24 @@ export async function listMyContractorPeople(
         personId: { in: personIds },
         deletedAt: null,
         status: { not: "replaced" },
+        documentTypeId: { in: [...packTypeIds] },
       },
-      select: { personId: true, status: true, documentTypeId: true },
+      select: {
+        personId: true,
+        status: true,
+        documentTypeId: true,
+        expiresAt: true,
+      },
     });
-    /** Un doc vigente por tipo (el findMany no garantiza uniqueness, contamos tipos). */
+    const now = Date.now();
+    /** Un doc vigente por tipo (solo pack person; no cuenta exigencias de faena). */
     const typesByPerson = new Map<string, Set<string>>();
     const observedTypesByPerson = new Map<string, Set<string>>();
+    const validatedTypesByPerson = new Map<string, Set<string>>();
     for (const doc of docs) {
+      if (!packTypeIds.has(doc.documentTypeId)) continue;
       const set = typesByPerson.get(doc.personId) ?? new Set<string>();
+      if (set.has(doc.documentTypeId)) continue;
       set.add(doc.documentTypeId);
       typesByPerson.set(doc.personId, set);
       if (doc.status === "observed") {
@@ -1255,12 +1269,24 @@ export async function listMyContractorPeople(
         obs.add(doc.documentTypeId);
         observedTypesByPerson.set(doc.personId, obs);
       }
+      if (
+        doc.status === "validated" &&
+        !(doc.expiresAt && doc.expiresAt.getTime() < now)
+      ) {
+        const val =
+          validatedTypesByPerson.get(doc.personId) ?? new Set<string>();
+        val.add(doc.documentTypeId);
+        validatedTypesByPerson.set(doc.personId, val);
+      }
     }
     for (const [pid, set] of typesByPerson) {
       uploadedByPerson.set(pid, set.size);
     }
     for (const [pid, set] of observedTypesByPerson) {
       observedByPerson.set(pid, set.size);
+    }
+    for (const [pid, set] of validatedTypesByPerson) {
+      validatedByPerson.set(pid, set.size);
     }
   }
 
@@ -1271,6 +1297,7 @@ export async function listMyContractorPeople(
         uploaded: uploadedByPerson.get(p.id) ?? 0,
         required,
         observed: observedByPerson.get(p.id) ?? 0,
+        validated: validatedByPerson.get(p.id) ?? 0,
       },
     })),
     total: listed.total,

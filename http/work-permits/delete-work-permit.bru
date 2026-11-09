@@ -1,0 +1,37 @@
+meta {
+  name: Delete work permit
+  type: http
+  seq: 20
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/work-permits/{{workPermitId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Soft-delete del PT (permiso work_permits.deactivate).
+  También soft-deletea el aviso origen.
+  Variable workPermitId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("workPermitId")) throw new Error("Sin workPermitId.");
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

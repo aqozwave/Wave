@@ -188,14 +188,15 @@ export function ContractorPortalAccreditationPage() {
     hab.status === "observed" ||
     hab.status === "invited";
   /**
-   * Subir/reemplazar con HAB editable.
-   * Approved: solo completar tipos vacíos (API reabre a in_review).
+   * Subir mientras HAB no esté cerrada (rejected).
+   * Approved: solo tipos vacíos (API reabre a in_review).
+   * in_review/pending/observed: subir o reemplazar.
    */
-  const hasObservedDoc = items.some((i) => i.document?.status === "observed");
   const canUploadEditable =
     hab?.status === "pending" ||
     hab?.status === "observed" ||
-    (hab?.status === "in_review" && hasObservedDoc);
+    hab?.status === "invited" ||
+    hab?.status === "in_review";
   const canUploadApprovedGaps = hab?.status === "approved";
   /** true si ese slot admite Subir/Reemplazar. */
   function canUploadSlot(hasDocument: boolean): boolean {
@@ -205,6 +206,10 @@ export function ContractorPortalAccreditationPage() {
   }
   const canSubmit =
     hab?.status === "pending" || hab?.status === "observed";
+  /** Pack empresa con archivo en cada tipo (para habilitar «Enviar a revisión»). */
+  const packUploadedComplete =
+    items.length > 0 && items.every((i) => Boolean(i.document));
+  const canSubmitPack = canSubmit && packUploadedComplete;
 
   /** Cambia tab sin perder el resto de query. */
   function setTab(next: TabId) {
@@ -347,9 +352,9 @@ export function ContractorPortalAccreditationPage() {
     void uploadFile(documentTypeId, file, null);
   }
 
-  /** Envía a revisión. */
+  /** Envía a revisión (exige pack empresa completo). */
   async function onSubmit() {
-    if (!accessToken || !canSubmit || acting) return;
+    if (!accessToken || !canSubmit || !canSubmitPack || acting) return;
     setActing(true);
     try {
       await submitContractorPortalAccreditationRequest(accessToken);
@@ -421,7 +426,12 @@ export function ContractorPortalAccreditationPage() {
                   type="button"
                   size="medium"
                   className="!w-auto"
-                  disabled={acting || loading}
+                  disabled={acting || loading || !canSubmitPack}
+                  title={
+                    canSubmitPack
+                      ? undefined
+                      : "Subí todos los documentos del pack empresa antes de enviar"
+                  }
                   onClick={() => void onSubmit()}
                 >
                   {acting ? "Enviando…" : "Enviar a revisión"}

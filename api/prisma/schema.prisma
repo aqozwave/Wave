@@ -275,6 +275,18 @@ enum WorkPermitChecklistStage {
   closure
 }
 
+/**
+ * Firma lógica del ciclo del PT (P6 · documento).
+ * Una por hito; se reescribe si el hito se repite (ej. re-aprobar).
+ */
+enum WorkPermitSignatureKind {
+  prevention_approve
+  captain_receive
+  contractor_request_close
+  captain_close
+  captain_no_closure
+}
+
 /** Respuesta de un ítem de checklist del PT. */
 enum WorkPermitChecklistAnswerValue {
   yes
@@ -458,6 +470,8 @@ model User {
   workNoticesCreated WorkNotice[] @relation("WorkNoticeCreatedBy")
   /// Permisos de trabajo creados por este usuario (Prevención).
   workPermitsCreated WorkPermit[] @relation("WorkPermitCreatedBy")
+  /// Firmas de hitos en permisos de trabajo (P6).
+  workPermitSignatures WorkPermitSignature[] @relation("WorkPermitSignatureSignedBy")
   /// Respuestas de checklist de PT contestadas por este usuario.
   workPermitChecklistAnswers WorkPermitChecklistAnswer[] @relation("WorkPermitChecklistAnsweredBy")
 
@@ -1539,6 +1553,8 @@ model WorkPermit {
   people         WorkPermitPerson[]
   /// Respuestas de checklist por etapa.
   checklistAnswers WorkPermitChecklistAnswer[]
+  /// Firmas de hitos (aprobación, recepción, cierre).
+  signatures     WorkPermitSignature[]
 
   @@index([businessId])
   @@index([organizationId])
@@ -1547,6 +1563,30 @@ model WorkPermit {
   @@index([status])
   @@index([scheduledDate])
   @@map("work_permits")
+}
+
+/**
+ * Firma de un hito del PT (quién y cuándo aprobó / recibió / cerró).
+ * Sirve al documento imprimible; no es firma criptográfica.
+ */
+model WorkPermitSignature {
+  id           String                  @id @default(uuid()) @db.Uuid
+  workPermitId String                  @map("work_permit_id") @db.Uuid
+  workPermit   WorkPermit              @relation(fields: [workPermitId], references: [id], onDelete: Cascade)
+  kind         WorkPermitSignatureKind
+  signedById   String?                 @map("signed_by_id") @db.Uuid
+  signedBy     User?                   @relation("WorkPermitSignatureSignedBy", fields: [signedById], references: [id], onDelete: SetNull)
+  /// Nombre visible congelado al firmar.
+  signerName   String                  @map("signer_name")
+  note         String?
+  signedAt     DateTime                @default(now()) @map("signed_at") @db.Timestamptz
+  createdAt    DateTime                @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime                @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([workPermitId, kind])
+  @@index([workPermitId])
+  @@index([signedById])
+  @@map("work_permit_signatures")
 }
 
 /**

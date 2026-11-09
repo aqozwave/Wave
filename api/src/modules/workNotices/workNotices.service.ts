@@ -376,3 +376,39 @@ export async function createWorkNotice(
 
   return toWorkNoticeResponse(created);
 }
+
+/**
+ * DELETE /work-notices/:id — soft-delete del aviso.
+ * Si tiene PT vinculado, también lo soft-deletea (limpia la bandeja).
+ */
+export async function deleteWorkNoticeById(
+  actor: Actor,
+  id: string,
+): Promise<WorkNoticeResponse> {
+  const row = await prisma.workNotice.findFirst({
+    where: { id, deletedAt: null },
+    include: noticeInclude,
+  });
+  if (!row || row.organization.deletedAt) {
+    throw new AppError(404, "work_notice_not_found", "Aviso no encontrado");
+  }
+  assertNoticeTenantAccess(actor, row.businessId);
+  await assertBusinessModuleEnabled(row.businessId, "work_permits");
+
+  const now = new Date();
+  const updated = await prisma.$transaction(async (tx) => {
+    if (row.workPermit && !row.workPermit.deletedAt) {
+      await tx.workPermit.update({
+        where: { id: row.workPermit.id },
+        data: { deletedAt: now },
+      });
+    }
+    return tx.workNotice.update({
+      where: { id: row.id },
+      data: { deletedAt: now, status: "cancelled" },
+      include: noticeInclude,
+    });
+  });
+
+  return toWorkNoticeResponse(updated);
+}

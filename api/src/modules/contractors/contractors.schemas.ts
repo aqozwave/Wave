@@ -466,9 +466,12 @@ export type UpdateContractorPersonBody = z.infer<
 
 /** Progreso de docs pack person en el listado portal (E5). */
 export const contractorPortalPersonDocumentsSummarySchema = z.object({
+  /** Tipos del pack con archivo (cualquier estado salvo replaced). */
   uploaded: z.number().int().nonnegative(),
   required: z.number().int().nonnegative(),
   observed: z.number().int().nonnegative(),
+  /** Tipos del pack validados y vigentes (para operar / asignar a PT). */
+  validated: z.number().int().nonnegative(),
 });
 
 /** Persona del portal con resumen de documentos de la HAB vigente. */

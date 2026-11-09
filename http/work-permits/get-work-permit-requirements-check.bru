@@ -17,7 +17,8 @@ auth:bearer {
 docs {
   P13b: verifica exigencias de empresa antes de crear el PT.
   Variables organizationId + permitTypeId (aviso o contratista + tipo).
-  canCreate=false si HAB no approved o falta exigencia company/before obligatoria.
+  canCreate = HAB approved + pack empresa + company/before (no bloquea person: later).
+  Exigencias scope=person se verifican al asignar personal / enviar.
 }
 
 script:pre-request {

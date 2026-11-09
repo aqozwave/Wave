@@ -390,8 +390,15 @@ export function WorkPermitCreateModal({
 
               {!check.canCreate ? (
                 <p className="m-0 rounded-[var(--radius-md)] border border-[var(--color-status-danger-border,#fecaca)] bg-[var(--color-status-danger-bg,#fef2f2)] px-3 py-2 text-[13px] text-[var(--color-nachipa-title)]">
-                  No se puede crear: la empresa debe tener habilitación aprobada
-                  y las exigencias de empresa obligatorias al día.
+                  {check.accreditation &&
+                  check.accreditation.status !== "approved"
+                    ? `No se puede crear: la HAB ${check.accreditation.code} sigue en «${check.accreditation.status}». Validar documentos no alcanza — Prevención tiene que Aprobar la habilitación.`
+                    : "No se puede crear: la empresa debe tener habilitación aprobada y el pack empresa al día. Las exigencias por persona se verifican al asignar personal."}
+                </p>
+              ) : check.summary.later > 0 ? (
+                <p className="m-0 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-[var(--color-nachipa-bg-page)] px-3 py-2 text-[13px] text-[var(--color-nachipa-body)]">
+                  Podés crear el permiso. Las exigencias marcadas «Después»
+                  (personal / checklist) se validan al completar y enviar.
                 </p>
               ) : null}
 

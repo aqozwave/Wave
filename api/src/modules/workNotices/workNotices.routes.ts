@@ -5,11 +5,13 @@ import { requirePermission } from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createWorkNoticeHandler,
+  deleteWorkNoticeHandler,
   getWorkNoticeHandler,
   listWorkNoticesHandler,
 } from "./workNotices.controller.js";
 import {
   createWorkNoticeRequestSchema,
+  deleteWorkNoticeRequestSchema,
   getWorkNoticeRequestSchema,
   listWorkNoticesRequestSchema,
 } from "./workNotices.schemas.js";
@@ -51,4 +53,15 @@ workNoticesRouter.get(
   ),
   validate(getWorkNoticeRequestSchema),
   getWorkNoticeHandler,
+);
+
+workNoticesRouter.delete(
+  "/:id",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.WORK_NOTICES,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
+  validate(deleteWorkNoticeRequestSchema),
+  deleteWorkNoticeHandler,
 );

@@ -149,10 +149,18 @@ export const contractorPersonDocumentResponseSchema = z
   })
   .openapi("ContractorPersonDocument");
 
-/** Checklist pack person para una persona en la HAB. */
+/** Origen del slot: pack HAB, exigencia de tipo de permiso, o ambos. */
+export const personDocumentSlotSourceSchema = z.enum([
+  "pack",
+  "permit_requirement",
+  "both",
+]);
+
+/** Checklist pack person (+ exigencias por persona) para una persona en la HAB. */
 export const accreditationPersonDocumentChecklistItemSchema = z
   .object({
     documentType: documentTypeSummarySchema,
+    source: personDocumentSlotSourceSchema,
     document: contractorPersonDocumentResponseSchema.nullable(),
   })
   .openapi("AccreditationPersonDocumentChecklistItem");

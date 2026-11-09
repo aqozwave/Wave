@@ -35,6 +35,98 @@ export function workPermitStatusLabel(status: WorkPermitStatus): string {
   }
 }
 
+/**
+ * Hitos del ciclo para la mini timeline (Figma P6 variante densa).
+ * Orden fijo: Completar → … → Cerrado.
+ */
+export const WORK_PERMIT_PROGRESS_STEPS = [
+  { key: "to_complete", label: "Completar", percent: 15 },
+  { key: "to_approve", label: "Aprobar", percent: 30 },
+  { key: "to_receive", label: "Recibir", percent: 50 },
+  { key: "active", label: "Activo", percent: 70 },
+  { key: "to_verify", label: "Verificar", percent: 85 },
+  { key: "closed", label: "Cerrado", percent: 100 },
+] as const;
+
+/** Avance visual del PT: índice de hito + % fijo por estado (o — si sin cierre). */
+export type WorkPermitProgress = {
+  /** Índice 0..5 del hito actual (en no_closure = último). */
+  stepIndex: number;
+  /** % fijo por estado; null = sin cierre (mostrar —). */
+  percent: number | null;
+  /** true si el ciclo terminó en no_closure (tono danger). */
+  terminalDanger: boolean;
+  /** true si todos los hitos están completos (closed). */
+  allComplete: boolean;
+};
+
+/**
+ * Calcula avance denso a partir del status.
+ * % fijo por estado (producto P6); no_closure → — + danger.
+ */
+export function workPermitProgress(
+  status: WorkPermitStatus,
+): WorkPermitProgress {
+  switch (status) {
+    case "to_complete":
+      return {
+        stepIndex: 0,
+        percent: 15,
+        terminalDanger: false,
+        allComplete: false,
+      };
+    case "to_approve":
+      return {
+        stepIndex: 1,
+        percent: 30,
+        terminalDanger: false,
+        allComplete: false,
+      };
+    case "to_receive":
+      return {
+        stepIndex: 2,
+        percent: 50,
+        terminalDanger: false,
+        allComplete: false,
+      };
+    case "active":
+      return {
+        stepIndex: 3,
+        percent: 70,
+        terminalDanger: false,
+        allComplete: false,
+      };
+    case "to_verify":
+      return {
+        stepIndex: 4,
+        percent: 85,
+        terminalDanger: false,
+        allComplete: false,
+      };
+    case "closed":
+      return {
+        stepIndex: 5,
+        percent: 100,
+        terminalDanger: false,
+        allComplete: true,
+      };
+    case "no_closure":
+      return {
+        stepIndex: 5,
+        percent: null,
+        terminalDanger: true,
+        allComplete: false,
+      };
+    default:
+      return {
+        stepIndex: 0,
+        percent: 15,
+        terminalDanger: false,
+        allComplete: false,
+      };
+  }
+}
+
 /** Permiso de trabajo PT-NNNN. */
 export type WorkPermit = {
   id: string;
@@ -193,6 +285,20 @@ export async function createWorkPermitRequest(
   return body as WorkPermit;
 }
 
+/** DELETE /api/v1/work-permits/:id — soft-delete (+ aviso origen). */
+export async function deleteWorkPermitRequest(
+  accessToken: string,
+  id: string,
+): Promise<WorkPermit> {
+  const res = await fetch(`/api/v1/work-permits/${id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as WorkPermit;
+}
+
 /** POST /api/v1/work-permits/:id/submit — enviar a aprobación. */
 export async function submitWorkPermitRequest(
   accessToken: string,
@@ -270,13 +376,120 @@ export async function rejectReceiptWorkPermitRequest(
   return body as WorkPermit;
 }
 
-/** Persona asignada al PT. */
+/** POST /api/v1/work-permits/:id/request-close — pedir cierre (P6a). */
+export async function requestCloseWorkPermitRequest(
+  accessToken: string,
+  id: string,
+): Promise<WorkPermit> {
+  const res = await fetch(`/api/v1/work-permits/${id}/request-close`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify({}),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as WorkPermit;
+}
+
+/** POST /api/v1/work-permits/:id/close — capitán cierra (P6b). */
+export async function closeWorkPermitRequest(
+  accessToken: string,
+  id: string,
+): Promise<WorkPermit> {
+  const res = await fetch(`/api/v1/work-permits/${id}/close`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify({}),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as WorkPermit;
+}
+
+/** POST /api/v1/work-permits/:id/reject-close — capitán sin cierre (P6b). */
+export async function rejectCloseWorkPermitRequest(
+  accessToken: string,
+  id: string,
+  reviewNote: string,
+): Promise<WorkPermit> {
+  const res = await fetch(`/api/v1/work-permits/${id}/reject-close`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify({ reviewNote }),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as WorkPermit;
+}
+
+/** Firma de un hito del PT (documento imprimible P6c). */
+export type WorkPermitDocumentSignature = {
+  kind: string;
+  label: string;
+  signerName: string;
+  signedAt: string;
+  note: string | null;
+};
+
+/**
+ * Hitos de firma del documento (mismo orden / labels que la API).
+ * Cierre y «sin cierre» son alternativas; ambos se muestran hasta que uno exista.
+ */
+export const WORK_PERMIT_SIGNATURE_SLOTS: ReadonlyArray<{
+  kind: WorkPermitDocumentSignature["kind"];
+  label: string;
+}> = [
+  { kind: "prevention_approve", label: "Aprobación Prevención" },
+  { kind: "captain_receive", label: "Autorización a bordo" },
+  { kind: "contractor_request_close", label: "Solicitud de cierre" },
+  { kind: "captain_close", label: "Cierre del trabajo" },
+  { kind: "captain_no_closure", label: "Sin cierre" },
+];
+
+/** GET /api/v1/work-permits/:id/document — ficha + firmas. */
+export type WorkPermitDocument = {
+  permit: WorkPermit;
+  people: Array<{
+    fullName: string;
+    rut: string;
+    position: string | null;
+  }>;
+  checklist: Array<{
+    order: number;
+    text: string;
+    answer: "yes" | "no" | "na";
+  }>;
+  signatures: WorkPermitDocumentSignature[];
+};
+
+/** GET /api/v1/work-permits/:id/document. */
+export async function getWorkPermitDocumentRequest(
+  accessToken: string,
+  id: string,
+): Promise<WorkPermitDocument> {
+  const res = await fetch(`/api/v1/work-permits/${id}/document`, {
+    headers: authHeaders(accessToken),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as WorkPermitDocument;
+}
+
+/** Persona asignada al PT (+ readiness docs para revisión). */
 export type WorkPermitPerson = {
   personId: string;
   fullName: string;
   rut: string;
   position: string | null;
   presentAt: string | null;
+  accreditationId: string | null;
+  packComplete: boolean;
+  pendingPackCodes: string[];
+  absentPackCodes: string[];
+  missingRequirementLabels: string[];
+  pendingRequirementLabels: string[];
+  absentRequirementLabels: string[];
+  docsOk: boolean;
 };
 
 /** Valor de checklist. */
@@ -291,17 +504,59 @@ export type WorkPermitChecklistItem = {
   answeredAt: string | null;
 };
 
+/** Persona activa con readiness para asignar al PT. */
+export type WorkPermitAssignablePerson = {
+  personId: string;
+  fullName: string;
+  rut: string;
+  position: string | null;
+  packComplete: boolean;
+  missingPackCodes: string[];
+  pendingPackCodes: string[];
+  absentPackCodes: string[];
+  missingRequirementLabels: string[];
+  missingRequirementCodes: string[];
+  pendingRequirementLabels: string[];
+  absentRequirementLabels: string[];
+  canAssign: boolean;
+};
+
+/** GET /api/v1/work-permits/:id/assignable-people */
+export async function listWorkPermitAssignablePeopleRequest(
+  accessToken: string,
+  id: string,
+): Promise<{
+  items: WorkPermitAssignablePerson[];
+  personRequirementLabels: string[];
+}> {
+  const res = await fetch(`/api/v1/work-permits/${id}/assignable-people`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as {
+    items: WorkPermitAssignablePerson[];
+    personRequirementLabels: string[];
+  };
+}
+
 /** GET /api/v1/work-permits/:id/people */
 export async function listWorkPermitPeopleRequest(
   accessToken: string,
   id: string,
-): Promise<{ items: WorkPermitPerson[] }> {
+): Promise<{
+  items: WorkPermitPerson[];
+  personRequirementLabels: string[];
+}> {
   const res = await fetch(`/api/v1/work-permits/${id}/people`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw toApiError(res, body);
-  return body as { items: WorkPermitPerson[] };
+  return body as {
+    items: WorkPermitPerson[];
+    personRequirementLabels: string[];
+  };
 }
 
 /** PUT /api/v1/work-permits/:id/people */
@@ -309,7 +564,10 @@ export async function putWorkPermitPeopleRequest(
   accessToken: string,
   id: string,
   personIds: string[],
-): Promise<{ items: WorkPermitPerson[] }> {
+): Promise<{
+  items: WorkPermitPerson[];
+  personRequirementLabels: string[];
+}> {
   const res = await fetch(`/api/v1/work-permits/${id}/people`, {
     method: "PUT",
     headers: authHeaders(accessToken),
@@ -317,7 +575,10 @@ export async function putWorkPermitPeopleRequest(
   });
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw toApiError(res, body);
-  return body as { items: WorkPermitPerson[] };
+  return body as {
+    items: WorkPermitPerson[];
+    personRequirementLabels: string[];
+  };
 }
 
 /** GET /api/v1/work-permits/:id/checklist */

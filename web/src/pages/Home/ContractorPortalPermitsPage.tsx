@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { ClipboardCheck } from "lucide-react";
+import { Link } from "react-router";
 import {
   DataTableCard,
 } from "../../components/DataTableCard/DataTableCard";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
+import { WorkPermitProgressCell } from "../../components/WorkPermitProgressCell/WorkPermitProgressCell";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { useToast } from "../../components/Toast/ToastProvider";
 import {
   listWorkPermitsRequest,
+  requestCloseWorkPermitRequest,
   workPermitStatusLabel,
   type WorkPermit,
   type WorkPermitStatus,
@@ -47,13 +50,14 @@ function statusTone(
 
 /**
  * Portal contratista — mis permisos de trabajo.
- * Completar personal/checklist y enviar a aprobación (E12/E13).
+ * Completar / pedir cierre; Ver abre ficha con tab Documento y firmas.
  */
 export function ContractorPortalPermitsPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const [items, setItems] = useState<WorkPermit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actingId, setActingId] = useState<string | null>(null);
   const [completeRow, setCompleteRow] = useState<WorkPermit | null>(null);
 
   const load = useCallback(async () => {
@@ -77,6 +81,27 @@ export function ContractorPortalPermitsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** Contratista avisa que terminó el trabajo → capitán verifica. */
+  async function onRequestClose(row: WorkPermit) {
+    if (!accessToken || actingId) return;
+    setActingId(row.id);
+    try {
+      await requestCloseWorkPermitRequest(accessToken, row.id);
+      showToast(
+        `${row.code} · ${workPermitStatusLabel("to_verify")}.`,
+        "success",
+      );
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo pedir el cierre",
+        "danger",
+      );
+    } finally {
+      setActingId(null);
+    }
+  }
 
   if (!user?.organizationId) {
     return (
@@ -102,7 +127,7 @@ export function ContractorPortalPermitsPage() {
         <PageHeader
           crumbs={[{ label: "Permisos de trabajo" }]}
           title="Mis permisos de trabajo"
-          description="Completá personal y checklist, y envialo a Prevención."
+          description="Completá el permiso, pedí el cierre cuando termines el trabajo a bordo."
         />
 
         <DataTableCard>
@@ -114,6 +139,7 @@ export function ContractorPortalPermitsPage() {
                 <th className="px-3 py-2.5">Nave</th>
                 <th className="px-3 py-2.5">Fecha</th>
                 <th className="px-3 py-2.5">Estado</th>
+                <th className="px-3 py-2.5">Avance</th>
                 <th className="px-3 py-2.5 text-right">Acciones</th>
               </tr>
             </thead>
@@ -121,7 +147,7 @@ export function ContractorPortalPermitsPage() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-[var(--color-nachipa-secondary)]"
                   >
                     Cargando…
@@ -130,7 +156,7 @@ export function ContractorPortalPermitsPage() {
               ) : items.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-[var(--color-nachipa-secondary)]"
                   >
                     Todavía no tenés permisos asignados.
@@ -143,7 +169,12 @@ export function ContractorPortalPermitsPage() {
                     className="border-t border-[var(--color-tremor-border)]"
                   >
                     <td className="px-3 py-2.5 font-semibold tabular-nums text-[var(--color-nachipa-title)]">
-                      {row.code}
+                      <Link
+                        to={`/portal/permisos/${row.id}`}
+                        className="hover:text-[var(--color-nachipa-primary)] hover:underline"
+                      >
+                        {row.code}
+                      </Link>
                     </td>
                     <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
                       {row.permitType.code} · {row.permitType.name}
@@ -159,20 +190,37 @@ export function ContractorPortalPermitsPage() {
                         {workPermitStatusLabel(row.status)}
                       </StatusChip>
                     </td>
+                    <td className="px-3 py-2.5">
+                      <WorkPermitProgressCell status={row.status} />
+                    </td>
                     <td className="px-3 py-2.5 text-right">
-                      {row.status === "to_complete" ? (
-                        <button
-                          type="button"
+                      <span className="inline-flex flex-wrap items-center justify-end gap-2">
+                        <Link
+                          to={`/portal/permisos/${row.id}`}
                           className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
-                          onClick={() => setCompleteRow(row)}
                         >
-                          Completar
-                        </button>
-                      ) : (
-                        <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
-                          —
-                        </span>
-                      )}
+                          Ver
+                        </Link>
+                        {row.status === "to_complete" ? (
+                          <button
+                            type="button"
+                            className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                            onClick={() => setCompleteRow(row)}
+                          >
+                            Completar
+                          </button>
+                        ) : null}
+                        {row.status === "active" ? (
+                          <button
+                            type="button"
+                            className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
+                            disabled={actingId === row.id}
+                            onClick={() => void onRequestClose(row)}
+                          >
+                            {actingId === row.id ? "…" : "Pedir cierre"}
+                          </button>
+                        ) : null}
+                      </span>
                     </td>
                   </tr>
                 ))

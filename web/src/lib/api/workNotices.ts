@@ -146,3 +146,17 @@ export async function createWorkNoticeRequest(
   if (!res.ok) throw toApiError(res, body);
   return body as WorkNotice;
 }
+
+/** DELETE /api/v1/work-notices/:id — soft-delete (+ PT vinculado). */
+export async function deleteWorkNoticeRequest(
+  accessToken: string,
+  id: string,
+): Promise<WorkNotice> {
+  const res = await fetch(`/api/v1/work-notices/${id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as WorkNotice;
+}

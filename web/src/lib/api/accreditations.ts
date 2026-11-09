@@ -383,9 +383,11 @@ export type ContractorPersonDocument = {
   updatedAt: string;
 };
 
-/** Fila checklist pack person. */
+/** Fila checklist pack person (+ exigencias por persona de tipos de permiso). */
 export type AccreditationPersonDocumentChecklistItem = {
   documentType: AccreditationPackDocumentType;
+  /** pack = HAB; permit_requirement = exigencia del tipo (BUC…); both = ambos. */
+  source: "pack" | "permit_requirement" | "both";
   document: ContractorPersonDocument | null;
 };
 

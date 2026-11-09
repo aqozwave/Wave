@@ -61,17 +61,18 @@ function habStatusLabel(status: string): string {
   }
 }
 
-/** Chip de progreso de docs de una persona. */
+/** Chip de progreso de docs de una persona (pack; no exigencias de faena). */
 function docsChip(row: ContractorPortalPerson): {
   label: string;
   tone: "success" | "warning" | "danger" | "info" | "neutral";
 } {
-  const { uploaded, required, observed } = row.documents;
+  const { uploaded, required, observed, validated } = row.documents;
   if (observed > 0) return { label: "Observados", tone: "danger" };
-  if (required > 0 && uploaded >= required) {
-    return { label: "Completo", tone: "success" };
-  }
   if (required === 0) return { label: "Sin pack", tone: "neutral" };
+  if (validated >= required) return { label: "Completo", tone: "success" };
+  if (uploaded >= required) {
+    return { label: "En revisión", tone: "info" };
+  }
   const missing = Math.max(required - uploaded, 0);
   return { label: `Faltan ${missing}`, tone: "warning" };
 }
@@ -162,7 +163,10 @@ export function ContractorPortalPeoplePage() {
 
   /** Editar/reemplazar en HAB abierta; approved solo completar huecos. */
   const canUploadEditable =
-    hab?.status === "pending" || hab?.status === "observed";
+    hab?.status === "pending" ||
+    hab?.status === "observed" ||
+    hab?.status === "invited" ||
+    hab?.status === "in_review";
   const canUploadApprovedGaps = hab?.status === "approved";
 
   const load = useCallback(async () => {
@@ -728,7 +732,7 @@ function PersonRows({
   const Chevron = open ? ChevronDown : ChevronRight;
   const uploadedLabel =
     row.documents.required > 0
-      ? `${row.documents.uploaded}/${row.documents.required}`
+      ? `${row.documents.validated}/${row.documents.required} vig.`
       : "—";
 
   return (
@@ -801,12 +805,19 @@ function PersonRows({
               </p>
             ) : personDocs.length === 0 ? (
               <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
-                No hay tipos con pack «person», o todavía no hay una HAB abierta.
+                No hay pack persona ni exigencias por persona, o todavía no hay
+                una HAB abierta.
               </p>
             ) : (
               <ul className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2">
                 {personDocs.map((item) => {
                   const doc = item.document;
+                  const sourceHint =
+                    item.source === "permit_requirement"
+                      ? "Exigencia de faena"
+                      : item.source === "both"
+                        ? "Pack + faena"
+                        : null;
                   return (
                     <li
                       key={item.documentType.id}
@@ -820,6 +831,11 @@ function PersonRows({
                           <span className="ml-1.5 text-[11px] text-[var(--color-nachipa-secondary)]">
                             {item.documentType.code}
                           </span>
+                          {sourceHint ? (
+                            <span className="ml-1.5 text-[11px] text-[var(--color-nachipa-primary)]">
+                              · {sourceHint}
+                            </span>
+                          ) : null}
                           <div className="text-[11px] text-[var(--color-nachipa-body)]">
                             {doc ? doc.originalName : "Sin archivo"}
                             {doc?.status === "observed" && doc.observation

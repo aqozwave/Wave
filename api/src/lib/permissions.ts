@@ -460,8 +460,14 @@ export const SYSTEM_ROLE_DEFS = [
       allActions(PERMISSION_RESOURCE.EMBARCADOS_DOCS),
       allActions(PERMISSION_RESOURCE.CONTRACTORS),
       allActions(PERMISSION_RESOURCE.ACCREDITATIONS),
-      /** Avisos: solo lectura (los crea el solicitante con área). */
-      readOnly(PERMISSION_RESOURCE.WORK_NOTICES),
+      /**
+       * Avisos: lectura + anular/eliminar (soft-delete).
+       * Los crea el solicitante; Prevención limpia la bandeja.
+       */
+      {
+        resource: PERMISSION_RESOURCE.WORK_NOTICES,
+        actions: [PERMISSION_ACTION.READ, PERMISSION_ACTION.DEACTIVATE],
+      },
       /** PT: CRUD sin receive (eso es del capitán). */
       crudOnly(PERMISSION_RESOURCE.WORK_PERMITS),
       allActions(PERMISSION_RESOURCE.PERMIT_TYPES),
@@ -507,13 +513,14 @@ export const SYSTEM_ROLE_DEFS = [
       readOnly(PERMISSION_RESOURCE.MAESTROS_RANKS),
       readOnly(PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES),
       readOnly(PERMISSION_RESOURCE.MAESTROS_CERTIFICATES),
-      /** Avisos: crear/editar; el área solicitante sale del usuario. */
+      /** Avisos: crear/editar/anular; el área solicitante sale del usuario. */
       {
         resource: PERMISSION_RESOURCE.WORK_NOTICES,
         actions: [
           PERMISSION_ACTION.READ,
           PERMISSION_ACTION.CREATE,
           PERMISSION_ACTION.UPDATE,
+          PERMISSION_ACTION.DEACTIVATE,
         ],
       },
       /** Necesario para el select del modal AT2 (tipo CAL/ALT…). */

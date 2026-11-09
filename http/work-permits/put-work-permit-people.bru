@@ -27,6 +27,8 @@ body:json {
 docs {
   Reemplaza el personal del PT (to_complete). Contratista o Prevención (update).
   Variables: workPermitId, personId (contractor person de la misma org).
+  Exige pack persona completo + exigencias document/person del tipo (ej. BUC).
+  422 person_pack_incomplete | person_permit_requirements_incomplete.
 }
 
 script:pre-request {

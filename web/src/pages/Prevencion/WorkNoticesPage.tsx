@@ -39,6 +39,7 @@ import {
 import { userHasPermission } from "../../lib/api/auth";
 import {
   createWorkNoticeRequest,
+  deleteWorkNoticeRequest,
   listWorkNoticesRequest,
   type WorkNotice,
 } from "../../lib/api/workNotices";
@@ -122,6 +123,7 @@ export function WorkNoticesPage() {
   const navigate = useNavigate();
   const canRead = userHasPermission(user, "work_notices", "read");
   const canCreate = userHasPermission(user, "work_notices", "create");
+  const canDelete = userHasPermission(user, "work_notices", "deactivate");
   const canCreatePermit = userHasPermission(user, "work_permits", "create");
   /** Crear PT es solo staff (no portal). */
   const isStaff = !user?.organizationId;
@@ -136,6 +138,9 @@ export function WorkNoticesPage() {
   const [permitFromNotice, setPermitFromNotice] = useState<WorkNotice | null>(
     null,
   );
+  /** Confirmación soft-delete. */
+  const [deleteRow, setDeleteRow] = useState<WorkNotice | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [organizationId, setOrganizationId] = useState("");
@@ -319,6 +324,25 @@ export function WorkNoticesPage() {
     }
   }
 
+  /** Soft-delete aviso (+ PT vinculado si hay). */
+  async function onConfirmDelete() {
+    if (!accessToken || !deleteRow || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteWorkNoticeRequest(accessToken, deleteRow.id);
+      showToast(`${deleteRow.code} eliminado.`, "success");
+      setDeleteRow(null);
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo eliminar el aviso.",
+        "danger",
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (!canRead) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -482,25 +506,41 @@ export function WorkNoticesPage() {
                       </StatusChip>
                     </td>
                     <td className="px-3 py-2.5 text-right">
-                      {row.workPermit ? (
-                        <span className="text-[12px] font-medium tabular-nums text-[var(--color-nachipa-primary)]">
-                          {row.workPermit.code}
-                        </span>
-                      ) : canCreatePermit &&
-                        isStaff &&
-                        row.status === "pending" ? (
-                        <button
-                          type="button"
-                          className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
-                          onClick={() => openCreatePermit(row)}
-                        >
-                          Crear permiso
-                        </button>
-                      ) : (
-                        <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
-                          —
-                        </span>
-                      )}
+                      <span className="inline-flex flex-wrap items-center justify-end gap-2">
+                        {row.workPermit ? (
+                          <span className="text-[12px] font-medium tabular-nums text-[var(--color-nachipa-primary)]">
+                            {row.workPermit.code}
+                          </span>
+                        ) : canCreatePermit &&
+                          isStaff &&
+                          row.status === "pending" ? (
+                          <button
+                            type="button"
+                            className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                            onClick={() => openCreatePermit(row)}
+                          >
+                            Crear permiso
+                          </button>
+                        ) : null}
+                        {canDelete ? (
+                          <button
+                            type="button"
+                            className="text-[13px] font-medium text-[var(--color-nachipa-secondary)] hover:text-[var(--color-status-danger-fg,#b91c1c)] hover:underline"
+                            onClick={() => setDeleteRow(row)}
+                          >
+                            Eliminar
+                          </button>
+                        ) : !row.workPermit &&
+                          !(
+                            canCreatePermit &&
+                            isStaff &&
+                            row.status === "pending"
+                          ) ? (
+                          <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                            —
+                          </span>
+                        ) : null}
+                      </span>
                     </td>
                   </tr>
                 ))
@@ -699,6 +739,49 @@ export function WorkNoticesPage() {
           }}
         />
       ) : null}
+
+      <Modal
+        open={Boolean(deleteRow)}
+        onClose={() => {
+          if (!deleting) setDeleteRow(null);
+        }}
+        title="Eliminar aviso"
+        subtitle={
+          deleteRow
+            ? `${deleteRow.code} · ${displayName(deleteRow.organization.name)}`
+            : undefined
+        }
+        maxWidthClass="max-w-[440px]"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => setDeleteRow(null)}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={deleting}
+              onClick={() => void onConfirmDelete()}
+            >
+              {deleting ? "Eliminando…" : "Eliminar"}
+            </Button>
+          </div>
+        }
+      >
+        <p className="m-0 text-[13px] text-[var(--color-nachipa-body)]">
+          Se quita de la bandeja
+          {deleteRow?.workPermit
+            ? ` y también el permiso ${deleteRow.workPermit.code}`
+            : ""}
+          . Esta acción no se puede deshacer desde la UI.
+        </p>
+      </Modal>
     </div>
   );
 }

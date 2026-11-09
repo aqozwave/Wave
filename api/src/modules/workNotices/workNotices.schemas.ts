@@ -155,6 +155,13 @@ export const getWorkNoticeRequestSchema = z.object({
 
 export const getWorkNoticeResponseSchema = workNoticeResponseSchema;
 
+/** DELETE /work-notices/:id — soft-delete (permiso deactivate). */
+export const deleteWorkNoticeRequestSchema = z.object({
+  params: z.object({ id: z.uuid() }),
+});
+
+export const deleteWorkNoticeResponseSchema = workNoticeResponseSchema;
+
 export type WorkNoticeResponse = z.infer<typeof workNoticeResponseSchema>;
 export type ListWorkNoticesQuery = z.infer<typeof listWorkNoticesQuerySchema>;
 export type CreateWorkNoticeBody = z.infer<typeof createWorkNoticeBodySchema>;

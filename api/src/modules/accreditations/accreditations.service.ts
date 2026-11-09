@@ -286,6 +286,53 @@ export async function createAccreditation(
   return toAccreditationResponse(row);
 }
 
+/**
+ * Pack empresa con archivo en cada tipo (cualquier estado ≠ replaced).
+ * Para enviar a revisión: hay que adjuntar todos; validar es de Prevención.
+ */
+export async function evaluateCompanyPackUploaded(
+  businessId: string,
+  accreditationId: string,
+): Promise<{
+  total: number;
+  uploaded: number;
+  missingCodes: string[];
+  complete: boolean;
+}> {
+  const [packTypes, docs] = await Promise.all([
+    prisma.documentType.findMany({
+      where: {
+        businessId,
+        deletedAt: null,
+        state: true,
+        accreditationPack: "company",
+      },
+      select: { id: true, code: true },
+      orderBy: { code: "asc" },
+    }),
+    prisma.contractorOrgDocument.findMany({
+      where: {
+        accreditationId,
+        deletedAt: null,
+        status: { not: "replaced" },
+      },
+      select: { documentTypeId: true },
+    }),
+  ]);
+  const present = new Set(docs.map((d) => d.documentTypeId));
+  const missingCodes = packTypes
+    .filter((t) => !present.has(t.id))
+    .map((t) => t.code);
+  const total = packTypes.length;
+  const uploaded = total - missingCodes.length;
+  return {
+    total,
+    uploaded,
+    missingCodes,
+    complete: total > 0 && missingCodes.length === 0,
+  };
+}
+
 /** Contratista (o staff) envía a revisión: pending|observed → in_review. */
 export async function submitAccreditation(
   actor: Actor,
@@ -316,6 +363,26 @@ export async function submitAccreditation(
     );
   }
 
+  const pack = await evaluateCompanyPackUploaded(
+    existing.organization.businessId,
+    existing.id,
+  );
+  if (pack.total === 0) {
+    throw new AppError(
+      422,
+      "company_pack_empty",
+      "No hay tipos en el pack empresa; configurá Packs de habilitación",
+    );
+  }
+  if (!pack.complete) {
+    throw new AppError(
+      422,
+      "company_pack_incomplete",
+      `No se puede enviar a revisión: faltan documentos del pack empresa (${pack.uploaded} de ${pack.total})`,
+      { missingCodes: pack.missingCodes, uploaded: pack.uploaded, total: pack.total },
+    );
+  }
+
   const updated = await prisma.contractorAccreditation.update({
     where: { id },
     data: {
@@ -339,7 +406,12 @@ export async function evaluatePersonPack(
 ): Promise<{
   total: number;
   ok: number;
+  /** Códigos no operables (sin archivo, pendientes, observados o vencidos). */
   missingCodes: string[];
+  /** Subidos pero aún no validados por Prevención. */
+  pendingCodes: string[];
+  /** Sin archivo en la HAB. */
+  absentCodes: string[];
   complete: boolean;
 }> {
   const [packTypes, docs] = await Promise.all([
@@ -388,15 +460,37 @@ export async function evaluatePersonPack(
     return true;
   }
 
-  const missingCodes = packTypes
-    .filter((t) => !isOk(t.id))
-    .map((t) => t.code);
+  const missingCodes: string[] = [];
+  const pendingCodes: string[] = [];
+  const absentCodes: string[] = [];
+  for (const t of packTypes) {
+    if (isOk(t.id)) continue;
+    missingCodes.push(t.code);
+    const row = byType.get(t.id);
+    if (!row) {
+      absentCodes.push(t.code);
+    } else if (
+      row.status === "pending_validation" ||
+      (row.status === "validated" &&
+        row.expiresAt &&
+        row.expiresAt.getTime() < now)
+    ) {
+      /** Pendiente de revisión, o validado pero vencido (hay que re-subir). */
+      if (row.status === "pending_validation") pendingCodes.push(t.code);
+      else absentCodes.push(t.code);
+    } else {
+      /** Observado u otro estado no operable. */
+      pendingCodes.push(t.code);
+    }
+  }
   const total = packTypes.length;
   const ok = total - missingCodes.length;
   return {
     total,
     ok,
     missingCodes,
+    pendingCodes,
+    absentCodes,
     complete: total > 0 && missingCodes.length === 0,
   };
 }

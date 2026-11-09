@@ -116,6 +116,13 @@ export const getWorkPermitRequestSchema = z.object({
 
 export const getWorkPermitResponseSchema = workPermitResponseSchema;
 
+/** DELETE /work-permits/:id — soft-delete (permiso deactivate). */
+export const deleteWorkPermitRequestSchema = z.object({
+  params: z.object({ id: z.uuid() }),
+});
+
+export const deleteWorkPermitResponseSchema = workPermitResponseSchema;
+
 /** POST /work-permits/:id/submit — enviar a aprobación. */
 export const submitWorkPermitRequestSchema = z.object({
   params: z.object({ id: z.uuid() }),
@@ -162,6 +169,28 @@ export const rejectReceiptWorkPermitRequestSchema = z.object({
 
 export const rejectReceiptWorkPermitResponseSchema = workPermitResponseSchema;
 
+/** POST /work-permits/:id/request-close — contratista/staff pide cierre (P6a). */
+export const requestCloseWorkPermitRequestSchema = z.object({
+  params: z.object({ id: z.uuid() }),
+});
+
+export const requestCloseWorkPermitResponseSchema = workPermitResponseSchema;
+
+/** POST /work-permits/:id/close — capitán cierra el trabajo (P6b). */
+export const closeWorkPermitRequestSchema = z.object({
+  params: z.object({ id: z.uuid() }),
+});
+
+export const closeWorkPermitResponseSchema = workPermitResponseSchema;
+
+/** POST /work-permits/:id/reject-close — capitán deja sin cierre (P6b). */
+export const rejectCloseWorkPermitRequestSchema = z.object({
+  params: z.object({ id: z.uuid() }),
+  body: workPermitReviewNoteBodySchema,
+});
+
+export const rejectCloseWorkPermitResponseSchema = workPermitResponseSchema;
+
 /** Etapa del checklist del PT. */
 export const workPermitChecklistStageSchema = z.enum([
   "contractor",
@@ -172,7 +201,7 @@ export const workPermitChecklistStageSchema = z.enum([
 /** Valor de respuesta de un ítem. */
 export const workPermitChecklistAnswerValueSchema = z.enum(["yes", "no", "na"]);
 
-/** Persona asignada al PT. */
+/** Persona asignada al PT (+ readiness para revisión Prevención). */
 export const workPermitPersonSchema = z
   .object({
     personId: z.uuid(),
@@ -180,6 +209,16 @@ export const workPermitPersonSchema = z
     rut: z.string(),
     position: z.string().nullable(),
     presentAt: z.string().datetime().nullable(),
+    /** HAB vigente de la org (para abrir docs de la persona). */
+    accreditationId: z.uuid().nullable(),
+    packComplete: z.boolean(),
+    pendingPackCodes: z.array(z.string()),
+    absentPackCodes: z.array(z.string()),
+    missingRequirementLabels: z.array(z.string()),
+    pendingRequirementLabels: z.array(z.string()),
+    absentRequirementLabels: z.array(z.string()),
+    /** Pack + exigencias document/person del tipo OK. */
+    docsOk: z.boolean(),
   })
   .openapi("WorkPermitPerson");
 
@@ -190,8 +229,46 @@ export const listWorkPermitPeopleRequestSchema = z.object({
 export const listWorkPermitPeopleResponseSchema = z
   .object({
     items: z.array(workPermitPersonSchema),
+    personRequirementLabels: z.array(z.string()),
   })
   .openapi("ListWorkPermitPeopleResponse");
+
+/**
+ * Persona asignable al PT: pack + exigencias document/person del tipo.
+ * Sirve al modal Completar para mostrar qué falta antes del PUT.
+ */
+export const workPermitAssignablePersonSchema = z
+  .object({
+    personId: z.uuid(),
+    fullName: z.string(),
+    rut: z.string(),
+    position: z.string().nullable(),
+    packComplete: z.boolean(),
+    missingPackCodes: z.array(z.string()),
+    /** Pack subido pero pendiente de validación Prevención. */
+    pendingPackCodes: z.array(z.string()),
+    /** Pack sin archivo. */
+    absentPackCodes: z.array(z.string()),
+    missingRequirementLabels: z.array(z.string()),
+    missingRequirementCodes: z.array(z.string()),
+    pendingRequirementLabels: z.array(z.string()),
+    absentRequirementLabels: z.array(z.string()),
+    /** true solo si pack y exigencias de persona del tipo están OK. */
+    canAssign: z.boolean(),
+  })
+  .openapi("WorkPermitAssignablePerson");
+
+export const listWorkPermitAssignablePeopleRequestSchema = z.object({
+  params: z.object({ id: z.uuid() }),
+});
+
+export const listWorkPermitAssignablePeopleResponseSchema = z
+  .object({
+    items: z.array(workPermitAssignablePersonSchema),
+    /** Etiquetas de exigencias document/person del tipo (vacío si no hay). */
+    personRequirementLabels: z.array(z.string()),
+  })
+  .openapi("ListWorkPermitAssignablePeopleResponse");
 
 /** PUT /work-permits/:id/people — reemplaza el set de personal. */
 export const putWorkPermitPeopleBodySchema = z.object({
@@ -371,4 +448,54 @@ export const workPermitRequirementsCheckResponseSchema = z
 
 export type WorkPermitRequirementsCheckQuery = z.infer<
   typeof workPermitRequirementsCheckQuerySchema
+>;
+
+/** Tipos de firma registrados en hitos del PT (P6c). */
+export const workPermitSignatureKindSchema = z.enum([
+  "prevention_approve",
+  "captain_receive",
+  "contractor_request_close",
+  "captain_close",
+  "captain_no_closure",
+]);
+
+/** Firma serializada para el documento imprimible. */
+export const workPermitDocumentSignatureSchema = z
+  .object({
+    kind: workPermitSignatureKindSchema,
+    label: z.string(),
+    signerName: z.string(),
+    signedAt: z.string().datetime(),
+    note: z.string().nullable(),
+  })
+  .openapi("WorkPermitDocumentSignature");
+
+/** GET /work-permits/:id/document — ficha imprimible (sin PDF). */
+export const getWorkPermitDocumentRequestSchema = z.object({
+  params: z.object({ id: z.uuid() }),
+});
+
+export const workPermitDocumentResponseSchema = z
+  .object({
+    permit: workPermitResponseSchema,
+    people: z.array(
+      z.object({
+        fullName: z.string(),
+        rut: z.string(),
+        position: z.string().nullable(),
+      }),
+    ),
+    checklist: z.array(
+      z.object({
+        order: z.number().int().positive(),
+        text: z.string(),
+        answer: z.enum(["yes", "no", "na"]),
+      }),
+    ),
+    signatures: z.array(workPermitDocumentSignatureSchema),
+  })
+  .openapi("WorkPermitDocument");
+
+export type WorkPermitDocumentResponse = z.infer<
+  typeof workPermitDocumentResponseSchema
 >;

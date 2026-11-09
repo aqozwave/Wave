@@ -3,16 +3,22 @@ import { AppError } from "../../lib/errors.js";
 import { auditWrite } from "../activityLogs/activityLogs.service.js";
 import {
   approveWorkPermitResponseSchema,
+  closeWorkPermitResponseSchema,
   createWorkPermitResponseSchema,
+  deleteWorkPermitResponseSchema,
   getWorkPermitChecklistResponseSchema,
   getWorkPermitResponseSchema,
+  workPermitDocumentResponseSchema,
+  listWorkPermitAssignablePeopleResponseSchema,
   listWorkPermitHistoryResponseSchema,
   listWorkPermitPeopleResponseSchema,
   listWorkPermitsResponseSchema,
   putWorkPermitChecklistResponseSchema,
   putWorkPermitPeopleResponseSchema,
   receiveWorkPermitResponseSchema,
+  rejectCloseWorkPermitResponseSchema,
   rejectReceiptWorkPermitResponseSchema,
+  requestCloseWorkPermitResponseSchema,
   returnWorkPermitResponseSchema,
   submitWorkPermitResponseSchema,
   workPermitRequirementsCheckResponseSchema,
@@ -28,16 +34,22 @@ import {
 import {
   approveWorkPermit,
   checkWorkPermitRequirements,
+  closeWorkPermit,
   createWorkPermitFromNotice,
+  deleteWorkPermitById,
   getWorkPermitById,
   getWorkPermitChecklist,
+  getWorkPermitDocument,
+  listWorkPermitAssignablePeople,
   listWorkPermitHistory,
   listWorkPermitPeople,
   listWorkPermits,
   putWorkPermitChecklist,
   putWorkPermitPeople,
   receiveWorkPermit,
+  rejectCloseWorkPermit,
   rejectReceiptWorkPermit,
+  requestCloseWorkPermit,
   returnWorkPermit,
   submitWorkPermit,
 } from "./workPermits.service.js";
@@ -93,6 +105,22 @@ export async function getWorkPermitHandler(
   res.status(200).json(getWorkPermitResponseSchema.parse(result));
 }
 
+/** DELETE /work-permits/:id — soft-delete (aviso → cancelled). */
+export async function deleteWorkPermitHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await deleteWorkPermitById(req.user, req.params.id as string);
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "workPermit",
+    resourceId: result.id,
+    targetLabel: `${result.code} · delete`,
+  });
+  res.status(200).json(deleteWorkPermitResponseSchema.parse(result));
+}
+
 /** GET /work-permits/:id/history — bitácora del PT. */
 export async function listWorkPermitHistoryHandler(
   req: Request,
@@ -106,6 +134,21 @@ export async function listWorkPermitHistoryHandler(
     query,
   );
   res.status(200).json(listWorkPermitHistoryResponseSchema.parse(result));
+}
+
+/** GET /work-permits/:id/assignable-people — readiness pack + exigencias faena. */
+export async function listWorkPermitAssignablePeopleHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await listWorkPermitAssignablePeople(
+    req.user,
+    req.params.id as string,
+  );
+  res
+    .status(200)
+    .json(listWorkPermitAssignablePeopleResponseSchema.parse(result));
 }
 
 /** GET /work-permits/:id/people. */
@@ -267,4 +310,71 @@ export async function rejectReceiptWorkPermitHandler(
     metadata: { reviewNote: body.reviewNote },
   });
   res.status(200).json(rejectReceiptWorkPermitResponseSchema.parse(result));
+}
+
+/** POST /work-permits/:id/request-close — pedir verificación de cierre. */
+export async function requestCloseWorkPermitHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await requestCloseWorkPermit(
+    req.user,
+    req.params.id as string,
+  );
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "workPermit",
+    resourceId: result.id,
+    targetLabel: `${result.code} · request-close`,
+  });
+  res.status(200).json(requestCloseWorkPermitResponseSchema.parse(result));
+}
+
+/** POST /work-permits/:id/close — capitán cierra el trabajo. */
+export async function closeWorkPermitHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await closeWorkPermit(req.user, req.params.id as string);
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "workPermit",
+    resourceId: result.id,
+    targetLabel: `${result.code} · close`,
+  });
+  res.status(200).json(closeWorkPermitResponseSchema.parse(result));
+}
+
+/** POST /work-permits/:id/reject-close — capitán marca sin cierre. */
+export async function rejectCloseWorkPermitHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as WorkPermitReviewNoteBody;
+  const result = await rejectCloseWorkPermit(
+    req.user,
+    req.params.id as string,
+    body,
+  );
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "workPermit",
+    resourceId: result.id,
+    targetLabel: `${result.code} · reject-close`,
+    metadata: { reviewNote: body.reviewNote },
+  });
+  res.status(200).json(rejectCloseWorkPermitResponseSchema.parse(result));
+}
+
+/** GET /work-permits/:id/document — ficha imprimible + firmas (P6c). */
+export async function getWorkPermitDocumentHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await getWorkPermitDocument(req.user, req.params.id as string);
+  res.status(200).json(workPermitDocumentResponseSchema.parse(result));
 }

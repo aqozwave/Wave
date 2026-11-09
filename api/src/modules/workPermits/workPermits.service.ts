@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type WorkPermitSignatureKind } from "@prisma/client";
 import { assertBusinessModuleEnabled } from "../../lib/businessModules.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
@@ -14,6 +14,7 @@ import type {
   PutWorkPermitChecklistBody,
   PutWorkPermitPeopleBody,
   WorkPermitChecklistStage,
+  WorkPermitDocumentResponse,
   WorkPermitRequirementsCheckQuery,
   WorkPermitResponse,
   WorkPermitReviewNoteBody,
@@ -97,6 +98,45 @@ function assertStaffNotContractor(actor: Actor): void {
       "Solo Prevención puede aprobar o devolver el permiso",
     );
   }
+}
+
+/**
+ * Upsert firma de un hito del PT (documento P6).
+ * Congela el nombre del firmante al momento del acto.
+ */
+async function upsertWorkPermitSignature(
+  workPermitId: string,
+  kind: WorkPermitSignatureKind,
+  actorId: string,
+  note?: string | null,
+): Promise<void> {
+  const user = await prisma.user.findFirst({
+    where: { id: actorId, deletedAt: null },
+    select: { firstName: true, lastName: true, email: true },
+  });
+  const signerName = user
+    ? `${user.firstName} ${user.lastName}`.trim() || user.email
+    : "Usuario";
+
+  await prisma.workPermitSignature.upsert({
+    where: {
+      workPermitId_kind: { workPermitId, kind },
+    },
+    create: {
+      workPermitId,
+      kind,
+      signedById: actorId,
+      signerName,
+      note: note?.trim() || null,
+      signedAt: new Date(),
+    },
+    update: {
+      signedById: actorId,
+      signerName,
+      note: note?.trim() || null,
+      signedAt: new Date(),
+    },
+  });
 }
 
 /**
@@ -251,6 +291,40 @@ export async function getWorkPermitById(
   }
   assertPermitAccess(actor, row);
   return toWorkPermitResponse(row);
+}
+
+/**
+ * DELETE /work-permits/:id — soft-delete del PT y del aviso origen.
+ * Así no queda el aviso acumulado en bandeja (cancelled + deletedAt).
+ */
+export async function deleteWorkPermitById(
+  actor: Actor,
+  id: string,
+): Promise<WorkPermitResponse> {
+  const row = await prisma.workPermit.findFirst({
+    where: { id, deletedAt: null },
+    include: permitInclude,
+  });
+  if (!row || row.organization.deletedAt) {
+    throw new AppError(404, "work_permit_not_found", "Permiso no encontrado");
+  }
+  assertPermitAccess(actor, row);
+  await assertBusinessModuleEnabled(row.businessId, "work_permits");
+
+  const now = new Date();
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.workNotice.update({
+      where: { id: row.workNoticeId },
+      data: { status: "cancelled", deletedAt: now },
+    });
+    return tx.workPermit.update({
+      where: { id: row.id },
+      data: { deletedAt: now },
+      include: permitInclude,
+    });
+  });
+
+  return toWorkPermitResponse(updated);
 }
 
 /** Estado de verificación de una exigencia (P13b). */
@@ -443,13 +517,21 @@ export async function checkWorkPermitRequirements(
     }
 
     // kind=document · scope=company
-    if (!hab || hab.status !== "approved") {
+    if (!hab) {
       return {
         ...base,
         status: "missing" as const,
-        detail: hab
-          ? `Habilitación ${hab.code} · ${hab.status}`
-          : "Sin habilitación",
+        detail: "Sin habilitación",
+      };
+    }
+    if (hab.status !== "approved") {
+      return {
+        ...base,
+        status: "missing" as const,
+        detail:
+          packComplete && packTotal > 0
+            ? `${hab.code} pendiente de aprobación (pack ${packOk}/${packTotal} OK) — Prevención debe Aprobar la HAB`
+            : `${hab.code} · ${hab.status} (pack ${packOk}/${packTotal})`,
       };
     }
 
@@ -512,22 +594,26 @@ export async function checkWorkPermitRequirements(
       r.accreditationScope === "company",
   );
   if (!hasPackExigencia) {
-    const packStatus =
-      !hab || hab.status !== "approved"
-        ? ("missing" as const)
-        : packTotal === 0
-          ? ("missing" as const)
-          : packComplete
-            ? ("ok" as const)
-            : ("missing" as const);
-    const packDetail =
-      !hab
-        ? "Sin habilitación"
-        : hab.status !== "approved"
-          ? `Habilitación ${hab.code} · ${hab.status}`
-          : packTotal === 0
-            ? "Pack empresa sin tipos configurados"
-            : `${packOk} de ${packTotal} vigentes`;
+    /** Pack docs vs estado HAB: mensajes distintos (validar docs ≠ aprobar HAB). */
+    let packStatus: "ok" | "missing" = "missing";
+    let packDetail: string;
+    let packLabel = "Documentos del pack empresa";
+    if (!hab) {
+      packDetail = "Sin habilitación";
+    } else if (hab.status !== "approved") {
+      packLabel = "Habilitación aprobada";
+      packDetail =
+        packComplete && packTotal > 0
+          ? `${hab.code} pendiente de aprobación (pack ${packOk}/${packTotal} OK) — Prevención debe Aprobar la HAB`
+          : `${hab.code} · ${hab.status} (pack ${packOk}/${packTotal})`;
+    } else if (packTotal === 0) {
+      packDetail = "Pack empresa sin tipos configurados";
+    } else if (!packComplete) {
+      packDetail = `${packOk} de ${packTotal} vigentes`;
+    } else {
+      packStatus = "ok";
+      packDetail = `${packOk} de ${packTotal} vigentes`;
+    }
     items.unshift({
       requirementId: "00000000-0000-4000-8000-0000000000c1",
       key: "company_pack_baseline",
@@ -535,7 +621,7 @@ export async function checkWorkPermitRequirements(
       scope: "company",
       moment: "before",
       mandatory: true,
-      label: "Documentos del pack empresa",
+      label: packLabel,
       status: packStatus,
       detail: packDetail,
     });
@@ -723,13 +809,20 @@ async function assertReadyToSubmit(
     );
   }
 
+  const peoplePayload = activePeople.map((p) => ({
+    id: p.personId,
+    fullName: p.person.fullName,
+  }));
   await assertPeoplePersonPackComplete(
     businessId,
     organizationId,
-    activePeople.map((p) => ({
-      id: p.personId,
-      fullName: p.person.fullName,
-    })),
+    peoplePayload,
+  );
+  await assertPeoplePermitPersonRequirements(
+    businessId,
+    organizationId,
+    permitTypeId,
+    peoplePayload,
   );
 
   const activeItems = await prisma.permitChecklistItem.findMany({
@@ -756,6 +849,189 @@ async function assertReadyToSubmit(
         answered: answers.length,
         required: activeItems.length,
       },
+    );
+  }
+}
+
+/** Exigencia document/person activa del tipo (antes de operar). */
+type PersonDocRequirement = {
+  key: string;
+  label: string;
+  documentTypeId: string;
+  documentType: { code: string; name: string } | null;
+};
+
+/** Carga exigencias document/person obligatorias del tipo. */
+async function loadPersonDocRequirements(
+  permitTypeId: string,
+): Promise<PersonDocRequirement[]> {
+  const rows = await prisma.permitTypeRequirement.findMany({
+    where: {
+      permitTypeId,
+      active: true,
+      mandatory: true,
+      kind: "document",
+      scope: "person",
+      moment: "before",
+      documentTypeId: { not: null },
+    },
+    include: {
+      documentType: { select: { id: true, code: true, name: true } },
+    },
+  });
+  return rows
+    .filter((r) => r.documentTypeId)
+    .map((r) => ({
+      key: r.key,
+      label: r.label,
+      documentTypeId: r.documentTypeId!,
+      documentType: r.documentType
+        ? { code: r.documentType.code, name: r.documentType.name }
+        : null,
+    }));
+}
+
+/**
+ * Qué docs de exigencia por persona faltan (validados vigentes) en la HAB.
+ * Capacitaciones quedan para P3.
+ */
+async function getPersonRequirementGaps(
+  habId: string,
+  personId: string,
+  requirements: PersonDocRequirement[],
+): Promise<{
+  missingCodes: string[];
+  missingLabels: string[];
+  pendingLabels: string[];
+  absentLabels: string[];
+}> {
+  if (requirements.length === 0) {
+    return {
+      missingCodes: [],
+      missingLabels: [],
+      pendingLabels: [],
+      absentLabels: [],
+    };
+  }
+
+  const now = Date.now();
+  const docs = await prisma.contractorPersonDocument.findMany({
+    where: {
+      accreditationId: habId,
+      personId,
+      deletedAt: null,
+      status: { not: "replaced" },
+      documentTypeId: { in: requirements.map((r) => r.documentTypeId) },
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      documentTypeId: true,
+      status: true,
+      expiresAt: true,
+    },
+  });
+  const byType = new Map<string, { status: string; expiresAt: Date | null }>();
+  for (const doc of docs) {
+    if (!byType.has(doc.documentTypeId)) {
+      byType.set(doc.documentTypeId, {
+        status: doc.status,
+        expiresAt: doc.expiresAt,
+      });
+    }
+  }
+
+  const missingCodes: string[] = [];
+  const missingLabels: string[] = [];
+  const pendingLabels: string[] = [];
+  const absentLabels: string[] = [];
+  for (const req of requirements) {
+    const row = byType.get(req.documentTypeId);
+    const ok =
+      Boolean(row) &&
+      row!.status === "validated" &&
+      !(row!.expiresAt && row!.expiresAt.getTime() < now);
+    if (!ok) {
+      missingCodes.push(req.documentType?.code ?? req.key);
+      missingLabels.push(req.label);
+      if (!row) {
+        absentLabels.push(req.label);
+      } else if (
+        row.status === "validated" &&
+        row.expiresAt &&
+        row.expiresAt.getTime() < now
+      ) {
+        absentLabels.push(req.label);
+      } else {
+        pendingLabels.push(req.label);
+      }
+    }
+  }
+  return { missingCodes, missingLabels, pendingLabels, absentLabels };
+}
+
+/**
+ * Exigencias document/person del tipo de permiso (ej. libreta/EC de BUC):
+ * cada persona debe tener el doc validado y vigente en la HAB actual.
+ */
+async function assertPeoplePermitPersonRequirements(
+  businessId: string,
+  organizationId: string,
+  permitTypeId: string,
+  people: Array<{ id: string; fullName: string }>,
+): Promise<void> {
+  if (people.length === 0) return;
+
+  const requirements = await loadPersonDocRequirements(permitTypeId);
+  if (requirements.length === 0) return;
+
+  const hab = await prisma.contractorAccreditation.findFirst({
+    where: { organizationId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, code: true },
+  });
+  if (!hab) {
+    throw new AppError(
+      422,
+      "person_permit_requirements_incomplete",
+      "La organización no tiene habilitación; no se pueden verificar documentos de persona",
+    );
+  }
+
+  const incomplete: Array<{
+    personId: string;
+    fullName: string;
+    missingCodes: string[];
+    missingLabels: string[];
+  }> = [];
+
+  for (const person of people) {
+    const gaps = await getPersonRequirementGaps(
+      hab.id,
+      person.id,
+      requirements,
+    );
+    if (gaps.missingLabels.length > 0) {
+      incomplete.push({
+        personId: person.id,
+        fullName: person.fullName,
+        missingCodes: gaps.missingCodes,
+        missingLabels: gaps.missingLabels,
+      });
+    }
+  }
+
+  if (incomplete.length > 0) {
+    const detail = incomplete
+      .map(
+        (p) =>
+          `${p.fullName} (faltan: ${p.missingLabels.join(", ") || p.missingCodes.join(", ")})`,
+      )
+      .join("; ");
+    throw new AppError(
+      422,
+      "person_permit_requirements_incomplete",
+      `Documentos de persona exigidos por el tipo de permiso incompletos: ${detail}`,
+      { incomplete, accreditationCode: hab.code },
     );
   }
 }
@@ -873,7 +1149,7 @@ export async function submitWorkPermit(
 
 /**
  * POST /work-permits/:id/approve — Prevención aprueba.
- * to_approve → to_receive (sin firma en este paso; P6).
+ * to_approve → to_receive (+ firma prevention_approve).
  */
 export async function approveWorkPermit(
   actor: Actor,
@@ -904,6 +1180,7 @@ export async function approveWorkPermit(
     data: { status: "to_receive", reviewNote: null },
     include: permitInclude,
   });
+  await upsertWorkPermitSignature(id, "prevention_approve", actor.id);
   return toWorkPermitResponse(updated);
 }
 
@@ -986,6 +1263,7 @@ export async function receiveWorkPermit(
     data: { status: "active", reviewNote: null },
     include: permitInclude,
   });
+  await upsertWorkPermitSignature(id, "captain_receive", actor.id);
   return toWorkPermitResponse(updated);
 }
 
@@ -1035,13 +1313,232 @@ export async function rejectReceiptWorkPermit(
   return toWorkPermitResponse(updated);
 }
 
-/** Persona serializada en el PT. */
+/**
+ * POST /work-permits/:id/request-close — contratista o Prevención.
+ * active → to_verify (Verificar trabajo).
+ */
+export async function requestCloseWorkPermit(
+  actor: Actor,
+  id: string,
+): Promise<WorkPermitResponse> {
+  const existing = await prisma.workPermit.findFirst({
+    where: { id, deletedAt: null },
+    include: permitInclude,
+  });
+  if (!existing || existing.organization.deletedAt) {
+    throw new AppError(404, "work_permit_not_found", "Permiso no encontrado");
+  }
+  assertPermitAccess(actor, existing);
+  await assertBusinessModuleEnabled(existing.businessId, "work_permits");
+
+  if (existing.status !== "active") {
+    throw new AppError(
+      409,
+      "invalid_work_permit_transition",
+      `Solo se pide cierre desde «Autorizado a bordo» (ahora: ${existing.status})`,
+    );
+  }
+
+  const updated = await prisma.workPermit.update({
+    where: { id },
+    data: { status: "to_verify", reviewNote: null },
+    include: permitInclude,
+  });
+  await upsertWorkPermitSignature(id, "contractor_request_close", actor.id);
+  return toWorkPermitResponse(updated);
+}
+
+/**
+ * POST /work-permits/:id/close — capitán verifica y cierra.
+ * to_verify → closed.
+ */
+export async function closeWorkPermit(
+  actor: Actor,
+  id: string,
+): Promise<WorkPermitResponse> {
+  if (actor.organizationId) {
+    throw new AppError(
+      403,
+      "forbidden",
+      "Solo el capitán puede cerrar el trabajo a bordo",
+    );
+  }
+
+  const existing = await prisma.workPermit.findFirst({
+    where: { id, deletedAt: null },
+    include: permitInclude,
+  });
+  if (!existing || existing.organization.deletedAt) {
+    throw new AppError(404, "work_permit_not_found", "Permiso no encontrado");
+  }
+  assertPermitAccess(actor, existing);
+  await assertBusinessModuleEnabled(existing.businessId, "work_permits");
+
+  if (existing.status !== "to_verify") {
+    throw new AppError(
+      409,
+      "invalid_work_permit_transition",
+      `Solo se cierra desde «Verificar trabajo» (ahora: ${existing.status})`,
+    );
+  }
+
+  const updated = await prisma.workPermit.update({
+    where: { id },
+    data: { status: "closed", reviewNote: null },
+    include: permitInclude,
+  });
+  await upsertWorkPermitSignature(id, "captain_close", actor.id);
+  return toWorkPermitResponse(updated);
+}
+
+/**
+ * POST /work-permits/:id/reject-close — capitán deja el PT sin cierre.
+ * to_verify → no_closure con motivo.
+ */
+export async function rejectCloseWorkPermit(
+  actor: Actor,
+  id: string,
+  body: WorkPermitReviewNoteBody,
+): Promise<WorkPermitResponse> {
+  if (actor.organizationId) {
+    throw new AppError(
+      403,
+      "forbidden",
+      "Solo el capitán puede marcar sin cierre",
+    );
+  }
+
+  const existing = await prisma.workPermit.findFirst({
+    where: { id, deletedAt: null },
+    include: permitInclude,
+  });
+  if (!existing || existing.organization.deletedAt) {
+    throw new AppError(404, "work_permit_not_found", "Permiso no encontrado");
+  }
+  assertPermitAccess(actor, existing);
+  await assertBusinessModuleEnabled(existing.businessId, "work_permits");
+
+  if (existing.status !== "to_verify") {
+    throw new AppError(
+      409,
+      "invalid_work_permit_transition",
+      `Solo se marca sin cierre desde «Verificar trabajo» (ahora: ${existing.status})`,
+    );
+  }
+
+  const updated = await prisma.workPermit.update({
+    where: { id },
+    data: {
+      status: "no_closure",
+      reviewNote: body.reviewNote.trim(),
+    },
+    include: permitInclude,
+  });
+  await upsertWorkPermitSignature(
+    id,
+    "captain_no_closure",
+    actor.id,
+    body.reviewNote,
+  );
+  return toWorkPermitResponse(updated);
+}
+
+/**
+ * GET /work-permits/:id/document — ficha imprimible del PT + firmas (P6c).
+ * Sin PDF binario: la web imprime esta vista.
+ */
+export async function getWorkPermitDocument(
+  actor: Actor,
+  id: string,
+): Promise<WorkPermitDocumentResponse> {
+  const existing = await prisma.workPermit.findFirst({
+    where: { id, deletedAt: null },
+    include: permitInclude,
+  });
+  if (!existing || existing.organization.deletedAt) {
+    throw new AppError(404, "work_permit_not_found", "Permiso no encontrado");
+  }
+  assertPermitAccess(actor, existing);
+  await assertBusinessModuleEnabled(existing.businessId, "work_permits");
+
+  const [people, checklist, signatures] = await Promise.all([
+    prisma.workPermitPerson.findMany({
+      where: { workPermitId: id },
+      include: {
+        person: {
+          select: {
+            fullName: true,
+            rut: true,
+            position: true,
+            deletedAt: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.workPermitChecklistAnswer.findMany({
+      where: { workPermitId: id, stage: "contractor" },
+      include: {
+        checklistItem: { select: { order: true, text: true, active: true } },
+      },
+      orderBy: { answeredAt: "asc" },
+    }),
+    prisma.workPermitSignature.findMany({
+      where: { workPermitId: id },
+      orderBy: { signedAt: "asc" },
+    }),
+  ]);
+
+  const kindLabel: Record<WorkPermitSignatureKind, string> = {
+    prevention_approve: "Aprobación Prevención",
+    captain_receive: "Autorización a bordo",
+    contractor_request_close: "Solicitud de cierre",
+    captain_close: "Cierre del trabajo",
+    captain_no_closure: "Sin cierre",
+  };
+
+  return {
+    permit: toWorkPermitResponse(existing),
+    people: people
+      .filter((r) => !r.person.deletedAt)
+      .map((r) => ({
+        fullName: r.person.fullName,
+        rut: r.person.rut,
+        position: r.person.position,
+      })),
+    checklist: checklist
+      .filter((a) => a.checklistItem.active)
+      .sort((a, b) => a.checklistItem.order - b.checklistItem.order)
+      .map((a) => ({
+        order: a.checklistItem.order,
+        text: a.checklistItem.text,
+        answer: a.answer,
+      })),
+    signatures: signatures.map((s) => ({
+      kind: s.kind,
+      label: kindLabel[s.kind],
+      signerName: s.signerName,
+      signedAt: s.signedAt.toISOString(),
+      note: s.note,
+    })),
+  };
+}
+
+/** Persona serializada en el PT (con readiness de docs). */
 type WorkPermitPersonDto = {
   personId: string;
   fullName: string;
   rut: string;
   position: string | null;
   presentAt: string | null;
+  accreditationId: string | null;
+  packComplete: boolean;
+  pendingPackCodes: string[];
+  absentPackCodes: string[];
+  missingRequirementLabels: string[];
+  pendingRequirementLabels: string[];
+  absentRequirementLabels: string[];
+  docsOk: boolean;
 };
 
 /** Carga el PT editable (solo to_complete) o lanza. */
@@ -1065,11 +1562,17 @@ async function loadEditablePermit(actor: Actor, id: string) {
   return existing;
 }
 
-/** Lista personal asignado (lectura en cualquier estado con acceso). */
+/**
+ * Lista personal asignado (lectura en cualquier estado con acceso).
+ * Incluye readiness pack/faena + accreditationId para revisar docs en la ficha.
+ */
 export async function listWorkPermitPeople(
   actor: Actor,
   id: string,
-): Promise<{ items: WorkPermitPersonDto[] }> {
+): Promise<{
+  items: WorkPermitPersonDto[];
+  personRequirementLabels: string[];
+}> {
   const existing = await prisma.workPermit.findFirst({
     where: { id, deletedAt: null },
     include: permitInclude,
@@ -1080,33 +1583,205 @@ export async function listWorkPermitPeople(
   assertPermitAccess(actor, existing);
   await assertBusinessModuleEnabled(existing.businessId, "work_permits");
 
-  const rows = await prisma.workPermitPerson.findMany({
-    where: { workPermitId: id },
-    include: {
-      person: {
-        select: {
-          id: true,
-          fullName: true,
-          rut: true,
-          position: true,
-          deletedAt: true,
+  const [rows, requirements, hab] = await Promise.all([
+    prisma.workPermitPerson.findMany({
+      where: { workPermitId: id },
+      include: {
+        person: {
+          select: {
+            id: true,
+            fullName: true,
+            rut: true,
+            position: true,
+            deletedAt: true,
+          },
         },
       },
-    },
-    orderBy: { createdAt: "asc" },
-  });
+      orderBy: { createdAt: "asc" },
+    }),
+    loadPersonDocRequirements(existing.permitTypeId),
+    prisma.contractorAccreditation.findFirst({
+      where: { organizationId: existing.organizationId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    }),
+  ]);
 
-  return {
-    items: rows
-      .filter((r) => !r.person.deletedAt)
-      .map((r) => ({
-        personId: r.personId,
-        fullName: r.person.fullName,
-        rut: r.person.rut,
-        position: r.person.position,
-        presentAt: r.presentAt ? r.presentAt.toISOString() : null,
-      })),
-  };
+  const personRequirementLabels = requirements.map((r) => r.label);
+  const items: WorkPermitPersonDto[] = [];
+
+  for (const r of rows) {
+    if (r.person.deletedAt) continue;
+
+    let packComplete = false;
+    let pendingPackCodes: string[] = [];
+    let absentPackCodes: string[] = [];
+    if (hab) {
+      const pack = await evaluatePersonPack(
+        existing.businessId,
+        hab.id,
+        r.personId,
+      );
+      packComplete = pack.complete;
+      pendingPackCodes = pack.pendingCodes;
+      absentPackCodes = pack.absentCodes;
+    } else {
+      absentPackCodes = ["habilitacion"];
+    }
+
+    const gaps = hab
+      ? await getPersonRequirementGaps(hab.id, r.personId, requirements)
+      : {
+          missingLabels: requirements.map((req) => req.label),
+          pendingLabels: [] as string[],
+          absentLabels: requirements.map((req) => req.label),
+        };
+
+    items.push({
+      personId: r.personId,
+      fullName: r.person.fullName,
+      rut: r.person.rut,
+      position: r.person.position,
+      presentAt: r.presentAt ? r.presentAt.toISOString() : null,
+      accreditationId: hab?.id ?? null,
+      packComplete,
+      pendingPackCodes,
+      absentPackCodes,
+      missingRequirementLabels: gaps.missingLabels,
+      pendingRequirementLabels: gaps.pendingLabels,
+      absentRequirementLabels: gaps.absentLabels,
+      docsOk: packComplete && gaps.missingLabels.length === 0 && Boolean(hab),
+    });
+  }
+
+  return { items, personRequirementLabels };
+}
+
+/** Persona activa de la org con readiness pack + exigencias del tipo. */
+export type WorkPermitAssignablePersonDto = {
+  personId: string;
+  fullName: string;
+  rut: string;
+  position: string | null;
+  packComplete: boolean;
+  missingPackCodes: string[];
+  pendingPackCodes: string[];
+  absentPackCodes: string[];
+  missingRequirementLabels: string[];
+  missingRequirementCodes: string[];
+  pendingRequirementLabels: string[];
+  absentRequirementLabels: string[];
+  canAssign: boolean;
+};
+
+/**
+ * GET /work-permits/:id/assignable-people —
+ * listado de personal activo con qué falta para poder asignarlos al PT.
+ */
+export async function listWorkPermitAssignablePeople(
+  actor: Actor,
+  id: string,
+): Promise<{
+  items: WorkPermitAssignablePersonDto[];
+  personRequirementLabels: string[];
+}> {
+  const existing = await prisma.workPermit.findFirst({
+    where: { id, deletedAt: null },
+    include: permitInclude,
+  });
+  if (!existing || existing.organization.deletedAt) {
+    throw new AppError(404, "work_permit_not_found", "Permiso no encontrado");
+  }
+  assertPermitAccess(actor, existing);
+  await assertBusinessModuleEnabled(existing.businessId, "work_permits");
+
+  const [people, requirements, hab, packTypesCount] = await Promise.all([
+    prisma.contractorPerson.findMany({
+      where: {
+        organizationId: existing.organizationId,
+        deletedAt: null,
+        active: true,
+      },
+      select: {
+        id: true,
+        fullName: true,
+        rut: true,
+        position: true,
+      },
+      orderBy: { fullName: "asc" },
+    }),
+    loadPersonDocRequirements(existing.permitTypeId),
+    prisma.contractorAccreditation.findFirst({
+      where: { organizationId: existing.organizationId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    }),
+    prisma.documentType.count({
+      where: {
+        businessId: existing.businessId,
+        deletedAt: null,
+        state: true,
+        accreditationPack: "person",
+      },
+    }),
+  ]);
+
+  const personRequirementLabels = requirements.map((r) => r.label);
+  const items: WorkPermitAssignablePersonDto[] = [];
+
+  for (const person of people) {
+    let packComplete = false;
+    let missingPackCodes: string[] = [];
+    let pendingPackCodes: string[] = [];
+    let absentPackCodes: string[] = [];
+    if (!hab || packTypesCount === 0) {
+      packComplete = false;
+      missingPackCodes =
+        packTypesCount === 0 ? ["pack_persona"] : ["habilitacion"];
+      absentPackCodes = missingPackCodes;
+    } else {
+      const pack = await evaluatePersonPack(
+        existing.businessId,
+        hab.id,
+        person.id,
+      );
+      packComplete = pack.complete;
+      missingPackCodes = pack.missingCodes;
+      pendingPackCodes = pack.pendingCodes;
+      absentPackCodes = pack.absentCodes;
+    }
+
+    const gaps = hab
+      ? await getPersonRequirementGaps(hab.id, person.id, requirements)
+      : {
+          missingCodes: requirements.map((r) => r.documentType?.code ?? r.key),
+          missingLabels: requirements.map((r) => r.label),
+          pendingLabels: [] as string[],
+          absentLabels: requirements.map((r) => r.label),
+        };
+
+    items.push({
+      personId: person.id,
+      fullName: person.fullName,
+      rut: person.rut,
+      position: person.position,
+      packComplete,
+      missingPackCodes,
+      pendingPackCodes,
+      absentPackCodes,
+      missingRequirementLabels: gaps.missingLabels,
+      missingRequirementCodes: gaps.missingCodes,
+      pendingRequirementLabels: gaps.pendingLabels,
+      absentRequirementLabels: gaps.absentLabels,
+      canAssign:
+        packComplete &&
+        gaps.missingLabels.length === 0 &&
+        packTypesCount > 0 &&
+        Boolean(hab),
+    });
+  }
+
+  return { items, personRequirementLabels };
 }
 
 /**
@@ -1141,6 +1816,12 @@ export async function putWorkPermitPeople(
     await assertPeoplePersonPackComplete(
       existing.businessId,
       existing.organizationId,
+      people,
+    );
+    await assertPeoplePermitPersonRequirements(
+      existing.businessId,
+      existing.organizationId,
+      existing.permitTypeId,
       people,
     );
   }
@@ -1346,6 +2027,30 @@ function mapWorkPermitHistoryEvent(row: {
       event: "Autorizado a bordo",
       detail: label || null,
       result: "Recibido",
+      resultTone: "success",
+    };
+  }
+  if (label.includes("request-close")) {
+    return {
+      event: "Cierre solicitado",
+      detail: label || null,
+      result: "Por verificar",
+      resultTone: "info",
+    };
+  }
+  if (label.includes("reject-close")) {
+    return {
+      event: "Sin cierre",
+      detail: label || null,
+      result: "Sin cierre",
+      resultTone: "danger",
+    };
+  }
+  if (label.includes("close") && !label.includes("request")) {
+    return {
+      event: "Trabajo cerrado",
+      detail: label || null,
+      result: "Cerrado",
       resultTone: "success",
     };
   }
