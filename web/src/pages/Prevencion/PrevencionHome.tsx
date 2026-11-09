@@ -86,9 +86,9 @@ const HUB_GROUPS: HubGroup[] = [
       },
       {
         label: "Permisos de trabajo",
-        legend: "Solicitar, validar y cerrar (flujo Estándar 5 etapas).",
+        legend: "Crear, aprobar y autorizar a bordo (flujos configurables).",
         icon: ClipboardList,
-        to: null,
+        to: "/prevencion/permisos",
         canShow: (u) => userHasPermission(u, "work_permits", "read"),
       },
     ],
@@ -120,7 +120,7 @@ export function PrevencionHome() {
         <PageHeader
           crumbs={[{ label: "Prevención" }, { label: "Presentación" }]}
           title="Prevención de riesgos"
-          description="Catálogos de tipos de permiso y capacitaciones. Los permisos de trabajo llegan en el siguiente slice."
+          description="Catálogos, contratistas, habilitaciones, avisos y permisos de trabajo."
         />
 
         <div className="mx-auto flex w-full max-w-[960px] flex-col gap-8">

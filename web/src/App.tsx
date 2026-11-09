@@ -41,6 +41,7 @@ import { PermitTypesPage } from "./pages/Prevencion/PermitTypesPage";
 import { PrevencionHome } from "./pages/Prevencion/PrevencionHome";
 import { TrainingsPage } from "./pages/Prevencion/TrainingsPage";
 import { WorkNoticesPage } from "./pages/Prevencion/WorkNoticesPage";
+import { WorkPermitDetailPage } from "./pages/Prevencion/WorkPermitDetailPage";
 import { WorkPermitsPage } from "./pages/Prevencion/WorkPermitsPage";
 import { Ubicaciones } from "./pages/Ubicaciones/Ubicaciones";
 import { Usuarios } from "./pages/Usuarios/Usuarios";
@@ -199,6 +200,10 @@ export function App() {
           <Route
             path="prevencion/permisos"
             element={<WorkPermitsPage />}
+          />
+          <Route
+            path="prevencion/permisos/:id"
+            element={<WorkPermitDetailPage />}
           />
           <Route path="empresas" element={<Empresas />} />
           <Route path="ubicaciones" element={<Ubicaciones />} />

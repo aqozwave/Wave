@@ -27,7 +27,11 @@ import {
   listContractorsRequest,
   type ContractorOrganization,
 } from "../../lib/api/contractors";
-import { listLocationsRequest, type Location } from "../../lib/api/locations";
+import {
+  listLocationsRequest,
+  type Location,
+  type LocationKind,
+} from "../../lib/api/locations";
 import {
   listPermitTypesRequest,
   type PermitType,
@@ -48,6 +52,15 @@ function displayName(value: string): string {
     .split(" ")
     .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w))
     .join(" ");
+}
+
+/** Etiqueta corta del tipo de lugar (mismo copy que Ubicaciones). */
+function locationKindLabel(kind: LocationKind | null): string {
+  if (kind === "vessel") return "Nave";
+  if (kind === "office") return "Oficina";
+  if (kind === "warehouse") return "Bodega";
+  if (kind === "other") return "Otro";
+  return "Lugar";
 }
 
 /** Fecha dd-mm-yyyy. */
@@ -151,24 +164,50 @@ export function WorkNoticesPage() {
     void load();
   }, [load]);
 
+  /**
+   * Catálogos del modal AT2: cada request independiente.
+   * Si una falla (p. ej. sin permit_types.read), no vacía las otras.
+   */
   useEffect(() => {
     if (!accessToken || !canCreate) return;
-    void Promise.all([
-      listContractorsRequest(accessToken, 1, 100, { active: true }),
-      listPermitTypesRequest(accessToken, 1, 100, { active: true }),
-      listLocationsRequest(accessToken, 1, 100),
-    ])
-      .then(([o, p, l]) => {
-        setOrgs(o.items);
-        setPermitTypes(p.items);
-        setLocations(l.items.filter((loc) => loc.kind === "vessel" || !loc.kind));
-      })
-      .catch(() => {
+
+    void listContractorsRequest(accessToken, 1, 100, { active: true })
+      .then((o) => setOrgs(o.items))
+      .catch((err) => {
         setOrgs([]);
-        setPermitTypes([]);
-        setLocations([]);
+        showToast(
+          err instanceof ApiError
+            ? err.message
+            : "No se pudieron cargar contratistas",
+          "danger",
+        );
       });
-  }, [accessToken, canCreate]);
+
+    void listPermitTypesRequest(accessToken, 1, 100, { active: true })
+      .then((p) => setPermitTypes(p.items))
+      .catch((err) => {
+        setPermitTypes([]);
+        showToast(
+          err instanceof ApiError
+            ? err.message
+            : "No se pudieron cargar tipos de permiso",
+          "danger",
+        );
+      });
+
+    // Cualquier lugar de trabajo activo (nave, oficina, bodega u otro).
+    void listLocationsRequest(accessToken, 1, 100)
+      .then((l) => setLocations(l.items.filter((loc) => loc.state)))
+      .catch((err) => {
+        setLocations([]);
+        showToast(
+          err instanceof ApiError
+            ? err.message
+            : "No se pudieron cargar lugares de trabajo",
+          "danger",
+        );
+      });
+  }, [accessToken, canCreate, showToast]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -233,7 +272,7 @@ export function WorkNoticesPage() {
       const permit = await createWorkPermitRequest(accessToken, {
         workNoticeId: row.id,
       });
-      showToast(`Permiso ${permit.code} creado (Por completar).`, "success");
+      showToast(`Permiso ${permit.code} creado · Por completar.`, "success");
       await load();
     } catch (err) {
       showToast(
@@ -250,7 +289,7 @@ export function WorkNoticesPage() {
     e.preventDefault();
     if (!accessToken || submitting) return;
     if (!organizationId || !permitTypeId || !locationId || !tentativeDate) {
-      showToast("Completá org, tipo, nave y fecha.", "danger");
+      showToast("Completá org, tipo, lugar y fecha.", "danger");
       return;
     }
     const daysRaw = durationDays.trim();
@@ -322,7 +361,7 @@ export function WorkNoticesPage() {
             { label: "Avisos de trabajo" },
           ]}
           title="Avisos de trabajo"
-          description="Informa a Prevención qué trabajos y empresas irán a bordo. La habilitación se lee de la organización (sin toggle)."
+          description="Informa a Prevención qué trabajos y empresas van a un lugar de trabajo. La habilitación se lee de la organización (sin toggle)."
           actions={
             canCreate ? (
               <Button
@@ -367,7 +406,7 @@ export function WorkNoticesPage() {
                 <th className="px-3 py-2.5">Aviso</th>
                 <th className="px-3 py-2.5">Empresa</th>
                 <th className="px-3 py-2.5">Trabajo</th>
-                <th className="px-3 py-2.5">Nave</th>
+                <th className="px-3 py-2.5">Lugar</th>
                 <th className="px-3 py-2.5">Área</th>
                 <th className="px-3 py-2.5">Fecha</th>
                 <th className="px-3 py-2.5">Habilitación</th>
@@ -489,7 +528,7 @@ export function WorkNoticesPage() {
         }}
         icon={Bell}
         title="Nuevo aviso de trabajo"
-        subtitle="Informás a Prevención qué empresa y qué trabajo irán a bordo"
+        subtitle="Informás a Prevención qué empresa y qué trabajo van a un lugar"
         maxWidthClass="w-full max-w-[560px] sm:w-[560px]"
         footer={
           <div className="flex justify-end gap-2">
@@ -583,7 +622,7 @@ export function WorkNoticesPage() {
 
           <label className="flex flex-col gap-1.5">
             <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
-              Nave
+              Lugar de trabajo
             </span>
             <select
               className={selectClass}
@@ -594,7 +633,7 @@ export function WorkNoticesPage() {
               <option value="">Seleccionar…</option>
               {locations.map((l) => (
                 <option key={l.id} value={l.id}>
-                  {displayName(l.name)}
+                  {locationKindLabel(l.kind)} · {displayName(l.name)}
                 </option>
               ))}
             </select>
@@ -638,7 +677,7 @@ export function WorkNoticesPage() {
               className="min-h-[80px] w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3.5 py-2.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-brand-sky)_25%,transparent)]"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Qué se hará a bordo…"
+              placeholder="Qué se hará en el lugar…"
             />
           </label>
 

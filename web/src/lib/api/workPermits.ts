@@ -10,6 +10,31 @@ export type WorkPermitStatus =
   | "closed"
   | "no_closure";
 
+/**
+ * Etiqueta corta de UI para el ciclo del PT.
+ * Los códigos internos no cambian; solo el copy visible.
+ */
+export function workPermitStatusLabel(status: WorkPermitStatus): string {
+  switch (status) {
+    case "to_complete":
+      return "Por completar";
+    case "to_approve":
+      return "En revisión";
+    case "to_receive":
+      return "Aprobado Prevención";
+    case "active":
+      return "Autorizado a bordo";
+    case "to_verify":
+      return "Verificar trabajo";
+    case "closed":
+      return "Trabajo cerrado";
+    case "no_closure":
+      return "Sin cierre";
+    default:
+      return status;
+  }
+}
+
 /** Permiso de trabajo PT-NNNN. */
 export type WorkPermit = {
   id: string;
@@ -26,6 +51,8 @@ export type WorkPermit = {
   scheduledDate: string;
   description: string | null;
   status: WorkPermitStatus;
+  /** Motivo de la última devolución. */
+  reviewNote: string | null;
   createdById: string | null;
   createdAt: string;
   updatedAt: string;
@@ -124,4 +151,198 @@ export async function submitWorkPermitRequest(
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw toApiError(res, body);
   return body as WorkPermit;
+}
+
+/** POST /api/v1/work-permits/:id/approve — Prevención aprueba. */
+export async function approveWorkPermitRequest(
+  accessToken: string,
+  id: string,
+): Promise<WorkPermit> {
+  const res = await fetch(`/api/v1/work-permits/${id}/approve`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify({}),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as WorkPermit;
+}
+
+/** POST /api/v1/work-permits/:id/return — Prevención devuelve. */
+export async function returnWorkPermitRequest(
+  accessToken: string,
+  id: string,
+  reviewNote: string,
+): Promise<WorkPermit> {
+  const res = await fetch(`/api/v1/work-permits/${id}/return`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify({ reviewNote }),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as WorkPermit;
+}
+
+/** POST /api/v1/work-permits/:id/receive — capitán recibe a bordo. */
+export async function receiveWorkPermitRequest(
+  accessToken: string,
+  id: string,
+): Promise<WorkPermit> {
+  const res = await fetch(`/api/v1/work-permits/${id}/receive`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify({}),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as WorkPermit;
+}
+
+/** POST /api/v1/work-permits/:id/reject-receipt — capitán no autoriza. */
+export async function rejectReceiptWorkPermitRequest(
+  accessToken: string,
+  id: string,
+  reviewNote: string,
+): Promise<WorkPermit> {
+  const res = await fetch(`/api/v1/work-permits/${id}/reject-receipt`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify({ reviewNote }),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as WorkPermit;
+}
+
+/** Persona asignada al PT. */
+export type WorkPermitPerson = {
+  personId: string;
+  fullName: string;
+  rut: string;
+  position: string | null;
+  presentAt: string | null;
+};
+
+/** Valor de checklist. */
+export type WorkPermitChecklistAnswerValue = "yes" | "no" | "na";
+
+/** Ítem de checklist con respuesta. */
+export type WorkPermitChecklistItem = {
+  checklistItemId: string;
+  order: number;
+  text: string;
+  answer: WorkPermitChecklistAnswerValue | null;
+  answeredAt: string | null;
+};
+
+/** GET /api/v1/work-permits/:id/people */
+export async function listWorkPermitPeopleRequest(
+  accessToken: string,
+  id: string,
+): Promise<{ items: WorkPermitPerson[] }> {
+  const res = await fetch(`/api/v1/work-permits/${id}/people`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as { items: WorkPermitPerson[] };
+}
+
+/** PUT /api/v1/work-permits/:id/people */
+export async function putWorkPermitPeopleRequest(
+  accessToken: string,
+  id: string,
+  personIds: string[],
+): Promise<{ items: WorkPermitPerson[] }> {
+  const res = await fetch(`/api/v1/work-permits/${id}/people`, {
+    method: "PUT",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify({ personIds }),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as { items: WorkPermitPerson[] };
+}
+
+/** GET /api/v1/work-permits/:id/checklist */
+export async function getWorkPermitChecklistRequest(
+  accessToken: string,
+  id: string,
+  stage: "contractor" | "reception" | "closure" = "contractor",
+): Promise<{ stage: string; items: WorkPermitChecklistItem[] }> {
+  const params = new URLSearchParams({ stage });
+  const res = await fetch(`/api/v1/work-permits/${id}/checklist?${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as { stage: string; items: WorkPermitChecklistItem[] };
+}
+
+/** PUT /api/v1/work-permits/:id/checklist */
+export async function putWorkPermitChecklistRequest(
+  accessToken: string,
+  id: string,
+  answers: {
+    checklistItemId: string;
+    answer: WorkPermitChecklistAnswerValue;
+  }[],
+  stage: "contractor" | "reception" | "closure" = "contractor",
+): Promise<{ stage: string; items: WorkPermitChecklistItem[] }> {
+  const res = await fetch(`/api/v1/work-permits/${id}/checklist`, {
+    method: "PUT",
+    headers: authHeaders(accessToken),
+    body: JSON.stringify({ stage, answers }),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as { stage: string; items: WorkPermitChecklistItem[] };
+}
+
+/** Evento del historial del PT. */
+export type WorkPermitHistoryItem = {
+  id: string;
+  createdAt: string;
+  event: string;
+  role: string | null;
+  user: string | null;
+  detail: string | null;
+  result: string;
+  resultTone: "success" | "warning" | "danger" | "info" | "neutral";
+  success: boolean;
+  action: string;
+  resource: string;
+};
+
+/** GET /api/v1/work-permits/:id/history */
+export async function listWorkPermitHistoryRequest(
+  accessToken: string,
+  id: string,
+  page = 1,
+  limit = 20,
+  filters?: { search?: string; success?: "true" | "false" },
+): Promise<{
+  items: WorkPermitHistoryItem[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+  if (filters?.search) params.set("search", filters.search);
+  if (filters?.success) params.set("success", filters.success);
+  const res = await fetch(`/api/v1/work-permits/${id}/history?${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as {
+    items: WorkPermitHistoryItem[];
+    total: number;
+    page: number;
+    limit: number;
+  };
 }

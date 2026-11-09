@@ -1,27 +1,35 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ClipboardCheck } from "lucide-react";
 import { Link } from "react-router";
+import { Button } from "../../components/Button/Button";
 import {
   DataTableCard,
   DataTableSearch,
 } from "../../components/DataTableCard/DataTableCard";
+import { Modal } from "../../components/Modal/Modal";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
 import {
   TablePagination,
   useClientTablePagination,
 } from "../../components/TablePagination/TablePagination";
+import { TextField } from "../../components/TextField/TextField";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { userHasPermission } from "../../lib/api/auth";
 import {
+  approveWorkPermitRequest,
   listWorkPermitsRequest,
-  submitWorkPermitRequest,
+  receiveWorkPermitRequest,
+  rejectReceiptWorkPermitRequest,
+  returnWorkPermitRequest,
+  workPermitStatusLabel,
   type WorkPermit,
   type WorkPermitStatus,
 } from "../../lib/api/workPermits";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { WorkPermitCompleteModal } from "./WorkPermitCompleteModal";
 
 /** Capitaliza. */
 function displayName(value: string): string {
@@ -38,28 +46,6 @@ function formatDate(iso: string): string {
   const [y, m, d] = day.split("-");
   if (!y || !m || !d) return iso;
   return `${d}-${m}-${y}`;
-}
-
-/** Etiqueta UI del ciclo. */
-function statusLabel(status: WorkPermitStatus): string {
-  switch (status) {
-    case "to_complete":
-      return "Por completar";
-    case "to_approve":
-      return "Por aprobar";
-    case "to_receive":
-      return "Por recibir";
-    case "active":
-      return "Vigente";
-    case "to_verify":
-      return "Por verificar";
-    case "closed":
-      return "Cerrado";
-    case "no_closure":
-      return "Sin cierre";
-    default:
-      return status;
-  }
 }
 
 /** Tono chip. */
@@ -84,20 +70,35 @@ function statusTone(
   }
 }
 
+/** Botón outline del modal. */
+const outlineBtnClass =
+  "inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60";
+
 /**
  * Bandeja de permisos de trabajo (Prevención).
- * Crear PT se hace desde un aviso (AT1 → Crear permiso).
+ * Crear PT desde aviso; aprobar/devolver desde «Por aprobar».
  */
 export function WorkPermitsPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const canRead = userHasPermission(user, "work_permits", "read");
   const canUpdate = userHasPermission(user, "work_permits", "update");
+  const canReceive = userHasPermission(user, "work_permits", "receive");
+  /** Portal contratista no aprueba ni recibe. */
+  const isStaff = !user?.organizationId;
 
   const [items, setItems] = useState<WorkPermit[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const [actingId, setActingId] = useState<string | null>(null);
+  /** Modal con nota: devolver (Prevención) o no autorizar (capitán). */
+  const [noteModal, setNoteModal] = useState<{
+    kind: "return" | "reject-receipt";
+    row: WorkPermit;
+  } | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  /** Modal completar personal + checklist (también staff, opción B). */
+  const [completeRow, setCompleteRow] = useState<WorkPermit | null>(null);
 
   const load = useCallback(async () => {
     if (!accessToken || !canRead) return;
@@ -121,22 +122,95 @@ export function WorkPermitsPage() {
     void load();
   }, [load]);
 
-  /** Contratista/staff: Por completar → Por aprobar. */
-  async function onSubmit(row: WorkPermit) {
-    if (!accessToken || !canUpdate || submittingId) return;
-    if (row.status !== "to_complete") return;
-    setSubmittingId(row.id);
+  /** Por aprobar → Por recibir. */
+  async function onApprove(row: WorkPermit) {
+    if (!accessToken || !canUpdate || !isStaff || actingId) return;
+    if (row.status !== "to_approve") return;
+    setActingId(row.id);
     try {
-      await submitWorkPermitRequest(accessToken, row.id);
-      showToast(`${row.code} enviado a aprobación.`, "success");
+      await approveWorkPermitRequest(accessToken, row.id);
+      showToast(
+        `${row.code} · ${workPermitStatusLabel("to_receive")}.`,
+        "success",
+      );
       await load();
     } catch (err) {
       showToast(
-        err instanceof ApiError ? err.message : "No se pudo enviar.",
+        err instanceof ApiError ? err.message : "No se pudo aprobar.",
         "danger",
       );
     } finally {
-      setSubmittingId(null);
+      setActingId(null);
+    }
+  }
+
+  /** Abre modal con nota (devolver / no autorizar). */
+  function openNoteModal(
+    kind: "return" | "reject-receipt",
+    row: WorkPermit,
+  ) {
+    setReviewNote("");
+    setNoteModal({ kind, row });
+  }
+
+  /** Capitán: Aprobado Prevención → Autorizado a bordo. */
+  async function onReceive(row: WorkPermit) {
+    if (!accessToken || !canReceive || !isStaff || actingId) return;
+    if (row.status !== "to_receive") return;
+    setActingId(row.id);
+    try {
+      await receiveWorkPermitRequest(accessToken, row.id);
+      showToast(
+        `${row.code} · ${workPermitStatusLabel("active")}.`,
+        "success",
+      );
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo recibir.",
+        "danger",
+      );
+    } finally {
+      setActingId(null);
+    }
+  }
+
+  /** Confirma modal con nota. */
+  async function confirmNoteModal() {
+    if (!accessToken || !noteModal || !reviewNote.trim() || actingId) return;
+    setActingId(noteModal.row.id);
+    try {
+      if (noteModal.kind === "return") {
+        await returnWorkPermitRequest(
+          accessToken,
+          noteModal.row.id,
+          reviewNote.trim(),
+        );
+        showToast(
+          `${noteModal.row.code} · ${workPermitStatusLabel("to_complete")}.`,
+          "success",
+        );
+      } else {
+        await rejectReceiptWorkPermitRequest(
+          accessToken,
+          noteModal.row.id,
+          reviewNote.trim(),
+        );
+        showToast(
+          `${noteModal.row.code} · vuelve a ${workPermitStatusLabel("to_approve")}.`,
+          "success",
+        );
+      }
+      setNoteModal(null);
+      setReviewNote("");
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo guardar.",
+        "danger",
+      );
+    } finally {
+      setActingId(null);
     }
   }
 
@@ -194,7 +268,7 @@ export function WorkPermitsPage() {
             { label: "Permisos de trabajo" },
           ]}
           title="Permisos de trabajo"
-          description="Prevención crea cada permiso desde un aviso. El contratista completa; el capitán recibe y cierra."
+          description="Prevención crea cada permiso desde un aviso, aprueba o devuelve; el capitán recibe y fiscaliza el cierre."
           actions={
             <Link
               to="/prevencion/avisos"
@@ -268,7 +342,12 @@ export function WorkPermitsPage() {
                     className="border-t border-[var(--color-tremor-border)] hover:bg-[var(--color-nachipa-bg-page)]"
                   >
                     <td className="px-3 py-2.5 font-semibold tabular-nums text-[var(--color-nachipa-title)]">
-                      {row.code}
+                      <Link
+                        to={`/prevencion/permisos/${row.id}`}
+                        className="hover:text-[var(--color-nachipa-primary)] hover:underline"
+                      >
+                        {row.code}
+                      </Link>
                     </td>
                     <td className="px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
                       {row.workNotice.code}
@@ -292,21 +371,74 @@ export function WorkPermitsPage() {
                     </td>
                     <td className="px-3 py-2.5">
                       <StatusChip tone={statusTone(row.status)}>
-                        {statusLabel(row.status)}
+                        {workPermitStatusLabel(row.status)}
                       </StatusChip>
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       {canUpdate && row.status === "to_complete" ? (
                         <button
                           type="button"
-                          className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
-                          disabled={submittingId === row.id}
-                          onClick={() => void onSubmit(row)}
+                          className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                          onClick={() => setCompleteRow(row)}
                         >
-                          {submittingId === row.id
-                            ? "Enviando…"
-                            : "Enviar a aprobación"}
+                          Completar
                         </button>
+                      ) : canUpdate &&
+                        isStaff &&
+                        row.status === "to_approve" ? (
+                        <span className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
+                            disabled={actingId === row.id}
+                            onClick={() => void onApprove(row)}
+                          >
+                            {actingId === row.id ? "…" : "Aprobar"}
+                          </button>
+                          <span
+                            aria-hidden
+                            className="text-[var(--color-nachipa-secondary)]"
+                          >
+                            ·
+                          </span>
+                          <button
+                            type="button"
+                            className="text-[13px] font-medium text-[var(--color-nachipa-title)] hover:underline disabled:opacity-60"
+                            disabled={actingId === row.id}
+                            onClick={() => openNoteModal("return", row)}
+                          >
+                            Devolver
+                          </button>
+                        </span>
+                      ) : canReceive &&
+                        isStaff &&
+                        row.status === "to_receive" ? (
+                        <span className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
+                            disabled={actingId === row.id}
+                            onClick={() => void onReceive(row)}
+                          >
+                            {actingId === row.id ? "…" : "Autorizar a bordo"}
+                          </button>
+                          <span
+                            aria-hidden
+                            className="text-[var(--color-nachipa-secondary)]"
+                          >
+                            ·
+                          </span>
+                          <button
+                            type="button"
+                            className="text-[13px] font-medium text-[var(--color-nachipa-title)] hover:underline disabled:opacity-60"
+                            disabled={actingId === row.id}
+                            onClick={() =>
+                              openNoteModal("reject-receipt", row)
+                            }
+                          >
+                            No autorizar
+                          </button>
+                        </span>
                       ) : (
                         <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
                           —
@@ -320,6 +452,73 @@ export function WorkPermitsPage() {
           </table>
         </DataTableCard>
       </div>
+
+      {accessToken ? (
+        <WorkPermitCompleteModal
+          open={Boolean(completeRow)}
+          permit={completeRow}
+          accessToken={accessToken}
+          mode="staff"
+          onClose={() => setCompleteRow(null)}
+          onDone={() => void load()}
+        />
+      ) : null}
+
+      <Modal
+        open={Boolean(noteModal)}
+        onClose={() => {
+          if (!actingId) setNoteModal(null);
+        }}
+        title={
+          noteModal?.kind === "reject-receipt"
+            ? "No autorizar recepción"
+            : "Devolver permiso al contratista"
+        }
+        subtitle={
+          noteModal
+            ? `${noteModal.row.code} · ${displayName(noteModal.row.organization.name)}`
+            : undefined
+        }
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={Boolean(actingId)}
+              onClick={() => setNoteModal(null)}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={Boolean(actingId) || !reviewNote.trim()}
+              onClick={() => void confirmNoteModal()}
+            >
+              {actingId
+                ? "Guardando…"
+                : noteModal?.kind === "reject-receipt"
+                  ? "No autorizar"
+                  : "Devolver"}
+            </Button>
+          </div>
+        }
+      >
+        <p className="m-0 mb-3 text-[13px] text-[var(--color-nachipa-secondary)]">
+          {noteModal?.kind === "reject-receipt"
+            ? "El permiso vuelve a «En revisión» (Prevención) con tu motivo."
+            : "El permiso vuelve a «Por completar» con tu observación."}
+        </p>
+        <TextField
+          label={
+            noteModal?.kind === "reject-receipt" ? "Motivo" : "Observaciones"
+          }
+          value={reviewNote}
+          onChange={(e) => setReviewNote(e.target.value)}
+          required
+        />
+      </Modal>
     </div>
   );
 }

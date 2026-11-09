@@ -1,0 +1,51 @@
+meta {
+  name: Post work permit return
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/v1/work-permits/{{workPermitId}}/return
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "reviewNote": "Falta completar el checklist y personal habilitado."
+  }
+}
+
+docs {
+  Prevención devuelve PT to_approve → to_complete con reviewNote obligatorio.
+  Variable workPermitId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken.");
+  }
+  if (!bru.getEnvVar("workPermitId")) {
+    throw new Error("Sin workPermitId.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq to_complete
+  res.body.reviewNote: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

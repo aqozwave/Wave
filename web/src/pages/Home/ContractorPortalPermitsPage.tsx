@@ -10,11 +10,12 @@ import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { useToast } from "../../components/Toast/ToastProvider";
 import {
   listWorkPermitsRequest,
-  submitWorkPermitRequest,
+  workPermitStatusLabel,
   type WorkPermit,
   type WorkPermitStatus,
 } from "../../lib/api/workPermits";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { WorkPermitCompleteModal } from "../Prevencion/WorkPermitCompleteModal";
 
 /** dd-mm-yyyy. */
 function formatDate(iso: string): string {
@@ -22,28 +23,6 @@ function formatDate(iso: string): string {
   const [y, m, d] = day.split("-");
   if (!y || !m || !d) return iso;
   return `${d}-${m}-${y}`;
-}
-
-/** Etiqueta ciclo. */
-function statusLabel(status: WorkPermitStatus): string {
-  switch (status) {
-    case "to_complete":
-      return "Por completar";
-    case "to_approve":
-      return "Por aprobar";
-    case "to_receive":
-      return "Por recibir";
-    case "active":
-      return "Vigente";
-    case "to_verify":
-      return "Por verificar";
-    case "closed":
-      return "Cerrado";
-    case "no_closure":
-      return "Sin cierre";
-    default:
-      return status;
-  }
 }
 
 /** Tono chip. */
@@ -68,14 +47,14 @@ function statusTone(
 
 /**
  * Portal contratista — mis permisos de trabajo.
- * Completar y enviar a aprobación (E13 mínimo: transición de estado).
+ * Completar personal/checklist y enviar a aprobación (E12/E13).
  */
 export function ContractorPortalPermitsPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const [items, setItems] = useState<WorkPermit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const [completeRow, setCompleteRow] = useState<WorkPermit | null>(null);
 
   const load = useCallback(async () => {
     if (!accessToken || !user?.organizationId) return;
@@ -98,24 +77,6 @@ export function ContractorPortalPermitsPage() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  /** Envía a aprobación (Por completar → Por aprobar). */
-  async function onSubmit(row: WorkPermit) {
-    if (!accessToken || submittingId || row.status !== "to_complete") return;
-    setSubmittingId(row.id);
-    try {
-      await submitWorkPermitRequest(accessToken, row.id);
-      showToast("Enviado a Prevención para aprobación.", "success");
-      await load();
-    } catch (err) {
-      showToast(
-        err instanceof ApiError ? err.message : "No se pudo enviar.",
-        "danger",
-      );
-    } finally {
-      setSubmittingId(null);
-    }
-  }
 
   if (!user?.organizationId) {
     return (
@@ -141,7 +102,7 @@ export function ContractorPortalPermitsPage() {
         <PageHeader
           crumbs={[{ label: "Permisos de trabajo" }]}
           title="Mis permisos de trabajo"
-          description="Prevención crea cada permiso y te lo asigna. Completalo y envialo a aprobación."
+          description="Completá personal y checklist, y envialo a Prevención."
         />
 
         <DataTableCard>
@@ -195,20 +156,17 @@ export function ContractorPortalPermitsPage() {
                     </td>
                     <td className="px-3 py-2.5">
                       <StatusChip tone={statusTone(row.status)}>
-                        {statusLabel(row.status)}
+                        {workPermitStatusLabel(row.status)}
                       </StatusChip>
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       {row.status === "to_complete" ? (
                         <button
                           type="button"
-                          className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
-                          disabled={submittingId === row.id}
-                          onClick={() => void onSubmit(row)}
+                          className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                          onClick={() => setCompleteRow(row)}
                         >
-                          {submittingId === row.id
-                            ? "Enviando…"
-                            : "Enviar a aprobación"}
+                          Completar
                         </button>
                       ) : (
                         <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
@@ -223,6 +181,17 @@ export function ContractorPortalPermitsPage() {
           </table>
         </DataTableCard>
       </div>
+
+      {accessToken ? (
+        <WorkPermitCompleteModal
+          open={Boolean(completeRow)}
+          permit={completeRow}
+          accessToken={accessToken}
+          mode="portal"
+          onClose={() => setCompleteRow(null)}
+          onDone={() => void load()}
+        />
+      ) : null}
     </div>
   );
 }

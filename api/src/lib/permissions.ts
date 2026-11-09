@@ -516,6 +516,8 @@ export const SYSTEM_ROLE_DEFS = [
           PERMISSION_ACTION.UPDATE,
         ],
       },
+      /** Necesario para el select del modal AT2 (tipo CAL/ALT…). */
+      readOnly(PERMISSION_RESOURCE.PERMIT_TYPES),
       readOnly(PERMISSION_RESOURCE.CONTRACTORS),
       readOnly(PERMISSION_RESOURCE.ACCREDITATIONS),
       readOnly(PERMISSION_RESOURCE.WORK_PERMITS),

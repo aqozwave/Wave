@@ -1,0 +1,48 @@
+meta {
+  name: Post work permit approve
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/work-permits/{{workPermitId}}/approve
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+docs {
+  Prevención aprueba PT to_approve → to_receive (listo para el capitán).
+  Variable workPermitId. No es para portal contratista.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken.");
+  }
+  if (!bru.getEnvVar("workPermitId")) {
+    throw new Error("Sin workPermitId.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq to_receive
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -1,0 +1,47 @@
+meta {
+  name: Put work permit people
+  type: http
+  seq: 8
+}
+
+put {
+  url: {{baseUrl}}/api/v1/work-permits/{{workPermitId}}/people
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "personIds": ["{{personId}}"]
+  }
+}
+
+docs {
+  Reemplaza el personal del PT (to_complete). Contratista o Prevención (update).
+  Variables: workPermitId, personId (contractor person de la misma org).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("workPermitId")) throw new Error("Sin workPermitId.");
+  if (!bru.getEnvVar("personId")) throw new Error("Sin personId.");
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

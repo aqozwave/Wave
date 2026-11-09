@@ -266,6 +266,23 @@ enum WorkPermitStatus {
 }
 
 /**
+ * Etapa del checklist del permiso (contratista / recepción puente / cierre).
+ * P5d usa contractor; reception y closure llegan en P5c/P6.
+ */
+enum WorkPermitChecklistStage {
+  contractor
+  reception
+  closure
+}
+
+/** Respuesta de un ítem de checklist del PT. */
+enum WorkPermitChecklistAnswerValue {
+  yes
+  no
+  na
+}
+
+/**
  * Estado de un documento de org contratista en la HAB.
  * pending_validation → validated | observed; replace marca el anterior replaced.
  */
@@ -441,6 +458,8 @@ model User {
   workNoticesCreated WorkNotice[] @relation("WorkNoticeCreatedBy")
   /// Permisos de trabajo creados por este usuario (Prevención).
   workPermitsCreated WorkPermit[] @relation("WorkPermitCreatedBy")
+  /// Respuestas de checklist de PT contestadas por este usuario.
+  workPermitChecklistAnswers WorkPermitChecklistAnswer[] @relation("WorkPermitChecklistAnsweredBy")
 
   @@index([email])
   @@index([username])
@@ -1180,6 +1199,8 @@ model ContractorPerson {
   updatedAt        DateTime               @updatedAt @map("updated_at") @db.Timestamptz
   /// Documentos del pack person en habilitaciones.
   documents        ContractorPersonDocument[]
+  /// Asignaciones a permisos de trabajo.
+  workPermits      WorkPermitPerson[]
 
   @@unique([organizationId, rut])
   @@index([organizationId])
@@ -1421,6 +1442,9 @@ model PermitChecklistItem {
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
 
+  /// Respuestas de PT que apuntan a este ítem.
+  workPermitAnswers WorkPermitChecklistAnswer[]
+
   @@unique([permitTypeId, order])
   @@index([permitTypeId])
   @@map("permit_checklist_items")
@@ -1502,11 +1526,17 @@ model WorkPermit {
   scheduledDate  DateTime               @map("scheduled_date") @db.Date
   description    String?
   status         WorkPermitStatus       @default(to_complete)
+  /// Motivo al devolver a «Por completar»; se limpia al aprobar.
+  reviewNote     String?                @map("review_note")
   createdById    String?                @map("created_by_id") @db.Uuid
   createdBy      User?                  @relation("WorkPermitCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   deletedAt      DateTime?              @map("deleted_at") @db.Timestamptz
   createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+  /// Personal asignado al permiso (completado por contratista o Prevención).
+  people         WorkPermitPerson[]
+  /// Respuestas de checklist por etapa.
+  checklistAnswers WorkPermitChecklistAnswer[]
 
   @@index([businessId])
   @@index([organizationId])
@@ -1515,4 +1545,48 @@ model WorkPermit {
   @@index([status])
   @@index([scheduledDate])
   @@map("work_permits")
+}
+
+/**
+ * Persona asignada a un permiso de trabajo (P5d).
+ * presentAt lo setea el capitán en el puente (después); acá solo se elige el personal.
+ */
+model WorkPermitPerson {
+  workPermitId String           @map("work_permit_id") @db.Uuid
+  workPermit   WorkPermit       @relation(fields: [workPermitId], references: [id], onDelete: Cascade)
+  personId     String           @map("person_id") @db.Uuid
+  person       ContractorPerson @relation(fields: [personId], references: [id], onDelete: Cascade)
+  /// Confirmado presente a bordo por el capitán; null hasta recepción.
+  presentAt    DateTime?        @map("present_at") @db.Timestamptz
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([workPermitId, personId])
+  @@index([personId])
+  @@map("work_permit_people")
+}
+
+/**
+ * Respuesta a un ítem de checklist del tipo, congelando el texto al responder (P5d).
+ * stage=contractor al completar; reception/closure en pasos posteriores.
+ */
+model WorkPermitChecklistAnswer {
+  id              String                         @id @default(uuid()) @db.Uuid
+  workPermitId    String                         @map("work_permit_id") @db.Uuid
+  workPermit      WorkPermit                     @relation(fields: [workPermitId], references: [id], onDelete: Cascade)
+  stage           WorkPermitChecklistStage
+  checklistItemId String                         @map("checklist_item_id") @db.Uuid
+  checklistItem   PermitChecklistItem            @relation(fields: [checklistItemId], references: [id], onDelete: Restrict)
+  /// Copia del texto del ítem al momento de responder (R-13 parcial).
+  itemText        String                         @map("item_text")
+  answer          WorkPermitChecklistAnswerValue
+  answeredById    String?                        @map("answered_by_id") @db.Uuid
+  answeredBy      User?                          @relation("WorkPermitChecklistAnsweredBy", fields: [answeredById], references: [id], onDelete: SetNull)
+  answeredAt      DateTime                       @default(now()) @map("answered_at") @db.Timestamptz
+  createdAt       DateTime                       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime                       @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([workPermitId, stage, checklistItemId])
+  @@index([workPermitId, stage])
+  @@index([checklistItemId])
+  @@map("work_permit_checklist_answers")
 }
