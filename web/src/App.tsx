@@ -14,6 +14,8 @@ import { useIdleTimeout } from "./lib/auth/useIdleTimeout";
 import { ConfirmEmail } from "./pages/ConfirmEmail/ConfirmEmail";
 import { ForgotPassword } from "./pages/ForgotPassword/ForgotPassword";
 import { Login } from "./pages/Login/Login";
+import { ApprovalFlowDetailPage } from "./pages/Configuracion/ApprovalFlowDetailPage";
+import { ApprovalFlowsPage } from "./pages/Configuracion/ApprovalFlowsPage";
 import { Catalogos } from "./pages/Catalogos/Catalogos";
 import { CursosHome } from "./pages/Cursos/CursosHome";
 import { CursosTripulacion } from "./pages/Cursos/CursosTripulacion";
@@ -212,6 +214,14 @@ export function App() {
           <Route path="empresas" element={<Empresas />} />
           <Route path="ubicaciones" element={<Ubicaciones />} />
           <Route path="catalogos" element={<Catalogos />} />
+          <Route
+            path="configuracion/flujos"
+            element={<ApprovalFlowsPage />}
+          />
+          <Route
+            path="configuracion/flujos/:id"
+            element={<ApprovalFlowDetailPage />}
+          />
           <Route path="usuarios" element={<Usuarios />} />
           <Route path="notificaciones" element={<NotificacionesVencimiento />} />
           <Route

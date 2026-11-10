@@ -6,6 +6,17 @@ export const permitCriticalitySchema = z.enum(["low", "medium", "high"]);
 /** Modo AST cuando requiresAst=true. */
 export const permitAstModeSchema = z.enum(["form", "pdf", "both"]);
 
+/** Flujo default resumido (P15d · asignación). */
+export const permitTypeApprovalFlowSummarySchema = z
+  .object({
+    id: z.uuid(),
+    code: z.string(),
+    name: z.string(),
+    stageCount: z.number().int().nonnegative(),
+    isSystem: z.boolean(),
+  })
+  .openapi("PermitTypeApprovalFlowSummary");
+
 /** Un tipo de permiso en respuestas de API. */
 export const permitTypeResponseSchema = z
   .object({
@@ -17,6 +28,9 @@ export const permitTypeResponseSchema = z
     requiresAst: z.boolean(),
     astMode: permitAstModeSchema.nullable(),
     description: z.string().nullable(),
+    /** Flujo de aprobación por defecto al crear PT de este tipo. */
+    defaultApprovalFlowId: z.uuid().nullable(),
+    defaultApprovalFlow: permitTypeApprovalFlowSummarySchema.nullable(),
     active: z.boolean(),
     deletedAt: z.string().datetime().nullable(),
     createdAt: z.string().datetime(),
@@ -90,6 +104,8 @@ const permitTypeFieldsObjectSchema = z.object({
     .trim()
     .optional()
     .transform((v) => (v === undefined || v.length === 0 ? undefined : v)),
+  /** Flujo default (misma empresa, activo); null limpia. */
+  defaultApprovalFlowId: z.uuid().nullable().optional(),
   /** Superadmin: empresa dueña al crear. */
   businessId: z.uuid().optional(),
   active: z.boolean().optional(),

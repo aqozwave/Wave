@@ -16,6 +16,7 @@ import {
   putWorkPermitChecklistResponseSchema,
   putWorkPermitPeopleResponseSchema,
   receiveWorkPermitResponseSchema,
+  refreshWorkPermitApprovalFlowResponseSchema,
   rejectCloseWorkPermitResponseSchema,
   rejectReceiptWorkPermitResponseSchema,
   requestCloseWorkPermitResponseSchema,
@@ -49,6 +50,7 @@ import {
   putWorkPermitChecklist,
   putWorkPermitPeople,
   receiveWorkPermit,
+  refreshWorkPermitApprovalFlow,
   rejectCloseWorkPermit,
   rejectReceiptWorkPermit,
   requestCloseWorkPermit,
@@ -257,6 +259,27 @@ export async function approveWorkPermitHandler(
     targetLabel: `${result.code} · approve`,
   });
   res.status(200).json(approveWorkPermitResponseSchema.parse(result));
+}
+
+/** POST /work-permits/:id/refresh-approval-flow — reaplica flujo del tipo. */
+export async function refreshWorkPermitApprovalFlowHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await refreshWorkPermitApprovalFlow(
+    req.user,
+    req.params.id as string,
+  );
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "workPermit",
+    resourceId: result.id,
+    targetLabel: `${result.code} · refresh-flow`,
+  });
+  res
+    .status(200)
+    .json(refreshWorkPermitApprovalFlowResponseSchema.parse(result));
 }
 
 /** POST /work-permits/:id/return — Prevención devuelve. */

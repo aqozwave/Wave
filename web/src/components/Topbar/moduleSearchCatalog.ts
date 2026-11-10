@@ -217,6 +217,14 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     canShow: (u) => canSeeCatalogos(u),
   },
   {
+    id: "flujos-aprobacion",
+    label: "Flujos de aprobación",
+    group: "Configuración",
+    to: "/configuracion/flujos",
+    keywords: ["EST", "etapas", "permiso de trabajo", "P16"],
+    canShow: (u) => u?.internalRol === "superadmin",
+  },
+  {
     id: "usuarios",
     label: "Usuarios",
     group: "Configuración",

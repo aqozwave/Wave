@@ -1,0 +1,38 @@
+meta {
+  name: Patch approval flow stage
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/approval-flows/{{approvalFlowId}}/stages/{{approvalFlowStageId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "label": "Registra el término y entrega el área (editado)",
+    "mandatory": false
+  }
+}
+
+docs {
+  Edita una etapa (también fijas en copias personalizadas).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("approvalFlowId") || !bru.getEnvVar("approvalFlowStageId")) {
+    throw new Error("Faltan approvalFlowId o approvalFlowStageId.");
+  }
+}
+
+assert {
+  res.status: eq 200
+}

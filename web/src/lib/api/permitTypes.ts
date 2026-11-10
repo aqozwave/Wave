@@ -6,6 +6,15 @@ export type PermitCriticality = "low" | "medium" | "high";
 /** Modo AST. */
 export type PermitAstMode = "form" | "pdf" | "both";
 
+/** Flujo default resumido en el tipo. */
+export type PermitTypeApprovalFlowSummary = {
+  id: string;
+  code: string;
+  name: string;
+  stageCount: number;
+  isSystem: boolean;
+};
+
 /** Tipo de permiso (catálogo P1). */
 export type PermitType = {
   id: string;
@@ -16,6 +25,8 @@ export type PermitType = {
   requiresAst: boolean;
   astMode: PermitAstMode | null;
   description: string | null;
+  defaultApprovalFlowId: string | null;
+  defaultApprovalFlow: PermitTypeApprovalFlowSummary | null;
   active: boolean;
   deletedAt: string | null;
   createdAt: string;
@@ -145,6 +156,8 @@ export type CreatePermitTypeBody = {
   requiresAst?: boolean;
   astMode?: PermitAstMode | null;
   description?: string;
+  /** Flujo default; null limpia; omitido en create → EST si existe. */
+  defaultApprovalFlowId?: string | null;
   businessId?: string;
   active?: boolean;
 };

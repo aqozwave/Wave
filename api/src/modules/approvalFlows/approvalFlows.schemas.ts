@@ -128,6 +128,17 @@ export const createApprovalFlowBodySchema = z.object({
     .transform((v) => (v === undefined || v === "" ? null : v)),
   /** Flujo origen; si falta, se usa EST de esa empresa. */
   sourceFlowId: z.uuid().optional(),
+  /**
+   * Cuántas etapas debe tener la copia (1..8).
+   * Si es menor que el origen, toma las primeras N.
+   * Si es mayor, rellena con etapas editables placeholder.
+   */
+  stageCount: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_APPROVAL_FLOW_STAGES)
+    .optional(),
 });
 
 export const createApprovalFlowRequestSchema = z.object({
@@ -136,6 +147,111 @@ export const createApprovalFlowRequestSchema = z.object({
 
 export const createApprovalFlowResponseSchema = approvalFlowDetailSchema;
 
+/**
+ * PATCH /approval-flows/:id — nombre/desc/activo (no sistema).
+ */
+export const updateApprovalFlowBodySchema = z
+  .object({
+    name: z.string().trim().min(2).max(120).optional(),
+    description: z
+      .string()
+      .trim()
+      .max(500)
+      .nullable()
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
+    active: z.boolean().optional(),
+  })
+  .refine(
+    (v) =>
+      v.name !== undefined ||
+      v.description !== undefined ||
+      v.active !== undefined,
+    { message: "Enviá al menos un campo a actualizar" },
+  );
+
+export const updateApprovalFlowRequestSchema = z.object({
+  params: approvalFlowIdParamsSchema,
+  body: updateApprovalFlowBodySchema,
+});
+
+export const updateApprovalFlowResponseSchema = approvalFlowDetailSchema;
+
+/** Clave estable de etapa (snake_case). */
+const stageKeySchema = z
+  .string({ error: "Clave es requerida" })
+  .trim()
+  .transform((v) => v.toLowerCase())
+  .refine((v) => /^[a-z][a-z0-9_]{0,39}$/.test(v), {
+    message: "Clave: snake_case, 1–40 caracteres",
+  });
+
+/** Body POST …/stages (etapa extra; fixed=false). */
+export const createApprovalFlowStageBodySchema = z.object({
+  key: stageKeySchema,
+  label: z
+    .string({ error: "Qué se hace es requerido" })
+    .trim()
+    .min(3)
+    .max(300),
+  actor: approvalFlowStageActorSchema,
+  moment: approvalFlowStageMomentSchema,
+  requiresSignature: z.boolean().default(false),
+  mandatory: z.boolean().default(true),
+});
+
+export const createApprovalFlowStageRequestSchema = z.object({
+  params: approvalFlowIdParamsSchema,
+  body: createApprovalFlowStageBodySchema,
+});
+
+export const createApprovalFlowStageResponseSchema = approvalFlowDetailSchema;
+
+/** Params flujo + etapa. */
+export const approvalFlowStageParamsSchema = z.object({
+  id: z.uuid(),
+  stageId: z.uuid(),
+});
+
+/** Body PATCH …/stages/:stageId. */
+export const updateApprovalFlowStageBodySchema = z
+  .object({
+    label: z.string().trim().min(3).max(300).optional(),
+    actor: approvalFlowStageActorSchema.optional(),
+    moment: approvalFlowStageMomentSchema.optional(),
+    requiresSignature: z.boolean().optional(),
+    mandatory: z.boolean().optional(),
+  })
+  .refine(
+    (v) =>
+      v.label !== undefined ||
+      v.actor !== undefined ||
+      v.moment !== undefined ||
+      v.requiresSignature !== undefined ||
+      v.mandatory !== undefined,
+    { message: "Enviá al menos un campo a actualizar" },
+  );
+
+export const updateApprovalFlowStageRequestSchema = z.object({
+  params: approvalFlowStageParamsSchema,
+  body: updateApprovalFlowStageBodySchema,
+});
+
+export const updateApprovalFlowStageResponseSchema = approvalFlowDetailSchema;
+
+export const deleteApprovalFlowStageRequestSchema = z.object({
+  params: approvalFlowStageParamsSchema,
+});
+
+export const deleteApprovalFlowStageResponseSchema = approvalFlowDetailSchema;
+
+/** DELETE /approval-flows/:id — soft-delete (solo personalizados). */
+export const deleteApprovalFlowRequestSchema = z.object({
+  params: approvalFlowIdParamsSchema,
+});
+
+export const deleteApprovalFlowResponseSchema = approvalFlowDetailSchema;
+
 export type ListApprovalFlowsQuery = z.infer<
   typeof listApprovalFlowsQuerySchema
 >;
@@ -143,4 +259,13 @@ export type ApprovalFlowListItem = z.infer<typeof approvalFlowListItemSchema>;
 export type ApprovalFlowDetail = z.infer<typeof approvalFlowDetailSchema>;
 export type CreateApprovalFlowBody = z.infer<
   typeof createApprovalFlowBodySchema
+>;
+export type UpdateApprovalFlowBody = z.infer<
+  typeof updateApprovalFlowBodySchema
+>;
+export type CreateApprovalFlowStageBody = z.infer<
+  typeof createApprovalFlowStageBodySchema
+>;
+export type UpdateApprovalFlowStageBody = z.infer<
+  typeof updateApprovalFlowStageBodySchema
 >;

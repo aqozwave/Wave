@@ -65,6 +65,27 @@ export const workPermitResponseSchema = z
     reviewNote: z.string().nullable(),
     /** Snapshot de exigencias al crear (R-13); null en PT viejos. */
     requirementsSnapshot: z.unknown().nullable(),
+    /** Flujo congelado al crear (P15d); null en PT viejos. */
+    approvalFlowId: z.uuid().nullable(),
+    /** Copia de etapas/código/nombre del flujo al crear. */
+    approvalFlowSnapshot: z
+      .object({
+        id: z.uuid(),
+        code: z.string(),
+        name: z.string(),
+        stages: z.array(
+          z.object({
+            key: z.string(),
+            label: z.string(),
+            position: z.number().int(),
+            actor: z.string(),
+            moment: z.string(),
+            requiresSignature: z.boolean(),
+            mandatory: z.boolean(),
+          }),
+        ),
+      })
+      .nullable(),
     createdById: z.uuid().nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -129,6 +150,14 @@ export const submitWorkPermitRequestSchema = z.object({
 });
 
 export const submitWorkPermitResponseSchema = workPermitResponseSchema;
+
+/** POST /work-permits/:id/refresh-approval-flow — reaplica flujo del tipo. */
+export const refreshWorkPermitApprovalFlowRequestSchema = z.object({
+  params: z.object({ id: z.uuid() }),
+});
+
+export const refreshWorkPermitApprovalFlowResponseSchema =
+  workPermitResponseSchema;
 
 /** Body devolver con observación (P6b mínimo). */
 export const workPermitReviewNoteBodySchema = z.object({

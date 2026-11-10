@@ -366,6 +366,7 @@ export function PermitTypesPage() {
                 <th className="px-3 py-2.5 font-medium">Nombre</th>
                 <th className="px-3 py-2.5 font-medium">Criticidad</th>
                 <th className="px-3 py-2.5 font-medium">AST</th>
+                <th className="px-3 py-2.5 font-medium">Flujo</th>
                 <th className="px-3 py-2.5 font-medium">Estado</th>
                 <th className="rounded-tr-[var(--radius-md)] px-3 py-2.5 text-right font-medium">
                   Acciones
@@ -376,7 +377,7 @@ export function PermitTypesPage() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-center text-[var(--color-nachipa-secondary)]"
                   >
                     Cargando…
@@ -385,7 +386,7 @@ export function PermitTypesPage() {
               ) : pageItems.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-center text-[var(--color-nachipa-secondary)]"
                   >
                     No hay tipos de permiso.
@@ -415,6 +416,11 @@ export function PermitTypesPage() {
                     </td>
                     <td className="px-3 py-2.5 text-[var(--color-nachipa-secondary)]">
                       {row.requiresAst ? (row.astMode ?? "sí") : "No"}
+                    </td>
+                    <td className="px-3 py-2.5 text-[var(--color-nachipa-secondary)]">
+                      {row.defaultApprovalFlow
+                        ? row.defaultApprovalFlow.code
+                        : "—"}
                     </td>
                     <td className="px-3 py-2.5">
                       <StatusChip tone={row.active ? "success" : "neutral"}>

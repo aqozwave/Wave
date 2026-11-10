@@ -1,0 +1,36 @@
+meta {
+  name: Patch approval flow
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/approval-flows/{{approvalFlowId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "active": true,
+    "description": "Estándar con etapa de cierre (personalizado)"
+  }
+}
+
+docs {
+  Actualiza nombre/descripción/activo. No aplica a EST sistema.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("approvalFlowId")) throw new Error("Sin approvalFlowId.");
+}
+
+assert {
+  res.status: eq 200
+}

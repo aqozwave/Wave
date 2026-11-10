@@ -18,21 +18,37 @@ import type {
 /** Actor mínimo para reglas de tenant. */
 type Actor = Pick<AuthUser, "internalRol" | "businessId">;
 
+/** Include del flujo default para el contrato de tipo. */
+const permitTypeFlowInclude = {
+  defaultApprovalFlow: {
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      isSystem: true,
+      deletedAt: true,
+      _count: { select: { stages: true } },
+    },
+  },
+} as const;
+
+type PermitTypeRow = Prisma.PermitTypeGetPayload<{
+  include: typeof permitTypeFlowInclude;
+}>;
+
 /** Serializa fila Prisma → contrato Zod. */
-function toPermitTypeResponse(row: {
-  id: string;
-  businessId: string;
-  code: string;
-  name: string;
-  criticality: "low" | "medium" | "high";
-  requiresAst: boolean;
-  astMode: "form" | "pdf" | "both" | null;
-  description: string | null;
-  active: boolean;
-  deletedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-}): PermitTypeResponse {
+function toPermitTypeResponse(row: PermitTypeRow): PermitTypeResponse {
+  const flow =
+    row.defaultApprovalFlow && row.defaultApprovalFlow.deletedAt === null
+      ? {
+          id: row.defaultApprovalFlow.id,
+          code: row.defaultApprovalFlow.code,
+          name: row.defaultApprovalFlow.name,
+          stageCount: row.defaultApprovalFlow._count.stages,
+          isSystem: row.defaultApprovalFlow.isSystem,
+        }
+      : null;
+
   return {
     id: row.id,
     businessId: row.businessId,
@@ -42,11 +58,38 @@ function toPermitTypeResponse(row: {
     requiresAst: row.requiresAst,
     astMode: row.astMode,
     description: row.description,
+    defaultApprovalFlowId: flow ? flow.id : null,
+    defaultApprovalFlow: flow,
     active: row.active,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Valida que el flujo exista, esté activo y sea de la misma empresa.
+ */
+async function assertAssignableApprovalFlow(
+  businessId: string,
+  flowId: string,
+): Promise<void> {
+  const flow = await prisma.approvalFlow.findFirst({
+    where: {
+      id: flowId,
+      businessId,
+      deletedAt: null,
+      active: true,
+    },
+    select: { id: true },
+  });
+  if (!flow) {
+    throw new AppError(
+      400,
+      "invalid_approval_flow",
+      "El flujo no existe, no está activo o no pertenece a esta empresa",
+    );
+  }
 }
 
 /**
@@ -125,6 +168,7 @@ export async function listPermitTypes(
       orderBy: [{ code: "asc" }],
       skip,
       take: query.limit,
+      include: permitTypeFlowInclude,
     }),
     prisma.permitType.count({ where }),
   ]);
@@ -144,6 +188,7 @@ export async function getPermitTypeById(
 ): Promise<PermitTypeResponse> {
   const row = await prisma.permitType.findFirst({
     where: { id, deletedAt: null },
+    include: permitTypeFlowInclude,
   });
   if (!row) {
     throw new AppError(
@@ -212,6 +257,27 @@ export async function createPermitType(
 
   const ast = resolveAstFields(body);
 
+  let defaultApprovalFlowId: string | null =
+    body.defaultApprovalFlowId === undefined
+      ? null
+      : body.defaultApprovalFlowId;
+  if (defaultApprovalFlowId) {
+    await assertAssignableApprovalFlow(businessId, defaultApprovalFlowId);
+  } else if (body.defaultApprovalFlowId === undefined) {
+    // Sin flujo explícito → EST activo de la empresa (mismo criterio que seed).
+    const est = await prisma.approvalFlow.findFirst({
+      where: {
+        businessId,
+        code: "EST",
+        isSystem: true,
+        deletedAt: null,
+        active: true,
+      },
+      select: { id: true },
+    });
+    defaultApprovalFlowId = est?.id ?? null;
+  }
+
   try {
     const row = await prisma.permitType.create({
       data: {
@@ -222,8 +288,10 @@ export async function createPermitType(
         requiresAst: ast.requiresAst,
         astMode: ast.astMode,
         description: body.description ?? null,
+        defaultApprovalFlowId,
         active: body.active ?? true,
       },
+      include: permitTypeFlowInclude,
     });
     return toPermitTypeResponse(row);
   } catch (err) {
@@ -298,10 +366,26 @@ export async function updatePermitType(
     data.business = { connect: { id: payload.businessId } };
   }
 
+  if (payload.defaultApprovalFlowId !== undefined) {
+    if (payload.defaultApprovalFlowId === null) {
+      data.defaultApprovalFlow = { disconnect: true };
+    } else {
+      const targetBusinessId = payload.businessId ?? existing.businessId;
+      await assertAssignableApprovalFlow(
+        targetBusinessId,
+        payload.defaultApprovalFlowId,
+      );
+      data.defaultApprovalFlow = {
+        connect: { id: payload.defaultApprovalFlowId },
+      };
+    }
+  }
+
   try {
     const updated = await prisma.permitType.update({
       where: { id },
       data,
+      include: permitTypeFlowInclude,
     });
     return toPermitTypeResponse(updated);
   } catch (err) {
@@ -342,6 +426,7 @@ export async function deletePermitType(
   const updated = await prisma.permitType.update({
     where: { id },
     data: { deletedAt: new Date(), active: false },
+    include: permitTypeFlowInclude,
   });
   return toPermitTypeResponse(updated);
 }

@@ -1439,6 +1439,8 @@ model ApprovalFlow {
   stages       ApprovalFlowStage[]
   /// Tipos de permiso que lo usan como default.
   permitTypes  PermitType[]
+  /// Permisos que congelaron este flujo al crearse.
+  workPermits  WorkPermit[]
 
   @@unique([businessId, code])
   @@index([businessId])
@@ -1651,6 +1653,11 @@ model WorkPermit {
   reviewNote     String?                @map("review_note")
   /// Exigencias/checklist congelados al crear el PT (R-13 · P13b).
   requirementsSnapshot Json?            @map("requirements_snapshot")
+  /// Flujo de aprobación congelado al crear (desde PermitType.defaultApprovalFlowId).
+  approvalFlowId String?                @map("approval_flow_id") @db.Uuid
+  approvalFlow   ApprovalFlow?          @relation(fields: [approvalFlowId], references: [id], onDelete: SetNull)
+  /// Copia de código/nombre/etapas del flujo al crear (el catálogo puede cambiar después).
+  approvalFlowSnapshot Json?            @map("approval_flow_snapshot")
   createdById    String?                @map("created_by_id") @db.Uuid
   createdBy      User?                  @relation("WorkPermitCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   deletedAt      DateTime?              @map("deleted_at") @db.Timestamptz
@@ -1667,6 +1674,7 @@ model WorkPermit {
   @@index([organizationId])
   @@index([permitTypeId])
   @@index([locationId])
+  @@index([approvalFlowId])
   @@index([status])
   @@index([scheduledDate])
   @@map("work_permits")

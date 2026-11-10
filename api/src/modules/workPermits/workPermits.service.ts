@@ -1,12 +1,17 @@
 import { Prisma, type WorkPermitSignatureKind } from "@prisma/client";
 import { assertBusinessModuleEnabled } from "../../lib/businessModules.js";
 import { AppError } from "../../lib/errors.js";
+import {
+  PERMISSION_ACTION,
+  PERMISSION_RESOURCE,
+} from "../../lib/permissions.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import {
   evaluateCompanyPack,
   evaluatePersonPack,
 } from "../accreditations/accreditations.service.js";
+import { actorHasPermission } from "../roles/roles.service.js";
 import type {
   CreateWorkPermitBody,
   ListWorkPermitHistoryQuery,
@@ -20,12 +25,18 @@ import type {
   WorkPermitResponse,
   WorkPermitReviewNoteBody,
 } from "./workPermits.schemas.js";
+import {
+  resolveWorkPermitFlowPolicy,
+  type FlowSnapshot,
+  type WorkPermitFlowPolicy,
+} from "./workPermitFlowPolicy.js";
 
 /** Actor con id, tenant, org y alcance de nave (capitán). */
 type Actor = Pick<
   AuthUser,
   | "id"
   | "internalRol"
+  | "roleId"
   | "businessId"
   | "organizationId"
   | "locationId"
@@ -82,10 +93,215 @@ function toWorkPermitResponse(row: PermitRow): WorkPermitResponse {
     status: row.status,
     reviewNote: row.reviewNote,
     requirementsSnapshot: row.requirementsSnapshot ?? null,
+    approvalFlowId: row.approvalFlowId,
+    approvalFlowSnapshot: parseApprovalFlowSnapshot(row.approvalFlowSnapshot),
     createdById: row.createdById,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/** Shape congelado del flujo en el PT. */
+type ApprovalFlowSnapshot = {
+  id: string;
+  code: string;
+  name: string;
+  stages: Array<{
+    key: string;
+    label: string;
+    position: number;
+    actor: string;
+    moment: string;
+    requiresSignature: boolean;
+    mandatory: boolean;
+  }>;
+};
+
+/** Parsea JSON del snapshot; null si vacío o inválido. */
+function parseApprovalFlowSnapshot(
+  value: Prisma.JsonValue | null | undefined,
+): ApprovalFlowSnapshot | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (
+    typeof raw.id !== "string" ||
+    typeof raw.code !== "string" ||
+    typeof raw.name !== "string" ||
+    !Array.isArray(raw.stages)
+  ) {
+    return null;
+  }
+  return {
+    id: raw.id,
+    code: raw.code,
+    name: raw.name,
+    stages: raw.stages
+      .filter(
+        (s): s is Record<string, unknown> =>
+          typeof s === "object" && s !== null && !Array.isArray(s),
+      )
+      .map((s) => ({
+        key: String(s.key ?? ""),
+        label: String(s.label ?? ""),
+        position: Number(s.position ?? 0),
+        actor: String(s.actor ?? ""),
+        moment: String(s.moment ?? ""),
+        requiresSignature: Boolean(s.requiresSignature),
+        mandatory: s.mandatory !== false,
+      }))
+      .filter((s) => s.key.length > 0),
+  };
+}
+
+/**
+ * Resuelve flujo default del tipo (o EST de la empresa) y arma snapshot.
+ */
+async function resolveApprovalFlowSnapshot(
+  businessId: string,
+  permitTypeId: string,
+): Promise<{ flowId: string | null; snapshot: ApprovalFlowSnapshot | null }> {
+  const permitType = await prisma.permitType.findFirst({
+    where: { id: permitTypeId, deletedAt: null },
+    select: {
+      defaultApprovalFlowId: true,
+      defaultApprovalFlow: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          deletedAt: true,
+          active: true,
+          stages: {
+            orderBy: { position: "asc" },
+            select: {
+              key: true,
+              label: true,
+              position: true,
+              actor: true,
+              moment: true,
+              requiresSignature: true,
+              mandatory: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  let flow = permitType?.defaultApprovalFlow ?? null;
+  if (!flow || flow.deletedAt || !flow.active) {
+    flow = await prisma.approvalFlow.findFirst({
+      where: {
+        businessId,
+        code: "EST",
+        isSystem: true,
+        deletedAt: null,
+        active: true,
+      },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        deletedAt: true,
+        active: true,
+        stages: {
+          orderBy: { position: "asc" },
+          select: {
+            key: true,
+            label: true,
+            position: true,
+            actor: true,
+            moment: true,
+            requiresSignature: true,
+            mandatory: true,
+          },
+        },
+      },
+    });
+  }
+
+  if (!flow) {
+    return { flowId: null, snapshot: null };
+  }
+
+  return {
+    flowId: flow.id,
+    snapshot: {
+      id: flow.id,
+      code: flow.code,
+      name: flow.name,
+      stages: flow.stages.map((s) => ({
+        key: s.key,
+        label: s.label,
+        position: s.position,
+        actor: s.actor,
+        moment: s.moment,
+        requiresSignature: s.requiresSignature,
+        mandatory: s.mandatory,
+      })),
+    },
+  };
+}
+
+/**
+ * POST /work-permits/:id/refresh-approval-flow
+ * Reaplica el flujo default actual del tipo (PTs abiertos).
+ * Útil si se cambió el flujo del tipo después de crear el PT.
+ */
+export async function refreshWorkPermitApprovalFlow(
+  actor: Actor,
+  id: string,
+): Promise<WorkPermitResponse> {
+  assertStaffNotContractor(actor);
+
+  const existing = await prisma.workPermit.findFirst({
+    where: { id, deletedAt: null },
+    include: permitInclude,
+  });
+  if (!existing || existing.organization.deletedAt) {
+    throw new AppError(404, "work_permit_not_found", "Permiso no encontrado");
+  }
+  assertPermitAccess(actor, existing);
+  await assertBusinessModuleEnabled(existing.businessId, "work_permits");
+
+  if (existing.status === "closed" || existing.status === "no_closure") {
+    throw new AppError(
+      409,
+      "invalid_work_permit_transition",
+      "No se puede cambiar el flujo de un permiso ya cerrado",
+    );
+  }
+
+  const { flowId, snapshot } = await resolveApprovalFlowSnapshot(
+    existing.businessId,
+    existing.permitTypeId,
+  );
+  if (!flowId || !snapshot) {
+    throw new AppError(
+      400,
+      "approval_flow_missing",
+      "El tipo no tiene un flujo de aprobación activo",
+    );
+  }
+
+  const policy = resolveWorkPermitFlowPolicy(snapshot);
+  /** Si el nuevo flujo no tiene recepción y el PT quedó en to_receive, destapar. */
+  const nextStatus =
+    existing.status === "to_receive" && !policy.hasReceiveStage
+      ? "active"
+      : existing.status;
+
+  const updated = await prisma.workPermit.update({
+    where: { id },
+    data: {
+      approvalFlowId: flowId,
+      approvalFlowSnapshot: snapshot as unknown as Prisma.InputJsonValue,
+      status: nextStatus,
+      ...(nextStatus !== existing.status ? { reviewNote: null } : {}),
+    },
+    include: permitInclude,
+  });
+  return toWorkPermitResponse(updated);
 }
 
 /**
@@ -177,6 +393,94 @@ const SIGNATURES_BEFORE_CAPTAIN_CLOSE: RequiredSignature[] = [
   },
 ];
 
+/** Política del snapshot congelado del PT. */
+function flowPolicyFromRow(row: {
+  approvalFlowSnapshot: Prisma.JsonValue | null;
+}): WorkPermitFlowPolicy {
+  return resolveWorkPermitFlowPolicy(
+    parseApprovalFlowSnapshot(row.approvalFlowSnapshot) as FlowSnapshot | null,
+  );
+}
+
+/**
+ * Firmas exigidas antes de pedir cierre / cerrar, según si el flujo tiene recepción.
+ */
+function signaturesBeforeRequestClose(
+  policy: WorkPermitFlowPolicy,
+): RequiredSignature[] {
+  if (policy.hasReceiveStage) return SIGNATURES_BEFORE_CLOSE;
+  return [
+    {
+      kind: "prevention_approve",
+      label: "Aprobación Prevención",
+      digital: true,
+    },
+  ];
+}
+
+/** Firmas exigidas al cerrar según flujo. */
+function signaturesBeforeFinalClose(
+  policy: WorkPermitFlowPolicy,
+): RequiredSignature[] {
+  const base = signaturesBeforeRequestClose(policy);
+  if (policy.hasRequestCloseStage) {
+    return [
+      ...base,
+      {
+        kind: "contractor_request_close",
+        label: "Solicitud de cierre",
+        digital: false,
+      },
+    ];
+  }
+  return base;
+}
+
+/**
+ * Quién puede ejecutar el cierre final según el flujo.
+ * Prevención → update; capitán → receive.
+ */
+async function assertCloseActorAllowed(
+  actor: Actor,
+  policy: WorkPermitFlowPolicy,
+): Promise<void> {
+  if (actor.organizationId) {
+    throw new AppError(
+      403,
+      "forbidden",
+      "El portal contratista no cierra el permiso",
+    );
+  }
+
+  if (policy.closeActor === "prevention") {
+    const ok = await actorHasPermission(
+      actor,
+      PERMISSION_RESOURCE.WORK_PERMITS,
+      PERMISSION_ACTION.UPDATE,
+    );
+    if (!ok) {
+      throw new AppError(
+        403,
+        "forbidden",
+        "Este flujo lo cierra Prevención (no el capitán)",
+      );
+    }
+    return;
+  }
+
+  const ok = await actorHasPermission(
+    actor,
+    PERMISSION_RESOURCE.WORK_PERMITS,
+    PERMISSION_ACTION.RECEIVE,
+  );
+  if (!ok) {
+    throw new AppError(
+      403,
+      "forbidden",
+      "Este flujo lo cierra el capitán a bordo",
+    );
+  }
+}
 /**
  * Upsert firma de un hito del PT (documento P6).
  * Con digital: guarda trazo PNG + acceptedAt; sin digital: solo actor/fecha.
@@ -802,6 +1106,11 @@ export async function createWorkPermitFromNotice(
     items: check.items,
   };
 
+  const { flowId, snapshot: flowSnapshot } = await resolveApprovalFlowSnapshot(
+    notice.businessId,
+    notice.permitTypeId,
+  );
+
   const created = await prisma.$transaction(async (tx) => {
     const code = await nextWorkPermitCode(tx);
     const permit = await tx.workPermit.create({
@@ -819,6 +1128,10 @@ export async function createWorkPermitFromNotice(
             : body.description?.trim() || null,
         status: "to_complete",
         requirementsSnapshot: snapshot,
+        approvalFlowId: flowId,
+        approvalFlowSnapshot: flowSnapshot
+          ? (flowSnapshot as unknown as Prisma.InputJsonValue)
+          : undefined,
         createdById: actor.id,
       },
       include: permitInclude,
@@ -1289,7 +1602,7 @@ export async function submitWorkPermit(
 
 /**
  * POST /work-permits/:id/approve — Prevención aprueba.
- * to_approve → to_receive (+ firma digital prevention_approve).
+ * to_approve → to_receive (si el flujo tiene recepción) o active (si no).
  */
 export async function approveWorkPermit(
   actor: Actor,
@@ -1316,9 +1629,13 @@ export async function approveWorkPermit(
     );
   }
 
+  const policy = flowPolicyFromRow(existing);
+  /** Sin etapa receive en el flujo → pasa directo a autorizado. */
+  const nextStatus = policy.hasReceiveStage ? "to_receive" : "active";
+
   const updated = await prisma.workPermit.update({
     where: { id },
-    data: { status: "to_receive", reviewNote: null },
+    data: { status: nextStatus, reviewNote: null },
     include: permitInclude,
   });
   await upsertWorkPermitSignature(id, "prevention_approve", actor.id, {
@@ -1369,7 +1686,8 @@ export async function returnWorkPermit(
 
 /**
  * POST /work-permits/:id/receive — capitán recibe a bordo.
- * to_receive → active (+ firma digital captain_receive).
+ * Si el flujo no tiene recepción: Prevención puede destrabar to_receive → active
+ * (PTs aprobados antes del motor dinámico).
  */
 export async function receiveWorkPermit(
   actor: Actor,
@@ -1380,7 +1698,7 @@ export async function receiveWorkPermit(
     throw new AppError(
       403,
       "forbidden",
-      "Solo el capitán puede recibir el permiso a bordo",
+      "Solo el personal de la empresa puede recibir el permiso",
     );
   }
 
@@ -1399,6 +1717,49 @@ export async function receiveWorkPermit(
       409,
       "invalid_work_permit_transition",
       `No se puede recibir desde estado ${existing.status}`,
+    );
+  }
+
+  const policy = flowPolicyFromRow(existing);
+
+  if (!policy.hasReceiveStage) {
+    const canSkip = await actorHasPermission(
+      actor,
+      PERMISSION_RESOURCE.WORK_PERMITS,
+      PERMISSION_ACTION.UPDATE,
+    );
+    if (!canSkip) {
+      throw new AppError(
+        403,
+        "forbidden",
+        "Este flujo no tiene recepción a bordo; Prevención debe continuar",
+      );
+    }
+    await assertPriorSignatures(id, [
+      {
+        kind: "prevention_approve",
+        label: "Aprobación Prevención",
+        digital: true,
+      },
+    ]);
+    const updated = await prisma.workPermit.update({
+      where: { id },
+      data: { status: "active", reviewNote: null },
+      include: permitInclude,
+    });
+    return toWorkPermitResponse(updated);
+  }
+
+  const canReceive = await actorHasPermission(
+    actor,
+    PERMISSION_RESOURCE.WORK_PERMITS,
+    PERMISSION_ACTION.RECEIVE,
+  );
+  if (!canReceive) {
+    throw new AppError(
+      403,
+      "forbidden",
+      "Solo el capitán puede recibir el permiso a bordo",
     );
   }
 
@@ -1487,6 +1848,8 @@ export async function requestCloseWorkPermit(
   assertPermitAccess(actor, existing);
   await assertBusinessModuleEnabled(existing.businessId, "work_permits");
 
+  const policy = flowPolicyFromRow(existing);
+
   if (existing.status !== "active") {
     throw new AppError(
       409,
@@ -1495,7 +1858,15 @@ export async function requestCloseWorkPermit(
     );
   }
 
-  await assertPriorSignatures(id, SIGNATURES_BEFORE_CLOSE);
+  if (!policy.hasRequestCloseStage && policy.closeActor === "prevention") {
+    throw new AppError(
+      409,
+      "invalid_work_permit_transition",
+      "Este flujo no pide cierre intermedio: Prevención cierra directo el trabajo",
+    );
+  }
+
+  await assertPriorSignatures(id, signaturesBeforeRequestClose(policy));
 
   /** Comentario al pedir cierre (vacío → null). */
   const observation = body.observation?.trim() || null;
@@ -1512,22 +1883,15 @@ export async function requestCloseWorkPermit(
 }
 
 /**
- * POST /work-permits/:id/close — capitán verifica y cierra.
- * to_verify → closed (+ firma digital).
+ * POST /work-permits/:id/close — cierre final según flujo (capitán o Prevención).
+ * Con pedido de cierre: to_verify → closed.
+ * Sin pedido y cierre Prevención: active → closed.
  */
 export async function closeWorkPermit(
   actor: Actor,
   id: string,
   body: WorkPermitDigitalSignatureBody,
 ): Promise<WorkPermitResponse> {
-  if (actor.organizationId) {
-    throw new AppError(
-      403,
-      "forbidden",
-      "Solo el capitán puede cerrar el trabajo a bordo",
-    );
-  }
-
   const existing = await prisma.workPermit.findFirst({
     where: { id, deletedAt: null },
     include: permitInclude,
@@ -1538,15 +1902,26 @@ export async function closeWorkPermit(
   assertPermitAccess(actor, existing);
   await assertBusinessModuleEnabled(existing.businessId, "work_permits");
 
-  if (existing.status !== "to_verify") {
+  const policy = flowPolicyFromRow(existing);
+  await assertCloseActorAllowed(actor, policy);
+
+  const allowedStatuses: string[] = policy.hasRequestCloseStage
+    ? ["to_verify"]
+    : policy.closeActor === "prevention"
+      ? ["active", "to_verify"]
+      : ["to_verify"];
+
+  if (!allowedStatuses.includes(existing.status)) {
     throw new AppError(
       409,
       "invalid_work_permit_transition",
-      `Solo se cierra desde «Verificar trabajo» (ahora: ${existing.status})`,
+      policy.hasRequestCloseStage
+        ? `Solo se cierra desde «Verificar trabajo» (ahora: ${existing.status})`
+        : `Prevención cierra desde «Autorizado a bordo» (ahora: ${existing.status})`,
     );
   }
 
-  await assertPriorSignatures(id, SIGNATURES_BEFORE_CAPTAIN_CLOSE);
+  await assertPriorSignatures(id, signaturesBeforeFinalClose(policy));
 
   const updated = await prisma.workPermit.update({
     where: { id },
@@ -1563,7 +1938,7 @@ export async function closeWorkPermit(
 type RejectCloseBody = WorkPermitReviewNoteBody & WorkPermitDigitalSignatureBody;
 
 /**
- * POST /work-permits/:id/reject-close — capitán deja el PT sin cierre.
+ * POST /work-permits/:id/reject-close — deja el PT sin cierre (actor del flujo).
  * to_verify → no_closure con motivo + firma digital.
  */
 export async function rejectCloseWorkPermit(
@@ -1571,14 +1946,6 @@ export async function rejectCloseWorkPermit(
   id: string,
   body: RejectCloseBody,
 ): Promise<WorkPermitResponse> {
-  if (actor.organizationId) {
-    throw new AppError(
-      403,
-      "forbidden",
-      "Solo el capitán puede marcar sin cierre",
-    );
-  }
-
   const existing = await prisma.workPermit.findFirst({
     where: { id, deletedAt: null },
     include: permitInclude,
@@ -1589,6 +1956,9 @@ export async function rejectCloseWorkPermit(
   assertPermitAccess(actor, existing);
   await assertBusinessModuleEnabled(existing.businessId, "work_permits");
 
+  const policy = flowPolicyFromRow(existing);
+  await assertCloseActorAllowed(actor, policy);
+
   if (existing.status !== "to_verify") {
     throw new AppError(
       409,
@@ -1597,7 +1967,7 @@ export async function rejectCloseWorkPermit(
     );
   }
 
-  await assertPriorSignatures(id, SIGNATURES_BEFORE_CAPTAIN_CLOSE);
+  await assertPriorSignatures(id, signaturesBeforeFinalClose(policy));
 
   const updated = await prisma.workPermit.update({
     where: { id },

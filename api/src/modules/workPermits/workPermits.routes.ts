@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
-import { requirePermission } from "../../middlewares/requirePermission.js";
+import {
+  requireAnyPermission,
+  requirePermission,
+} from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   approveWorkPermitHandler,
@@ -19,6 +22,7 @@ import {
   putWorkPermitChecklistHandler,
   putWorkPermitPeopleHandler,
   receiveWorkPermitHandler,
+  refreshWorkPermitApprovalFlowHandler,
   rejectCloseWorkPermitHandler,
   rejectReceiptWorkPermitHandler,
   requestCloseWorkPermitHandler,
@@ -40,6 +44,7 @@ import {
   putWorkPermitChecklistRequestSchema,
   putWorkPermitPeopleRequestSchema,
   receiveWorkPermitRequestSchema,
+  refreshWorkPermitApprovalFlowRequestSchema,
   rejectCloseWorkPermitRequestSchema,
   rejectReceiptWorkPermitRequestSchema,
   requestCloseWorkPermitRequestSchema,
@@ -167,6 +172,17 @@ workPermitsRouter.post(
 );
 
 workPermitsRouter.post(
+  "/:id/refresh-approval-flow",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.WORK_PERMITS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(refreshWorkPermitApprovalFlowRequestSchema),
+  refreshWorkPermitApprovalFlowHandler,
+);
+
+workPermitsRouter.post(
   "/:id/return",
   authenticate,
   requirePermission(
@@ -180,10 +196,16 @@ workPermitsRouter.post(
 workPermitsRouter.post(
   "/:id/receive",
   authenticate,
-  requirePermission(
-    PERMISSION_RESOURCE.WORK_PERMITS,
-    PERMISSION_ACTION.RECEIVE,
-  ),
+  requireAnyPermission([
+    {
+      resource: PERMISSION_RESOURCE.WORK_PERMITS,
+      action: PERMISSION_ACTION.RECEIVE,
+    },
+    {
+      resource: PERMISSION_RESOURCE.WORK_PERMITS,
+      action: PERMISSION_ACTION.UPDATE,
+    },
+  ]),
   validate(receiveWorkPermitRequestSchema),
   receiveWorkPermitHandler,
 );
@@ -213,10 +235,16 @@ workPermitsRouter.post(
 workPermitsRouter.post(
   "/:id/close",
   authenticate,
-  requirePermission(
-    PERMISSION_RESOURCE.WORK_PERMITS,
-    PERMISSION_ACTION.RECEIVE,
-  ),
+  requireAnyPermission([
+    {
+      resource: PERMISSION_RESOURCE.WORK_PERMITS,
+      action: PERMISSION_ACTION.RECEIVE,
+    },
+    {
+      resource: PERMISSION_RESOURCE.WORK_PERMITS,
+      action: PERMISSION_ACTION.UPDATE,
+    },
+  ]),
   validate(closeWorkPermitRequestSchema),
   closeWorkPermitHandler,
 );
@@ -224,10 +252,16 @@ workPermitsRouter.post(
 workPermitsRouter.post(
   "/:id/reject-close",
   authenticate,
-  requirePermission(
-    PERMISSION_RESOURCE.WORK_PERMITS,
-    PERMISSION_ACTION.RECEIVE,
-  ),
+  requireAnyPermission([
+    {
+      resource: PERMISSION_RESOURCE.WORK_PERMITS,
+      action: PERMISSION_ACTION.RECEIVE,
+    },
+    {
+      resource: PERMISSION_RESOURCE.WORK_PERMITS,
+      action: PERMISSION_ACTION.UPDATE,
+    },
+  ]),
   validate(rejectCloseWorkPermitRequestSchema),
   rejectCloseWorkPermitHandler,
 );

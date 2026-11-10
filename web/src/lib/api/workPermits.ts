@@ -127,6 +127,25 @@ export function workPermitProgress(
   }
 }
 
+/** Etapa congelada del flujo en el PT. */
+export type WorkPermitApprovalFlowStageSnapshot = {
+  key: string;
+  label: string;
+  position: number;
+  actor: string;
+  moment: string;
+  requiresSignature: boolean;
+  mandatory: boolean;
+};
+
+/** Flujo congelado al crear el PT. */
+export type WorkPermitApprovalFlowSnapshot = {
+  id: string;
+  code: string;
+  name: string;
+  stages: WorkPermitApprovalFlowStageSnapshot[];
+};
+
 /** Permiso de trabajo PT-NNNN. */
 export type WorkPermit = {
   id: string;
@@ -147,10 +166,161 @@ export type WorkPermit = {
   reviewNote: string | null;
   /** Snapshot de exigencias al crear (R-13); null en PT viejos. */
   requirementsSnapshot: unknown | null;
+  /** Flujo congelado al crear; null en PT viejos. */
+  approvalFlowId: string | null;
+  approvalFlowSnapshot: WorkPermitApprovalFlowSnapshot | null;
   createdById: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
+/**
+ * Orden de avance del status del PT (para marcar etapas del snapshot).
+ */
+const STATUS_PROGRESS_RANK: Record<WorkPermitStatus, number> = {
+  to_complete: 0,
+  to_approve: 1,
+  to_receive: 2,
+  active: 3,
+  to_verify: 4,
+  closed: 5,
+  no_closure: 5,
+};
+
+/**
+ * Mapea clave de etapa del flujo → rank de status del motor actual.
+ * Claves custom (p. ej. cierre) caen en «activo» (3) hasta cablear motor C.
+ */
+function stageKeyRank(key: string): number {
+  switch (key) {
+    case "notice":
+    case "create_permit":
+      return -1;
+    case "complete":
+      return 0;
+    case "approve":
+      return 1;
+    case "receive":
+      return 2;
+    case "request_close":
+      return 4;
+    case "close":
+    case "captain_close":
+      return 5;
+    default:
+      return 3;
+  }
+}
+
+/** Estado visual de una etapa del snapshot vs status actual. */
+export type ApprovalFlowStageVisualState = "done" | "current" | "upcoming";
+
+/**
+ * Calcula si cada etapa del flujo congelado está hecha / actual / pendiente.
+ */
+export function approvalFlowStageStates(
+  status: WorkPermitStatus,
+  stages: WorkPermitApprovalFlowStageSnapshot[],
+): ApprovalFlowStageVisualState[] {
+  const statusRank = STATUS_PROGRESS_RANK[status];
+  if (status === "closed") {
+    return stages.map(() => "done");
+  }
+  return stages.map((stage) => {
+    const rank = stageKeyRank(stage.key);
+    if (rank < 0) return "done";
+    if (status === "no_closure") {
+      return rank >= 5 ? "current" : "done";
+    }
+    if (statusRank > rank) return "done";
+    if (statusRank === rank) return "current";
+    return "upcoming";
+  });
+}
+
+/** Quién cierra según el snapshot. */
+export type WorkPermitCloseActor = "prevention" | "captain";
+
+/** Política de botones del PT según flujo congelado. */
+export type WorkPermitFlowPolicy = {
+  hasReceiveStage: boolean;
+  hasRequestCloseStage: boolean;
+  closeActor: WorkPermitCloseActor;
+};
+
+/** ¿Clave de recepción? */
+function isReceiveFlowKey(key: string): boolean {
+  const k = key.toLowerCase();
+  return k === "receive" || k.includes("receive") || k.includes("recep");
+}
+
+/** ¿Clave de pedido de cierre? */
+function isRequestCloseFlowKey(key: string): boolean {
+  const k = key.toLowerCase();
+  return (
+    k === "request_close" ||
+    k.includes("request_close") ||
+    k.includes("pedir_cierre")
+  );
+}
+
+/** ¿Clave de cierre final? */
+function isCloseFlowKey(key: string): boolean {
+  const k = key.toLowerCase();
+  if (isRequestCloseFlowKey(k)) return false;
+  return (
+    k === "close" ||
+    k === "cierra" ||
+    k === "captain_close" ||
+    k.includes("close") ||
+    k.includes("cierre") ||
+    k.includes("cierra")
+  );
+}
+
+/**
+ * Deriva del snapshot qué botones corresponden (misma regla que API).
+ * Sin snapshot → EST clásico (capitán recibe y cierra).
+ */
+export function resolveWorkPermitFlowPolicy(
+  snapshot: WorkPermitApprovalFlowSnapshot | null | undefined,
+): WorkPermitFlowPolicy {
+  const stages = snapshot?.stages ?? [];
+  if (stages.length === 0) {
+    return {
+      hasReceiveStage: true,
+      hasRequestCloseStage: true,
+      closeActor: "captain",
+    };
+  }
+
+  const hasReceiveStage = stages.some(
+    (s) =>
+      isReceiveFlowKey(s.key) ||
+      (s.actor === "captain" && s.moment === "on_arrival"),
+  );
+  /** Pedido intermedio solo si lo hace contratista/área (no Prevención «cierra»). */
+  const hasRequestCloseStage = stages.some(
+    (s) =>
+      isRequestCloseFlowKey(s.key) &&
+      (s.actor === "contractor" || s.actor === "requesting_area"),
+  );
+  const closeStage =
+    [...stages].reverse().find((s) => isCloseFlowKey(s.key)) ??
+    [...stages]
+      .reverse()
+      .find(
+        (s) => isRequestCloseFlowKey(s.key) && s.actor === "prevention",
+      ) ??
+    [...stages]
+      .reverse()
+      .find((s) => s.moment === "on_finish" && s.actor !== "contractor");
+
+  const closeActor: WorkPermitCloseActor =
+    closeStage?.actor === "prevention" ? "prevention" : "captain";
+
+  return { hasReceiveStage, hasRequestCloseStage, closeActor };
+}
 
 /** Estado de una exigencia en P13b. */
 export type WorkPermitRequirementCheckStatus =
@@ -331,6 +501,23 @@ export async function approveWorkPermitRequest(
     method: "POST",
     headers: authHeaders(accessToken),
     body: JSON.stringify(signature),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as WorkPermit;
+}
+
+/**
+ * POST /api/v1/work-permits/:id/refresh-approval-flow
+ * Congela de nuevo el flujo default actual del tipo (PTs abiertos).
+ */
+export async function refreshWorkPermitApprovalFlowRequest(
+  accessToken: string,
+  id: string,
+): Promise<WorkPermit> {
+  const res = await fetch(`/api/v1/work-permits/${id}/refresh-approval-flow`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
   });
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw toApiError(res, body);

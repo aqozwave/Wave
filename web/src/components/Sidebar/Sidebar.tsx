@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   MapPin,
+  GitBranch,
   Package,
   PanelLeft,
   PanelLeftClose,
@@ -227,6 +228,13 @@ const CONFIG_LINKS: ReadonlyArray<NavLink> = [
     canShow: (u) => canSeeCatalogos(u),
   },
   {
+    label: "Flujos de aprobación",
+    to: "/configuracion/flujos",
+    icon: GitBranch,
+    /** P16 · solo Superadmin (misma regla que la API). */
+    canShow: (u) => u?.internalRol === "superadmin",
+  },
+  {
     label: "Usuarios",
     to: "/usuarios",
     icon: Users,
@@ -282,6 +290,7 @@ export function Sidebar() {
     location.pathname.startsWith("/empresas") ||
     location.pathname.startsWith("/ubicaciones") ||
     location.pathname.startsWith("/catalogos") ||
+    location.pathname.startsWith("/configuracion") ||
     location.pathname.startsWith("/usuarios");
   /** Rutas bajo Tripulación (lista + ficha). */
   const onCrewSection = location.pathname.startsWith("/embarcados");

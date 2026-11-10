@@ -21,13 +21,14 @@ headers {
 body:json {
   {
     "name": "Tipo de prueba (editado)",
-    "active": false
+    "defaultApprovalFlowId": "{{approvalFlowId}}",
+    "active": true
   }
 }
 
 docs {
-  Editar campos o desactivar (active=false) sin soft-delete.
-  Corré antes Post permit type o Get permit types.
+  Editar campos, asignar flujo (defaultApprovalFlowId) o desactivar (active=false).
+  Corré antes Post permit type o Get permit types. approvalFlowId = id de EST o copia.
 }
 
 script:pre-request {

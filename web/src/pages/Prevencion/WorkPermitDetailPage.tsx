@@ -23,6 +23,7 @@ import {
 } from "../../lib/api/accreditations";
 import {
   WORK_PERMIT_SIGNATURE_SLOTS,
+  approvalFlowStageStates,
   approveWorkPermitRequest,
   closeWorkPermitRequest,
   getWorkPermitChecklistRequest,
@@ -31,9 +32,11 @@ import {
   listWorkPermitHistoryRequest,
   listWorkPermitPeopleRequest,
   receiveWorkPermitRequest,
+  refreshWorkPermitApprovalFlowRequest,
   rejectCloseWorkPermitRequest,
   rejectReceiptWorkPermitRequest,
   requestCloseWorkPermitRequest,
+  resolveWorkPermitFlowPolicy,
   returnWorkPermitRequest,
   workPermitStatusLabel,
   type WorkPermit,
@@ -159,40 +162,38 @@ const outlineBtnClass =
   "inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60";
 
 /**
- * Firmas que ya deberían existir según el estado actual del PT.
- * Sirve para detectar PT transitados antes de P6c (sin backfill).
+ * Firmas esperadas según estado + política del flujo congelado.
+ * Omite recepción/pedido de cierre si el flujo no los tiene.
  */
 function expectedSignatureKindsForStatus(
   status: WorkPermitStatus,
+  policy: ReturnType<typeof resolveWorkPermitFlowPolicy>,
 ): string[] {
-  switch (status) {
-    case "to_receive":
-      return ["prevention_approve"];
-    case "active":
-      return ["prevention_approve", "captain_receive"];
-    case "to_verify":
-      return [
-        "prevention_approve",
-        "captain_receive",
-        "contractor_request_close",
-      ];
-    case "closed":
-      return [
-        "prevention_approve",
-        "captain_receive",
-        "contractor_request_close",
-        "captain_close",
-      ];
-    case "no_closure":
-      return [
-        "prevention_approve",
-        "captain_receive",
-        "contractor_request_close",
-        "captain_no_closure",
-      ];
-    default:
-      return [];
+  const kinds: string[] = [];
+  const pastApprove =
+    status === "to_receive" ||
+    status === "active" ||
+    status === "to_verify" ||
+    status === "closed" ||
+    status === "no_closure";
+  if (pastApprove) kinds.push("prevention_approve");
+
+  const pastReceive =
+    status === "active" ||
+    status === "to_verify" ||
+    status === "closed" ||
+    status === "no_closure";
+  if (pastReceive && policy.hasReceiveStage) kinds.push("captain_receive");
+
+  const pastRequestClose =
+    status === "to_verify" || status === "closed" || status === "no_closure";
+  if (pastRequestClose && policy.hasRequestCloseStage) {
+    kinds.push("contractor_request_close");
   }
+
+  if (status === "closed") kinds.push("captain_close");
+  if (status === "no_closure") kinds.push("captain_no_closure");
+  return kinds;
 }
 
 /**
@@ -202,19 +203,21 @@ function expectedSignatureKindsForStatus(
 function signaturesLagBehindStatus(
   status: WorkPermitStatus,
   signatures: WorkPermitDocumentSignature[],
+  policy: ReturnType<typeof resolveWorkPermitFlowPolicy>,
 ): boolean {
-  const expected = expectedSignatureKindsForStatus(status);
+  const expected = expectedSignatureKindsForStatus(status, policy);
   if (expected.length === 0) return false;
   const present = new Set(signatures.map((s) => s.kind));
   return expected.some((kind) => !present.has(kind));
 }
 
 /**
- * Arma la lista de hitos (firmados + pendientes) para el bloque Documento.
- * Omite el hito de cierre no usado cuando ya existe el otro (cierre ↔ sin cierre).
+ * Hitos de firma según el flujo congelado (no siempre el ciclo EST).
+ * Omite recepción/pedido intermedio si el policy no los tiene.
  */
 function buildSignatureRows(
   signatures: WorkPermitDocumentSignature[],
+  policy: ReturnType<typeof resolveWorkPermitFlowPolicy>,
 ): Array<{
   kind: string;
   label: string;
@@ -225,19 +228,49 @@ function buildSignatureRows(
   const hasNoClosure = byKind.has("captain_no_closure");
 
   return WORK_PERMIT_SIGNATURE_SLOTS.filter((slot) => {
+    if (slot.kind === "captain_receive" && !policy.hasReceiveStage) {
+      return false;
+    }
+    if (
+      slot.kind === "contractor_request_close" &&
+      !policy.hasRequestCloseStage
+    ) {
+      return false;
+    }
     if (slot.kind === "captain_close" && hasNoClosure && !hasClose) {
       return false;
     }
     if (slot.kind === "captain_no_closure" && hasClose && !hasNoClosure) {
       return false;
     }
-    // Sin ninguna firma de cierre: se muestran ambos como pendientes.
     return true;
-  }).map((slot) => ({
-    kind: slot.kind,
-    label: slot.label,
-    signed: byKind.get(slot.kind) ?? null,
-  }));
+  }).map((slot) => {
+    let label = slot.label;
+    if (slot.kind === "captain_close" && policy.closeActor === "prevention") {
+      label = "Cierre del trabajo (Prevención)";
+    }
+    return {
+      kind: slot.kind,
+      label,
+      signed: byKind.get(slot.kind) ?? null,
+    };
+  });
+}
+
+/** Texto de ayuda del bloque Firmas según el flujo. */
+function signatureHelpText(
+  policy: ReturnType<typeof resolveWorkPermitFlowPolicy>,
+): string {
+  if (!policy.hasReceiveStage && policy.closeActor === "prevention") {
+    return "Prevención aprueba y cierra con pad + confirmación. Este flujo no usa autorización a bordo del capitán.";
+  }
+  if (!policy.hasReceiveStage) {
+    return "Prevención aprueba con pad. Este flujo no exige autorización a bordo.";
+  }
+  if (policy.closeActor === "prevention") {
+    return "Prevención aprueba; el capitán autoriza a bordo; Prevención cierra con pad.";
+  }
+  return "Prevención y capitán firman con pad + confirmación al aprobar, autorizar a bordo o cerrar. Pedir cierre solo registra el acto.";
 }
 
 /**
@@ -421,7 +454,7 @@ export function WorkPermitDetailPage() {
           payload,
         );
         showToast(
-          `${updated.code} · ${workPermitStatusLabel("to_receive")}.`,
+          `${updated.code} · ${workPermitStatusLabel(updated.status)}.`,
           "success",
         );
       } else if (signKind === "receive") {
@@ -457,6 +490,32 @@ export function WorkPermitDetailPage() {
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo firmar.",
+        "danger",
+      );
+    } finally {
+      setActing(false);
+    }
+  }
+
+  /** Reaplica el flujo default actual del tipo sobre este PT abierto. */
+  async function onRefreshFlow() {
+    if (!accessToken || !permit || acting) return;
+    setActing(true);
+    try {
+      const updated = await refreshWorkPermitApprovalFlowRequest(
+        accessToken,
+        permit.id,
+      );
+      applyPermitAfterTransition(updated);
+      showToast(
+        updated.approvalFlowSnapshot
+          ? `${updated.code} · flujo ${updated.approvalFlowSnapshot.code} aplicado`
+          : `${updated.code} · flujo actualizado`,
+        "success",
+      );
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo reaplicar el flujo",
         "danger",
       );
     } finally {
@@ -600,6 +659,20 @@ export function WorkPermitDetailPage() {
                       Completar
                     </Button>
                   ) : null}
+                  {canUpdate &&
+                  isStaff &&
+                  permit.status !== "closed" &&
+                  permit.status !== "no_closure" ? (
+                    <button
+                      type="button"
+                      className={outlineBtnClass}
+                      disabled={acting}
+                      onClick={() => void onRefreshFlow()}
+                      title="Congela de nuevo el flujo asignado al tipo de permiso"
+                    >
+                      Reaplicar flujo del tipo
+                    </button>
+                  ) : null}
                   {canUpdate && isStaff && permit.status === "to_approve" ? (
                     <>
                       <Button
@@ -624,65 +697,121 @@ export function WorkPermitDetailPage() {
                       </button>
                     </>
                   ) : null}
-                  {canReceive && isStaff && permit.status === "to_receive" ? (
-                    <>
-                      <Button
-                        type="button"
-                        size="medium"
-                        className="!w-auto"
-                        disabled={acting}
-                        onClick={() => setSignKind("receive")}
-                      >
-                        Autorizar a bordo
-                      </Button>
-                      <button
-                        type="button"
-                        className={outlineBtnClass}
-                        disabled={acting}
-                        onClick={() => {
-                          setReviewNote("");
-                          setNoteModal("reject-receipt");
-                        }}
-                      >
-                        No autorizar
-                      </button>
-                    </>
-                  ) : null}
-                  {canUpdate && permit.status === "active" ? (
-                    <Button
-                      type="button"
-                      size="medium"
-                      className="!w-auto"
-                      disabled={acting}
-                      onClick={() => {
-                        setReviewNote("");
-                        setNoteModal("request-close");
-                      }}
-                    >
-                      Pedir cierre
-                    </Button>
-                  ) : null}
-                  {canReceive && isStaff && permit.status === "to_verify" ? (
-                    <>
-                      <Button
-                        type="button"
-                        size="medium"
-                        className="!w-auto"
-                        disabled={acting}
-                        onClick={() => setSignKind("close")}
-                      >
-                        Cerrar trabajo
-                      </Button>
-                      <button
-                        type="button"
-                        className={outlineBtnClass}
-                        disabled={acting}
-                        onClick={() => setSignKind("reject-close")}
-                      >
-                        Sin cierre
-                      </button>
-                    </>
-                  ) : null}
+                  {(() => {
+                    const flowPolicy = resolveWorkPermitFlowPolicy(
+                      permit.approvalFlowSnapshot,
+                    );
+                    const canCaptainReceive =
+                      canReceive &&
+                      isStaff &&
+                      flowPolicy.hasReceiveStage &&
+                      permit.status === "to_receive";
+                    /** PT trabado en to_receive sin etapa receive: Prevención continúa. */
+                    const canSkipReceive =
+                      canUpdate &&
+                      isStaff &&
+                      !flowPolicy.hasReceiveStage &&
+                      permit.status === "to_receive";
+                    const canRequestClose =
+                      canUpdate &&
+                      permit.status === "active" &&
+                      flowPolicy.hasRequestCloseStage;
+                    const canPreventionCloseDirect =
+                      canUpdate &&
+                      isStaff &&
+                      flowPolicy.closeActor === "prevention" &&
+                      !flowPolicy.hasRequestCloseStage &&
+                      permit.status === "active";
+                    const canFinalClose =
+                      isStaff &&
+                      (flowPolicy.closeActor === "prevention"
+                        ? canUpdate
+                        : canReceive) &&
+                      (permit.status === "to_verify" ||
+                        (flowPolicy.closeActor === "prevention" &&
+                          !flowPolicy.hasRequestCloseStage &&
+                          permit.status === "active"));
+
+                    return (
+                      <>
+                        {canCaptainReceive ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="medium"
+                              className="!w-auto"
+                              disabled={acting}
+                              onClick={() => setSignKind("receive")}
+                            >
+                              Autorizar a bordo
+                            </Button>
+                            <button
+                              type="button"
+                              className={outlineBtnClass}
+                              disabled={acting}
+                              onClick={() => {
+                                setReviewNote("");
+                                setNoteModal("reject-receipt");
+                              }}
+                            >
+                              No autorizar
+                            </button>
+                          </>
+                        ) : null}
+                        {canSkipReceive ? (
+                          <Button
+                            type="button"
+                            size="medium"
+                            className="!w-auto"
+                            disabled={acting}
+                            onClick={() => setSignKind("receive")}
+                          >
+                            Continuar (sin recepción)
+                          </Button>
+                        ) : null}
+                        {canRequestClose ? (
+                          <Button
+                            type="button"
+                            size="medium"
+                            className="!w-auto"
+                            disabled={acting}
+                            onClick={() => {
+                              setReviewNote("");
+                              setNoteModal("request-close");
+                            }}
+                          >
+                            Pedir cierre
+                          </Button>
+                        ) : null}
+                        {canPreventionCloseDirect ||
+                        (canFinalClose && permit.status === "to_verify") ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="medium"
+                              className="!w-auto"
+                              disabled={acting}
+                              onClick={() => setSignKind("close")}
+                            >
+                              {flowPolicy.closeActor === "prevention"
+                                ? "Cerrar trabajo (Prevención)"
+                                : "Cerrar trabajo"}
+                            </Button>
+                            {permit.status === "to_verify" ? (
+                              <button
+                                type="button"
+                                className={outlineBtnClass}
+                                disabled={acting}
+                                onClick={() => setSignKind("reject-close")}
+                              >
+                                Sin cierre
+                              </button>
+                            ) : null}
+                          </>
+                        ) : null}
+                      </>
+                    );
+                  })()}
                 </div>
               ) : undefined
             }
@@ -739,6 +868,14 @@ export function WorkPermitDetailPage() {
               value={workPermitStatusLabel(permit.status)}
             />
             <Row
+              label="Flujo"
+              value={
+                permit.approvalFlowSnapshot
+                  ? `${permit.approvalFlowSnapshot.code} · ${permit.approvalFlowSnapshot.name}`
+                  : "—"
+              }
+            />
+            <Row
               label="Descripción"
               value={permit.description?.trim() || "—"}
             />
@@ -749,6 +886,50 @@ export function WorkPermitDetailPage() {
               label="Actualizado"
               value={formatDateTime(permit.updatedAt)}
             />
+            {permit.approvalFlowSnapshot &&
+            permit.approvalFlowSnapshot.stages.length > 0 ? (
+              <div className="col-span-full mt-2 border-t border-[var(--color-tremor-border)] pt-3">
+                <p className="m-0 mb-2 text-[12px] font-medium text-[var(--color-nachipa-secondary)]">
+                  Etapas del flujo (congeladas al crear)
+                </p>
+                <ol className="m-0 flex list-none flex-col gap-2 p-0">
+                  {permit.approvalFlowSnapshot.stages.map((stage, index) => {
+                    const state = approvalFlowStageStates(
+                      permit.status,
+                      permit.approvalFlowSnapshot!.stages,
+                    )[index];
+                    return (
+                      <li
+                        key={`${stage.position}-${stage.key}`}
+                        className="flex items-start gap-2 text-[13px]"
+                      >
+                        <span
+                          className={[
+                            "mt-1 inline-block size-2.5 shrink-0 rounded-full",
+                            state === "done"
+                              ? "bg-[var(--color-nachipa-primary)]"
+                              : state === "current"
+                                ? "border-2 border-[var(--color-nachipa-primary)] bg-white"
+                                : "bg-[var(--color-tremor-border,#e4e4e7)]",
+                          ].join(" ")}
+                          aria-hidden
+                        />
+                        <span className="min-w-0">
+                          <span className="font-medium text-[var(--color-nachipa-title)]">
+                            {stage.position}. {stage.label}
+                          </span>
+                          <span className="mt-0.5 block text-[12px] text-[var(--color-nachipa-secondary)]">
+                            {stage.key}
+                            {state === "current" ? " · actual" : ""}
+                            {state === "done" ? " · hecha" : ""}
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+            ) : null}
           </div>
         ) : tab === "personal" ? (
           tabLoading ? (
@@ -1130,32 +1311,37 @@ export function WorkPermitDetailPage() {
                       : ""}
                   </h3>
                   {(() => {
+                    const flowPolicy = resolveWorkPermitFlowPolicy(
+                      permitDoc.permit.approvalFlowSnapshot,
+                    );
                     const lag = signaturesLagBehindStatus(
                       permitDoc.permit.status,
                       permitDoc.signatures,
+                      flowPolicy,
                     );
                     const expectedPast = new Set(
-                      expectedSignatureKindsForStatus(permitDoc.permit.status),
+                      expectedSignatureKindsForStatus(
+                        permitDoc.permit.status,
+                        flowPolicy,
+                      ),
                     );
                     return (
                       <>
                         <p className="m-0 mb-2 text-[12px] text-[var(--color-nachipa-secondary)] print:hidden">
-                          Prevención y capitán firman con pad + confirmación al
-                          aprobar, autorizar a bordo o cerrar. Pedir cierre solo
-                          registra el acto.
+                          {signatureHelpText(flowPolicy)}
                         </p>
                         {lag ? (
                           <p className="m-0 mb-3 rounded-[var(--radius-md)] border border-[var(--color-status-warning-border,#fed7aa)] bg-[var(--color-status-warning-bg,#ffedd5)] px-3 py-2 text-[12px] text-[var(--color-nachipa-title)] print:hidden">
-                            Este permiso avanzó sin firmas manuscritas. Sin
-                            Aprobación Prevención y Autorización a bordo
-                            firmadas no se puede pedir cierre ni cerrar el
-                            trabajo. Hay que rehacer el ciclo desde «En
-                            revisión» (o pedir backfill).
+                            Este permiso avanzó sin firmas manuscritas de los
+                            hitos del flujo. Puede hacer falta rehacer el ciclo
+                            o reaplicar el flujo del tipo.
                           </p>
                         ) : null}
                         <ul className="m-0 list-none space-y-3 p-0">
-                          {buildSignatureRows(permitDoc.signatures).map(
-                            (row) => (
+                          {buildSignatureRows(
+                            permitDoc.signatures,
+                            flowPolicy,
+                          ).map((row) => (
                               <li
                                 key={row.kind}
                                 className="border-t border-[var(--color-tremor-border)] pt-3"
@@ -1205,8 +1391,7 @@ export function WorkPermitDetailPage() {
                             ),
                           )}
                         </ul>
-                      </>
-                    );
+                      </>                    );
                   })()}
                 </section>
               </div>

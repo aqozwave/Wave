@@ -4,7 +4,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { FileStack, Pencil } from "lucide-react";
+import { ChevronDown, FileStack, Pencil } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router";
 import { Button } from "../../components/Button/Button";
 import { Modal } from "../../components/Modal/Modal";
@@ -15,6 +15,10 @@ import { Toggle } from "../../components/Toggle/Toggle";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { useToast } from "../../components/Toast/ToastProvider";
+import {
+  listApprovalFlowsRequest,
+  type ApprovalFlowListItem,
+} from "../../lib/api/approvalFlows";
 import {
   deletePermitTypeRequest,
   getPermitTypeRequest,
@@ -45,6 +49,8 @@ type EditForm = {
   requiresAst: boolean;
   astMode: PermitAstMode | "";
   description: string;
+  /** Id del flujo default; "" = sin asignar. */
+  defaultApprovalFlowId: string;
   active: boolean;
 };
 
@@ -77,6 +83,8 @@ export function PermitTypeDetailPage() {
   /** Confirmar desactivar tipo con Modal del sistema. */
   const [deactivateOpen, setDeactivateOpen] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
+  /** Flujos activos de la empresa del tipo (select P15d). */
+  const [flows, setFlows] = useState<ApprovalFlowListItem[]>([]);
 
   const load = useCallback(async () => {
     if (!accessToken || !id) return;
@@ -105,6 +113,17 @@ export function PermitTypeDetailPage() {
     void load();
   }, [load]);
 
+  /** Carga flujos activos del tenant del tipo para el select. */
+  useEffect(() => {
+    if (!accessToken || !permitType || !canManage) return;
+    void listApprovalFlowsRequest(accessToken, 1, 100, {
+      businessId: permitType.businessId,
+      active: true,
+    })
+      .then((res) => setFlows(res.items))
+      .catch(() => setFlows([]));
+  }, [accessToken, permitType, canManage]);
+
   /** Abre modal con datos actuales. */
   function openEdit() {
     if (!permitType) return;
@@ -114,6 +133,7 @@ export function PermitTypeDetailPage() {
       requiresAst: permitType.requiresAst,
       astMode: permitType.astMode ?? "",
       description: permitType.description ?? "",
+      defaultApprovalFlowId: permitType.defaultApprovalFlowId ?? "",
       active: permitType.active,
     });
     setEditOpen(true);
@@ -139,6 +159,7 @@ export function PermitTypeDetailPage() {
         requiresAst: form.requiresAst,
         astMode: form.requiresAst ? (form.astMode as PermitAstMode) : null,
         description: form.description.trim() || undefined,
+        defaultApprovalFlowId: form.defaultApprovalFlowId || null,
         active: form.active,
       });
       setPermitType(updated);
@@ -275,6 +296,16 @@ export function PermitTypeDetailPage() {
                     </StatusChip>
                   </dd>
                 </div>
+                <div>
+                  <dt className="text-[11px] text-[var(--color-nachipa-secondary)]">
+                    Flujo de aprobación
+                  </dt>
+                  <dd className="m-0 mt-0.5 text-[13px] text-[var(--color-nachipa-title)]">
+                    {permitType.defaultApprovalFlow
+                      ? `${permitType.defaultApprovalFlow.code} · ${permitType.defaultApprovalFlow.name} (${permitType.defaultApprovalFlow.stageCount} etapas)`
+                      : "Sin asignar"}
+                  </dd>
+                </div>
               </dl>
             </section>
 
@@ -379,6 +410,44 @@ export function PermitTypeDetailPage() {
                 )
               }
             />
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                Flujo de aprobación
+              </span>
+              <span className="relative block w-full">
+                <select
+                  className={`${selectClass} appearance-none pr-10`}
+                  value={form.defaultApprovalFlowId}
+                  onChange={(e) =>
+                    setForm((f) =>
+                      f
+                        ? { ...f, defaultApprovalFlowId: e.target.value }
+                        : f,
+                    )
+                  }
+                  name="defaultApprovalFlowId"
+                  autoComplete="off"
+                >
+                  <option value="">Sin asignar</option>
+                  {flows.map((flow) => (
+                    <option key={flow.id} value={flow.id}>
+                      {flow.code} · {flow.name}
+                      {flow.isSystem ? " (sistema)" : ""} · {flow.stageCount}{" "}
+                      etapas
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={16}
+                  strokeWidth={1.5}
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-icon-default)]"
+                  aria-hidden
+                />
+              </span>
+              <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                Se congela en cada permiso nuevo de este tipo.
+              </span>
+            </label>
             <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] p-3">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">

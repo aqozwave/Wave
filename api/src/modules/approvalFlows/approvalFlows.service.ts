@@ -7,7 +7,10 @@ import {
   type ApprovalFlowDetail,
   type ApprovalFlowListItem,
   type CreateApprovalFlowBody,
+  type CreateApprovalFlowStageBody,
   type ListApprovalFlowsQuery,
+  type UpdateApprovalFlowBody,
+  type UpdateApprovalFlowStageBody,
 } from "./approvalFlows.schemas.js";
 
 /** Actor mínimo (P16 · rutas Superadmin). */
@@ -276,6 +279,57 @@ export async function createApprovalFlow(
     );
   }
 
+  /** Cantidad pedida; por defecto todas las del origen. */
+  const targetCount = body.stageCount ?? source.stages.length;
+  if (targetCount < 1 || targetCount > MAX_APPROVAL_FLOW_STAGES) {
+    throw new AppError(
+      400,
+      "validation_error",
+      `stageCount debe estar entre 1 y ${MAX_APPROVAL_FLOW_STAGES}`,
+    );
+  }
+
+  const fromSource = source.stages.slice(
+    0,
+    Math.min(targetCount, source.stages.length),
+  );
+  type StageCreate = {
+    position: number;
+    key: string;
+    label: string;
+    actor: (typeof fromSource)[number]["actor"];
+    moment: (typeof fromSource)[number]["moment"];
+    requiresSignature: boolean;
+    mandatory: boolean;
+    fixed: boolean;
+  };
+  const stagesToCreate: StageCreate[] = fromSource.map((s, idx) => ({
+    position: idx + 1,
+    key: s.key,
+    label: s.label,
+    actor: s.actor,
+    moment: s.moment,
+    requiresSignature: s.requiresSignature,
+    mandatory: s.mandatory,
+    /** Copia personalizada: todas editables (solo EST sistema es fijo). */
+    fixed: false,
+  }));
+
+  /** Rellena hasta targetCount con etapas editables. */
+  for (let i = stagesToCreate.length; i < targetCount; i += 1) {
+    const position = i + 1;
+    stagesToCreate.push({
+      position,
+      key: `custom_${position}`,
+      label: `Etapa ${position} (completar)`,
+      actor: "prevention",
+      moment: "before",
+      requiresSignature: false,
+      mandatory: true,
+      fixed: false,
+    });
+  }
+
   try {
     const created = await prisma.approvalFlow.create({
       data: {
@@ -287,17 +341,7 @@ export async function createApprovalFlow(
         copiedFromId: source.id,
         active: true,
         stages: {
-          create: source.stages.map((s) => ({
-            position: s.position,
-            key: s.key,
-            label: s.label,
-            actor: s.actor,
-            moment: s.moment,
-            requiresSignature: s.requiresSignature,
-            mandatory: s.mandatory,
-            /** En la copia, las fijas del EST siguen fijas; extras futuras no. */
-            fixed: s.fixed,
-          })),
+          create: stagesToCreate,
         },
       },
       include: flowDetailInclude,
@@ -316,4 +360,216 @@ export async function createApprovalFlow(
     }
     throw err;
   }
+}
+
+/**
+ * Carga un flujo editable (no sistema) o lanza.
+ * Devuelve la fila con stages para mutaciones.
+ */
+async function loadEditableFlow(actor: Actor, id: string) {
+  const row = await prisma.approvalFlow.findFirst({
+    where: { id, deletedAt: null },
+    include: { stages: { orderBy: { position: "asc" } } },
+  });
+  if (!row) {
+    throw new AppError(404, "approval_flow_not_found", "Flujo no encontrado");
+  }
+  assertCanAccessBusiness(actor, row.businessId);
+  if (row.isSystem) {
+    throw new AppError(
+      400,
+      "system_flow_readonly",
+      "El flujo de sistema no se puede editar; duplicálo primero",
+    );
+  }
+  return row;
+}
+
+/** Relee detalle completo tras mutar. */
+async function reloadDetail(id: string): Promise<ApprovalFlowDetail> {
+  const row = await prisma.approvalFlow.findFirstOrThrow({
+    where: { id },
+    include: flowDetailInclude,
+  });
+  return toDetail(row);
+}
+
+/** Renumera posiciones 1..n en orden actual. */
+async function renumberStages(flowId: string): Promise<void> {
+  const stages = await prisma.approvalFlowStage.findMany({
+    where: { flowId },
+    orderBy: { position: "asc" },
+    select: { id: true },
+  });
+  for (let i = 0; i < stages.length; i += 1) {
+    await prisma.approvalFlowStage.update({
+      where: { id: stages[i]!.id },
+      data: { position: i + 1 },
+    });
+  }
+}
+
+/** PATCH flujo: nombre, descripción, activo. */
+export async function updateApprovalFlow(
+  actor: Actor,
+  id: string,
+  body: UpdateApprovalFlowBody,
+): Promise<ApprovalFlowDetail> {
+  await loadEditableFlow(actor, id);
+
+  await prisma.approvalFlow.update({
+    where: { id },
+    data: {
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.description !== undefined
+        ? { description: body.description }
+        : {}),
+      ...(body.active !== undefined ? { active: body.active } : {}),
+    },
+  });
+
+  return reloadDetail(id);
+}
+
+/** POST etapa extra al final (máx. 8). */
+export async function addApprovalFlowStage(
+  actor: Actor,
+  flowId: string,
+  body: CreateApprovalFlowStageBody,
+): Promise<ApprovalFlowDetail> {
+  const flow = await loadEditableFlow(actor, flowId);
+
+  if (flow.stages.length >= MAX_APPROVAL_FLOW_STAGES) {
+    throw new AppError(
+      400,
+      "max_stages_reached",
+      `Máximo ${MAX_APPROVAL_FLOW_STAGES} etapas por flujo`,
+    );
+  }
+
+  const keyTaken = flow.stages.some((s) => s.key === body.key);
+  if (keyTaken) {
+    throw new AppError(
+      409,
+      "duplicate_stage_key",
+      `Ya existe una etapa con clave ${body.key}`,
+    );
+  }
+
+  const position = flow.stages.length + 1;
+
+  try {
+    await prisma.approvalFlowStage.create({
+      data: {
+        flowId,
+        position,
+        key: body.key,
+        label: body.label,
+        actor: body.actor,
+        moment: body.moment,
+        requiresSignature: body.requiresSignature,
+        mandatory: body.mandatory,
+        fixed: false,
+      },
+    });
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      throw new AppError(
+        409,
+        "duplicate_stage_key",
+        `Ya existe una etapa con clave ${body.key}`,
+      );
+    }
+    throw err;
+  }
+
+  return reloadDetail(flowId);
+}
+
+/** PATCH etapa (también las fijas de una copia personalizada). */
+export async function updateApprovalFlowStage(
+  actor: Actor,
+  flowId: string,
+  stageId: string,
+  body: UpdateApprovalFlowStageBody,
+): Promise<ApprovalFlowDetail> {
+  const flow = await loadEditableFlow(actor, flowId);
+  const stage = flow.stages.find((s) => s.id === stageId);
+  if (!stage) {
+    throw new AppError(404, "stage_not_found", "Etapa no encontrada");
+  }
+
+  await prisma.approvalFlowStage.update({
+    where: { id: stageId },
+    data: {
+      ...(body.label !== undefined ? { label: body.label } : {}),
+      ...(body.actor !== undefined ? { actor: body.actor } : {}),
+      ...(body.moment !== undefined ? { moment: body.moment } : {}),
+      ...(body.requiresSignature !== undefined
+        ? { requiresSignature: body.requiresSignature }
+        : {}),
+      ...(body.mandatory !== undefined ? { mandatory: body.mandatory } : {}),
+    },
+  });
+
+  return reloadDetail(flowId);
+}
+
+/**
+ * Soft-delete de un flujo personalizado.
+ * Desasigna tipos que lo tenían como default; EST sistema no se borra.
+ */
+export async function deleteApprovalFlow(
+  actor: Actor,
+  id: string,
+): Promise<ApprovalFlowDetail> {
+  await loadEditableFlow(actor, id);
+
+  await prisma.$transaction([
+    prisma.permitType.updateMany({
+      where: { defaultApprovalFlowId: id },
+      data: { defaultApprovalFlowId: null },
+    }),
+    prisma.approvalFlow.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        active: false,
+      },
+    }),
+  ]);
+
+  return reloadDetail(id);
+}
+
+/** DELETE etapa no fija; renumera posiciones. */
+export async function deleteApprovalFlowStage(
+  actor: Actor,
+  flowId: string,
+  stageId: string,
+): Promise<ApprovalFlowDetail> {
+  const flow = await loadEditableFlow(actor, flowId);
+  const stage = flow.stages.find((s) => s.id === stageId);
+  if (!stage) {
+    throw new AppError(404, "stage_not_found", "Etapa no encontrada");
+  }
+  /**
+   * En flujos personalizados se puede quitar cualquier etapa
+   * (incluidas las que vinieron marcadas fixed al copiar EST viejo).
+   * EST sistema no llega acá (loadEditableFlow lo bloquea).
+   */
+  if (flow.stages.length <= 1) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "El flujo debe conservar al menos una etapa",
+    );
+  }
+
+  await prisma.approvalFlowStage.delete({ where: { id: stageId } });
+  await renumberStages(flowId);
+  return reloadDetail(flowId);
 }
