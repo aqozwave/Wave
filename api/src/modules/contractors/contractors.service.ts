@@ -19,7 +19,10 @@ import type {
   ContractorPersonDocumentResponse,
 } from "../accreditationDocuments/accreditationDocuments.schemas.js";
 import type { AccreditationResponse } from "../accreditations/accreditations.schemas.js";
-import { submitAccreditation } from "../accreditations/accreditations.service.js";
+import {
+  clearAdditionalDocsRequestIfFulfilled,
+  submitAccreditation,
+} from "../accreditations/accreditations.service.js";
 import type {
   ContractorOrganizationResponse,
   ContractorPersonResponse,
@@ -1177,6 +1180,15 @@ export async function getMyContractorAccreditation(
       "No hay habilitación para tu organización",
     );
   }
+
+  // Auto-cura: pedido adicional ya cubierto → no mostrar aviso en el portal.
+  const cleared = await clearAdditionalDocsRequestIfFulfilled(hab.id);
+  const awaitingAdditionalDocs = cleared ? false : hab.awaitingAdditionalDocs;
+  const additionalDocsMessage = cleared ? null : hab.additionalDocsMessage;
+  const additionalDocsTypeIds = cleared
+    ? []
+    : (hab.additionalDocsTypeIds ?? []);
+
   return {
     id: hab.id,
     code: hab.code,
@@ -1190,9 +1202,9 @@ export async function getMyContractorAccreditation(
     status: hab.status,
     message: hab.message,
     reviewNote: hab.reviewNote,
-    awaitingAdditionalDocs: hab.awaitingAdditionalDocs,
-    additionalDocsMessage: hab.additionalDocsMessage,
-    additionalDocsTypeIds: hab.additionalDocsTypeIds ?? [],
+    awaitingAdditionalDocs,
+    additionalDocsMessage,
+    additionalDocsTypeIds,
     requestedAt: hab.requestedAt ? hab.requestedAt.toISOString() : null,
     requestedById: hab.requestedById,
     dueAt: hab.dueAt ? hab.dueAt.toISOString() : null,

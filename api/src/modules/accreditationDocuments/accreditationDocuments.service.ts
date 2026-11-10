@@ -18,6 +18,7 @@ import {
 } from "../../lib/localUploads.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
+import { clearAdditionalDocsRequestIfFulfilled } from "../accreditations/accreditations.service.js";
 import type {
   ContractorOrgDocumentResponse,
   ContractorPersonDocumentResponse,
@@ -237,8 +238,12 @@ export async function listAccreditationDocuments(
 }> {
   const hab = await loadAccreditationForActor(actor, accreditationId);
 
+  // Si los adicionales pedidos ya están cargados, cierra el pedido antes del checklist.
+  const clearedAdditional = await clearAdditionalDocsRequestIfFulfilled(hab.id);
   const additionalTypeIds =
-    hab.awaitingAdditionalDocs && hab.additionalDocsTypeIds.length > 0
+    !clearedAdditional &&
+    hab.awaitingAdditionalDocs &&
+    hab.additionalDocsTypeIds.length > 0
       ? hab.additionalDocsTypeIds
       : [];
   const uploadable = await resolveCompanyUploadableDocTypes(
@@ -483,6 +488,11 @@ export async function createAccreditationDocument(
 
     return row;
   });
+
+  // Tras subir el último tipo del pedido adicional, cierra el flag automáticamente.
+  if (hab.awaitingAdditionalDocs) {
+    await clearAdditionalDocsRequestIfFulfilled(hab.id);
+  }
 
   return toDocResponse(created);
 }

@@ -231,7 +231,21 @@ export async function getAccreditationById(
     );
   }
   assertAccreditationTenantAccess(actor, row.organization.businessId);
-  return toAccreditationResponse(row);
+  // Pedido adicional ya cubierto → cierra flag (Prevención deja de ver “Esperando”).
+  const cleared = await clearAdditionalDocsRequestIfFulfilled(row.id);
+  if (!cleared) return toAccreditationResponse(row);
+  const fresh = await prisma.contractorAccreditation.findFirst({
+    where: { id, deletedAt: null },
+    include: organizationInclude,
+  });
+  if (!fresh || fresh.organization.deletedAt) {
+    throw new AppError(
+      404,
+      "accreditation_not_found",
+      "Habilitación no encontrada",
+    );
+  }
+  return toAccreditationResponse(fresh);
 }
 
 /** Solicitar documentación → HAB en pending. */
@@ -759,8 +773,66 @@ export async function rejectAccreditation(
 }
 
 /**
+ * Si hay pedido adicional abierto y cada tipo pedido ya tiene doc vigente,
+ * cierra el pedido (mismo efecto que el cierre manual de Prevención).
+ * @returns true si cerró el pedido.
+ */
+export async function clearAdditionalDocsRequestIfFulfilled(
+  accreditationId: string,
+): Promise<boolean> {
+  const hab = await prisma.contractorAccreditation.findFirst({
+    where: { id: accreditationId, deletedAt: null },
+    select: {
+      id: true,
+      awaitingAdditionalDocs: true,
+      additionalDocsTypeIds: true,
+    },
+  });
+  if (!hab || !hab.awaitingAdditionalDocs) return false;
+
+  const typeIds = hab.additionalDocsTypeIds ?? [];
+  // Pedido vacío o incompleto de datos: cerrar para no dejar el aviso colgado.
+  if (typeIds.length === 0) {
+    await prisma.contractorAccreditation.update({
+      where: { id: hab.id },
+      data: {
+        awaitingAdditionalDocs: false,
+        additionalDocsMessage: null,
+        additionalDocsTypeIds: [],
+      },
+    });
+    return true;
+  }
+
+  // Un doc vigente por tipo = no deleted y no replaced.
+  const docs = await prisma.contractorOrgDocument.findMany({
+    where: {
+      accreditationId: hab.id,
+      documentTypeId: { in: typeIds },
+      deletedAt: null,
+      status: { not: "replaced" },
+    },
+    select: { documentTypeId: true },
+    distinct: ["documentTypeId"],
+  });
+  const present = new Set(docs.map((d) => d.documentTypeId));
+  if (!typeIds.every((id) => present.has(id))) return false;
+
+  await prisma.contractorAccreditation.update({
+    where: { id: hab.id },
+    data: {
+      awaitingAdditionalDocs: false,
+      additionalDocsMessage: null,
+      additionalDocsTypeIds: [],
+    },
+  });
+  return true;
+}
+
+/**
  * HAB aprobada: pide docs adicionales al contratista (sin nueva HAB ni perder approved).
  * El portal puede subir huecos vacíos mientras awaitingAdditionalDocs = true.
+ * Al completar todos los tipos pedidos, clearAdditionalDocsRequestIfFulfilled cierra solo.
  */
 export async function requestAdditionalDocuments(
   actor: Actor,
