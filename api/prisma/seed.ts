@@ -1,5 +1,7 @@
 import {
   AccreditationScope,
+  ApprovalFlowStageActor,
+  ApprovalFlowStageMoment,
   PermitAstMode,
   PermitCriticality,
   PermitRequirementKind,
@@ -11,6 +13,142 @@ import {
 import { hashPassword } from "../src/lib/password.js";
 
 const prisma = new PrismaClient();
+
+/**
+ * Etapas fijas del flujo sistema EST (Figma P15e · 5 etapas).
+ * key cablea el motor de estados del PT más adelante.
+ */
+const EST_STAGES: ReadonlyArray<{
+  position: number;
+  key: string;
+  label: string;
+  actor: ApprovalFlowStageActor;
+  moment: ApprovalFlowStageMoment;
+  requiresSignature: boolean;
+}> = [
+  {
+    position: 1,
+    key: "notice",
+    label:
+      "Informa los trabajos y las contratistas que irán a bordo",
+    actor: ApprovalFlowStageActor.requesting_area,
+    moment: ApprovalFlowStageMoment.before,
+    requiresSignature: false,
+  },
+  {
+    position: 2,
+    key: "create_permit",
+    label:
+      "Genera el permiso (empresa, RUT, fechas, descripción, área)",
+    actor: ApprovalFlowStageActor.prevention,
+    moment: ApprovalFlowStageMoment.before,
+    requiresSignature: false,
+  },
+  {
+    position: 3,
+    key: "complete",
+    label:
+      "Completa datos, identifica trabajadores y hace el checklist",
+    actor: ApprovalFlowStageActor.contractor,
+    moment: ApprovalFlowStageMoment.before,
+    requiresSignature: true,
+  },
+  {
+    position: 4,
+    key: "approve",
+    label: "Valida los datos y aprueba el permiso",
+    actor: ApprovalFlowStageActor.prevention,
+    moment: ApprovalFlowStageMoment.before,
+    requiresSignature: true,
+  },
+  {
+    position: 5,
+    key: "receive",
+    label:
+      "Recibe a los contratistas en el puente y hace el checklist",
+    actor: ApprovalFlowStageActor.captain,
+    moment: ApprovalFlowStageMoment.on_arrival,
+    requiresSignature: true,
+  },
+];
+
+/**
+ * Upsert del flujo sistema EST por empresa + etapas.
+ * Asigna defaultApprovalFlowId a tipos sin flujo.
+ */
+async function seedEstApprovalFlows(): Promise<number> {
+  const businesses = await prisma.business.findMany({
+    where: { deletedAt: null },
+    select: { id: true },
+  });
+  let upserts = 0;
+
+  for (const biz of businesses) {
+    const flow = await prisma.approvalFlow.upsert({
+      where: {
+        businessId_code: { businessId: biz.id, code: "EST" },
+      },
+      create: {
+        businessId: biz.id,
+        code: "EST",
+        name: "Estándar",
+        description:
+          "Flujo de sistema · 5 etapas fijas (Docx Nachipa).",
+        isSystem: true,
+        active: true,
+      },
+      update: {
+        name: "Estándar",
+        description:
+          "Flujo de sistema · 5 etapas fijas (Docx Nachipa).",
+        isSystem: true,
+        active: true,
+        deletedAt: null,
+      },
+    });
+    upserts += 1;
+
+    for (const stage of EST_STAGES) {
+      await prisma.approvalFlowStage.upsert({
+        where: {
+          flowId_key: { flowId: flow.id, key: stage.key },
+        },
+        create: {
+          flowId: flow.id,
+          position: stage.position,
+          key: stage.key,
+          label: stage.label,
+          actor: stage.actor,
+          moment: stage.moment,
+          requiresSignature: stage.requiresSignature,
+          mandatory: true,
+          fixed: true,
+        },
+        update: {
+          position: stage.position,
+          label: stage.label,
+          actor: stage.actor,
+          moment: stage.moment,
+          requiresSignature: stage.requiresSignature,
+          mandatory: true,
+          fixed: true,
+        },
+      });
+    }
+
+    // Tipos sin flujo default → EST de su empresa.
+    await prisma.permitType.updateMany({
+      where: {
+        businessId: biz.id,
+        deletedAt: null,
+        defaultApprovalFlowId: null,
+      },
+      data: { defaultApprovalFlowId: flow.id },
+    });
+  }
+
+  return upserts;
+}
 
 /**
  * Catálogo base P1: 5 tipos oficiales de Nachipa.
@@ -706,6 +844,10 @@ async function main() {
 
   const ecfCheck = await seedChecklistForCode("ECF", ECF_CHECKLIST);
   console.log(`permit_checklist_items (ECF) seed: ${ecfCheck} upserts`);
+
+  // Después de tipos: EST sistema + default en permit types.
+  const flowUpserts = await seedEstApprovalFlows();
+  console.log(`approval_flows (EST) seed: ${flowUpserts} upserts`);
 }
 
 main()

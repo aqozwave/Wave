@@ -295,6 +295,27 @@ enum WorkPermitChecklistAnswerValue {
 }
 
 /**
+ * Quién ejecuta una etapa del flujo de aprobación (P16).
+ * requesting_area = área que crea el aviso (User.areaId).
+ */
+enum ApprovalFlowStageActor {
+  requesting_area
+  prevention
+  contractor
+  captain
+}
+
+/**
+ * Momento relativo de la etapa en la faena (P16 columna Momento).
+ * before = antes de subir; on_arrival = al llegar al puente; on_finish = al terminar.
+ */
+enum ApprovalFlowStageMoment {
+  before
+  on_arrival
+  on_finish
+}
+
+/**
  * Estado de un documento de org contratista en la HAB.
  * pending_validation → validated | observed; replace marca el anterior replaced.
  */
@@ -543,6 +564,8 @@ model Business {
   workNotices             WorkNotice[]
   /// Permisos de trabajo en curso / historial.
   workPermits             WorkPermit[]
+  /// Plantillas de flujo de aprobación de PT (P16).
+  approvalFlows           ApprovalFlow[]
 
   @@index([name])
   @@map("businesses")
@@ -1367,6 +1390,9 @@ model PermitType {
   /// Null si requiresAst=false.
   astMode     PermitAstMode?    @map("ast_mode")
   description String?
+  /// Flujo de aprobación por defecto al crear un PT de este tipo (P16).
+  defaultApprovalFlowId String?       @map("default_approval_flow_id") @db.Uuid
+  defaultApprovalFlow   ApprovalFlow? @relation(fields: [defaultApprovalFlowId], references: [id], onDelete: SetNull)
   /// false = desactivado (Figma «Desactivar tipo»); no borra historial.
   active      Boolean           @default(true)
   deletedAt   DateTime?         @map("deleted_at") @db.Timestamptz
@@ -1384,7 +1410,70 @@ model PermitType {
   @@unique([businessId, code])
   @@index([businessId])
   @@index([active])
+  @@index([defaultApprovalFlowId])
   @@map("permit_types")
+}
+
+/**
+ * Plantilla de flujo de aprobación de permisos de trabajo (P16).
+ * EST = sistema (no editable); copias personalizadas hasta 8 etapas.
+ */
+model ApprovalFlow {
+  id           String    @id @default(uuid()) @db.Uuid
+  businessId   String    @map("business_id") @db.Uuid
+  business     Business  @relation(fields: [businessId], references: [id])
+  /// Código corto estable (EST, EST-C…).
+  code         String
+  name         String
+  description  String?
+  /// true = plantilla de sistema (no se edita ni borra).
+  isSystem     Boolean   @default(false) @map("is_system")
+  /// Flujo origen al duplicar; null en EST raíz.
+  copiedFromId String?   @map("copied_from_id") @db.Uuid
+  copiedFrom   ApprovalFlow?  @relation("ApprovalFlowCopies", fields: [copiedFromId], references: [id], onDelete: SetNull)
+  copies       ApprovalFlow[] @relation("ApprovalFlowCopies")
+  active       Boolean   @default(true)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  stages       ApprovalFlowStage[]
+  /// Tipos de permiso que lo usan como default.
+  permitTypes  PermitType[]
+
+  @@unique([businessId, code])
+  @@index([businessId])
+  @@index([active])
+  @@index([isSystem])
+  @@map("approval_flows")
+}
+
+/**
+ * Etapa ordenada de un flujo (máx. 8 por flujo — validado en API).
+ * key estable para cablear el motor de estados del PT más adelante.
+ */
+model ApprovalFlowStage {
+  id                String                   @id @default(uuid()) @db.Uuid
+  flowId            String                   @map("flow_id") @db.Uuid
+  flow              ApprovalFlow             @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  /// Posición 1..8.
+  position          Int
+  /// Clave de motor (notice, create_permit, complete, approve, receive, request_close…).
+  key               String
+  /// Texto «Qué se hace» (Figma).
+  label             String
+  actor             ApprovalFlowStageActor
+  moment            ApprovalFlowStageMoment
+  requiresSignature Boolean                  @default(false) @map("requires_signature")
+  mandatory         Boolean                  @default(true)
+  /// true = etapa fija del sistema (no se quita en EST).
+  fixed             Boolean                  @default(false)
+  createdAt         DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([flowId, position])
+  @@unique([flowId, key])
+  @@index([flowId])
+  @@map("approval_flow_stages")
 }
 
 /**

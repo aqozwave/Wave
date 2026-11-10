@@ -13,6 +13,7 @@ import { notFoundHandler } from "./middlewares/notFound.js";
 import { academicDegreesRouter } from "./modules/academicDegrees/academicDegrees.routes.js";
 import { accreditationsRouter } from "./modules/accreditations/accreditations.routes.js";
 import { activityLogsRouter } from "./modules/activityLogs/activityLogs.routes.js";
+import { approvalFlowsRouter } from "./modules/approvalFlows/approvalFlows.routes.js";
 import { areasRouter } from "./modules/areas/areas.routes.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { businessesRouter } from "./modules/businesses/businesses.routes.js";
@@ -154,6 +155,7 @@ export function createApp() {
   app.use("/api/v1/competency-certificates", competencyCertificatesRouter);
   app.use("/api/v1/document-types", documentTypesRouter);
   app.use("/api/v1/permit-types", permitTypesRouter);
+  app.use("/api/v1/approval-flows", approvalFlowsRouter);
   app.use("/api/v1/trainings", trainingsRouter);
   app.use("/api/v1/contractors", contractorsRouter);
   app.use("/api/v1/accreditations", accreditationsRouter);
