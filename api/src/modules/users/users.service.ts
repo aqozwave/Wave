@@ -9,7 +9,10 @@ import {
   writeUserPhotoFile,
 } from "../../lib/localUploads.js";
 import { hashPassword } from "../../lib/password.js";
-import { SYSTEM_ROLE_KEYS } from "../../lib/permissions.js";
+import {
+  CONTRACTOR_INVITE_ROLE_KEYS,
+  SYSTEM_ROLE_KEYS,
+} from "../../lib/permissions.js";
 import { prisma } from "../../lib/prisma.js";
 import { clearLoginPairsForEmail } from "../../lib/rateLimit.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
@@ -74,12 +77,44 @@ function toUserAdminResponse(row: UserAdminRow): UserAdminResponse {
 }
 
 /** Superadmin ve todos; admin solo su empresa. */
+/**
+ * ¿Es cuenta del portal contratista (dueño o faena)?
+ * Esas se gestionan solo desde Contratistas, no desde Usuarios del sistema.
+ */
+function isContractorPortalUser(row: {
+  organizationId: string | null;
+  internalRol: string;
+}): boolean {
+  if (row.organizationId) return true;
+  return (CONTRACTOR_INVITE_ROLE_KEYS as readonly string[]).includes(
+    row.internalRol,
+  );
+}
+
+/** Bloquea asignar roles de portal desde Usuarios del sistema. */
+function assertNotContractorPortalRole(internalRol: string): void {
+  if (
+    (CONTRACTOR_INVITE_ROLE_KEYS as readonly string[]).includes(internalRol)
+  ) {
+    throw new AppError(
+      400,
+      "contractor_role_via_users",
+      "Los roles de contratista se asignan desde Prevención → Contratistas (invitar usuario)",
+    );
+  }
+}
+
 function listWhere(
   actor: Actor,
   query: ListUsersQuery,
 ): Prisma.UserWhereInput {
   const base: Prisma.UserWhereInput = {
     deletedAt: null,
+    // Portal externo: solo en ficha de contratista, nunca en Usuarios.
+    organizationId: null,
+    internalRol: {
+      notIn: [...CONTRACTOR_INVITE_ROLE_KEYS],
+    },
     ...(query.includeInactive ? {} : { state: true }),
   };
 
@@ -117,6 +152,11 @@ function listWhere(
  * (no filtrar existencia a otra empresa).
  */
 function assertUserTenantAccess(actor: Actor, target: User): void {
+  // Invitados del portal: no existen para este módulo (404 genérico).
+  if (isContractorPortalUser(target)) {
+    throw new AppError(404, "user_not_found", "Usuario no encontrado");
+  }
+
   if (actor.internalRol === "superadmin") {
     return;
   }
@@ -349,6 +389,7 @@ export async function createUser(
 
   // Solo superadmin puede crear otro superadmin (vía role key).
   const internalRol = await resolveInternalRolFromRole(roleId, "user");
+  assertNotContractorPortalRole(internalRol);
   if (internalRol === "superadmin" && actor.internalRol !== "superadmin") {
     throw new AppError(
       403,
@@ -442,6 +483,11 @@ export async function updateUser(
     body.roleId !== undefined ? body.roleId : undefined,
     existing.internalRol,
   );
+
+  // Si cambian el rol, no permitir pasar a portal contratista desde acá.
+  if (body.roleId !== undefined) {
+    assertNotContractorPortalRole(nextInternalRol);
+  }
 
   if (
     nextInternalRol === "superadmin" &&

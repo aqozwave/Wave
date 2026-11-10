@@ -11,8 +11,12 @@ export function HomeIndex() {
   const { user } = useAuth();
   const rol = user?.internalRol ?? "";
 
-  // Usuario externo invitado a una org (P9b) → portal E3b.
-  if (user?.organizationId || rol === "contratista") {
+  // Usuario externo invitado a una org (P9b) → portal E3b / faena.
+  if (
+    user?.organizationId ||
+    rol === "contratista" ||
+    rol === "contratista_faena"
+  ) {
     return <ContratistaHome />;
   }
   if (rol === "user") {

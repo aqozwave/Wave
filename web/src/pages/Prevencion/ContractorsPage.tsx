@@ -504,14 +504,14 @@ export function ContractorsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Topbar
-        breadcrumb="Prevención"
+        breadcrumb="Configuración"
         breadcrumbIcon={Building2}
         actions={<UserMenu />}
       />
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
         <PageHeader
           crumbs={[
-            { label: "Prevención", to: "/prevencion" },
+            { label: "Configuración" },
             { label: "Contratistas" },
           ]}
           title="Contratistas"

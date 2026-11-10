@@ -225,14 +225,32 @@ export type ListContractorUsersResult = {
   limit: number;
 };
 
+/**
+ * Rol portal al invitar (P9b).
+ * `contratista` = dueño/admin; `contratista_faena` = ver PT + pedir cierre.
+ */
+export type ContractorInviteRoleKey = "contratista" | "contratista_faena";
+
 /** Body invitar usuario. */
 export type InviteContractorUserBody = {
   email: string;
   firstName: string;
   lastName: string;
   run: string;
+  /** Default API: contratista (admin org). */
+  roleKey?: ContractorInviteRoleKey;
   accessExpiresAt?: string | null;
 };
+
+/** Etiqueta corta del rol portal en tablas / selects. */
+export function contractorInviteRoleLabel(
+  roleKey: string | null | undefined,
+): string {
+  if (roleKey === "contratista_faena") return "Faena · pide cierre";
+  if (roleKey === "contratista") return "Dueño · administra empresa";
+  if (!roleKey) return "—";
+  return roleKey.replace(/_/g, " ");
+}
 
 /** GET /api/v1/contractors/:id/users */
 export async function listContractorUsersRequest(

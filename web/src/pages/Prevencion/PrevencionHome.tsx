@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import {
   ArrowRight,
   Bell,
-  Building2,
   ClipboardCheck,
   ClipboardList,
   FileStack,
@@ -43,13 +42,6 @@ const HUB_GROUPS: HubGroup[] = [
     title: "Operación",
     legend: "De la empresa externa al permiso a bordo.",
     items: [
-      {
-        label: "Contratistas",
-        legend: "Organizaciones externas del tenant (alta, ficha, estado).",
-        icon: Building2,
-        to: "/prevencion/contratistas",
-        canShow: (u) => userHasPermission(u, "contractors", "read"),
-      },
       {
         label: "Habilitaciones",
         legend: "Solicitar docs, revisar y aprobar (HAB-NNNN).",
@@ -129,7 +121,7 @@ export function PrevencionHome() {
         <PageHeader
           crumbs={[{ label: "Prevención" }, { label: "Presentación" }]}
           title="Prevención de riesgos"
-          description="Catálogos, contratistas, habilitaciones, avisos y permisos de trabajo."
+          description="Habilitaciones, avisos, permisos de trabajo y catálogos del módulo."
         />
 
         <div className="mx-auto flex w-full max-w-[960px] flex-col gap-8">

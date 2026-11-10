@@ -92,6 +92,18 @@ function RequireAuth() {
 }
 
 /**
+ * HAB / personal son solo del dueño portal.
+ * Faena (`contratista_faena`) vuelve a permisos.
+ */
+function RequireContractorOrgAdmin() {
+  const { user } = useAuth();
+  if (user?.internalRol === "contratista_faena") {
+    return <Navigate to="/portal/permisos" replace />;
+  }
+  return <Outlet />;
+}
+
+/**
  * Shell estable: el sidebar no se remonta al pasar de skeleton → contenido.
  * El main hace fade suave al cambiar de ruta.
  */
@@ -144,14 +156,16 @@ export function App() {
       <Route element={<RequireAuth />}>
         <Route element={<ShellLayout />}>
           <Route index element={<HomeIndex />} />
-          <Route
-            path="portal/habilitacion"
-            element={<ContractorPortalAccreditationPage />}
-          />
-          <Route
-            path="portal/personal"
-            element={<ContractorPortalPeoplePage />}
-          />
+          <Route element={<RequireContractorOrgAdmin />}>
+            <Route
+              path="portal/habilitacion"
+              element={<ContractorPortalAccreditationPage />}
+            />
+            <Route
+              path="portal/personal"
+              element={<ContractorPortalPeoplePage />}
+            />
+          </Route>
           <Route
             path="portal/permisos"
             element={<ContractorPortalPermitsPage />}

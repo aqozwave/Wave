@@ -393,7 +393,13 @@ export function Usuarios() {
         listAreasRequest(accessToken),
       ]);
       setBusinesses(biz.items);
-      setRoles(roleList.items);
+      // Portal contratista (dueño/faena) se invita solo desde Contratistas.
+      setRoles(
+        roleList.items.filter(
+          (role) =>
+            role.key !== "contratista" && role.key !== "contratista_faena",
+        ),
+      );
       setLocations(locs.items);
       setAreas(areaList.items);
     } catch {
@@ -808,7 +814,7 @@ export function Usuarios() {
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#f9fafc]">
       <Topbar
-        breadcrumb={isSuperadmin ? "Sistema / Usuarios" : "Configuración / Usuarios"}
+        breadcrumb="Sistema / Usuarios"
         breadcrumbIcon={Users}
         actions={<UserMenu />}
       />
@@ -817,7 +823,7 @@ export function Usuarios() {
         <div className="flex shrink-0 items-center gap-2">
           <div className="min-w-0 flex-1">
             <h1 className="text-[20px] font-semibold leading-[26px] text-[var(--color-nachipa-title)]">
-              {isSuperadmin ? "Usuarios del sistema" : "Usuarios"}
+              Usuarios del sistema
             </h1>
             <p className="mt-1 text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
               {isSuperadmin

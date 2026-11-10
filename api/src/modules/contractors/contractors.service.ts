@@ -1,8 +1,13 @@
 import { randomBytes } from "node:crypto";
-import { Prisma } from "@prisma/client";
+import { Prisma, type RoleDataScope } from "@prisma/client";
 import { assertBusinessModuleEnabled } from "../../lib/businessModules.js";
 import { AppError } from "../../lib/errors.js";
 import { hashPassword } from "../../lib/password.js";
+import {
+  SYSTEM_ROLE_DEFS,
+  SYSTEM_ROLE_KEY,
+  type ContractorInviteRoleKey,
+} from "../../lib/permissions.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import { requestPasswordReset } from "../auth/auth.service.js";
@@ -588,21 +593,36 @@ function generateInvitePassword(): string {
 }
 
 /**
- * Rol de sistema `contratista` para invitados del portal externo.
- * Incluye work_permits + accreditations (no el rol `user` de tripulante).
+ * Resuelve (y crea si falta) el rol de sistema del invitado portal.
+ * `contratista` = dueño/admin; `contratista_faena` = ver PT + pedir cierre.
  */
-async function resolveContractorInviteRole() {
-  const role = await prisma.role.findFirst({
-    where: { key: "contratista", deletedAt: null, state: true },
+async function resolveContractorInviteRole(roleKey: ContractorInviteRoleKey) {
+  const existing = await prisma.role.findFirst({
+    where: { key: roleKey, deletedAt: null, state: true },
   });
-  if (!role) {
+  if (existing) return existing;
+
+  // Si el seed/ETL aún no corrió, materializa desde SYSTEM_ROLE_DEFS.
+  const def = SYSTEM_ROLE_DEFS.find((row) => row.key === roleKey);
+  if (!def) {
     throw new AppError(
       500,
       "role_missing",
-      'Rol de sistema "contratista" no encontrado',
+      `Rol de sistema "${roleKey}" no definido`,
     );
   }
-  return role;
+
+  return prisma.role.create({
+    data: {
+      key: def.key,
+      name: def.name,
+      description: def.description,
+      isSystem: true,
+      dataScope: def.dataScope as RoleDataScope,
+      permissions: def.permissions as object,
+      state: true,
+    },
+  });
 }
 
 /** GET /contractors/:id/users — listado de invitados de la org. */
@@ -664,7 +684,10 @@ export async function inviteContractorUser(
   }
   await assertBusinessModuleEnabled(org.businessId, "contractors");
 
-  const role = await resolveContractorInviteRole();
+  /** Default dueño/admin si el cliente viejo no manda roleKey. */
+  const roleKey: ContractorInviteRoleKey =
+    body.roleKey ?? SYSTEM_ROLE_KEY.CONTRATISTA;
+  const role = await resolveContractorInviteRole(roleKey);
   const email = body.email.trim().toLowerCase();
   const accessExpiresAt =
     body.accessExpiresAt === undefined
@@ -714,7 +737,7 @@ export async function inviteContractorUser(
     }
 
     // No pisa RUN de una cuenta ya existente (evita choque con unique).
-    // Siempre deja rol contratista: el portal necesita work_permits/accreditations.
+    // Asigna el rol pedido (dueño o faena) para el portal.
     const updated = await prisma.user.update({
       where: { id: existing.id },
       data: {

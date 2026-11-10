@@ -7,7 +7,6 @@ import {
 } from "react";
 import {
   Building2,
-  ChevronDown,
   ClipboardCheck,
   Pencil,
   Plus,
@@ -38,11 +37,13 @@ import {
   type ContractorAccreditation,
 } from "../../lib/api/accreditations";
 import {
+  contractorInviteRoleLabel,
   getContractorRequest,
   inviteContractorUserRequest,
   listContractorPeopleRequest,
   listContractorUsersRequest,
   updateContractorRequest,
+  type ContractorInviteRoleKey,
   type ContractorOrganization,
   type ContractorPerson,
   type ContractorRole,
@@ -122,12 +123,11 @@ type InviteForm = {
   email: string;
   /** Requerido por API (Figma no lo muestra; lo pedimos debajo). */
   run: string;
+  /** Dueño (admin org) o faena (PT + pedir cierre). */
+  roleKey: ContractorInviteRoleKey;
   /** Toggle «Enviar invitación por correo». */
   sendByEmail: boolean;
 };
-
-/** Rol fijo del invitado externo (Figma P9b). */
-const CONTRACTOR_INVITE_ROLE_LABEL = "Contratista · administra su empresa";
 
 /** Parte «Nombre Apellido…» en firstName / lastName para el POST. */
 function splitFullName(fullName: string): {
@@ -234,11 +234,9 @@ function userInitials(firstName: string, lastName: string): string {
   return `${a}${b}`.toUpperCase() || "?";
 }
 
-/** Rol visible en tabla Usuarios. */
+/** Rol visible en tabla Usuarios (portal dueño / faena). */
 function userRoleLabel(internalRol: string): string {
-  if (!internalRol) return "—";
-  if (internalRol === "contratista") return "Contratista";
-  return displayName(internalRol.replace(/_/g, " "));
+  return contractorInviteRoleLabel(internalRol);
 }
 
 /** Último acceso relativo corto. */
@@ -310,6 +308,7 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
     fullName: "",
     email: "",
     run: "",
+    roleKey: "contratista",
     sendByEmail: true,
   });
   const [inviting, setInviting] = useState(false);
@@ -619,6 +618,7 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
       fullName: "",
       email: "",
       run: "",
+      roleKey: "contratista",
       sendByEmail: true,
     });
     setInviteOpen(true);
@@ -649,6 +649,7 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
         firstName,
         lastName,
         run: inviteForm.run.trim(),
+        roleKey: inviteForm.roleKey,
       });
       showToast("Invitación enviada.", "success");
       setInviteOpen(false);
@@ -1432,21 +1433,30 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
             </div>
           </div>
 
-          {/*
-            Fila Rol + Vence. Figma pone Rol en 160px y el texto se solapa;
-            acá Rol toma el ancho flexible y Vence queda fijo a 160px.
-          */}
+          {/* Rol portal (dueño vs faena) + vencimiento fijo del link. */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-3">
             <div className="min-w-0 flex-1">
-              <TextField
-                label="Rol"
-                value={CONTRACTOR_INVITE_ROLE_LABEL}
-                readOnly
-                title={CONTRACTOR_INVITE_ROLE_LABEL}
-                trailing={
-                  <ChevronDown className="size-4" strokeWidth={1.5} aria-hidden />
+              <label className="mb-1.5 block text-[12px] font-medium text-[var(--color-nachipa-body)]">
+                Rol
+              </label>
+              <select
+                className={selectClass}
+                value={inviteForm.roleKey}
+                onChange={(e) =>
+                  setInviteForm((f) => ({
+                    ...f,
+                    roleKey: e.target.value as ContractorInviteRoleKey,
+                  }))
                 }
-              />
+                aria-label="Rol del invitado"
+              >
+                <option value="contratista">
+                  Dueño · administra empresa
+                </option>
+                <option value="contratista_faena">
+                  Faena · ver permisos y pedir cierre
+                </option>
+              </select>
             </div>
             <div className="w-full shrink-0 sm:w-[160px]">
               <TextField label="Vence la invitación" value="72 horas" readOnly />

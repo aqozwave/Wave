@@ -145,12 +145,6 @@ const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
     canShow: (u) => canSeePrevencion(u),
   },
   {
-    label: "Contratistas",
-    to: "/prevencion/contratistas",
-    icon: Building2,
-    canShow: (u) => userHasPermission(u, "contractors", "read"),
-  },
-  {
     label: "Habilitaciones",
     to: "/prevencion/habilitaciones",
     icon: ClipboardCheck,
@@ -200,6 +194,14 @@ function isPrevencionNavActive(
   return pathname === to || pathname.startsWith(`${to}/`);
 }
 
+/** ¿Ruta de maestro Contratistas (vive en Configuración, URL legacy bajo /prevencion)? */
+function isContractorsConfigPath(pathname: string): boolean {
+  return (
+    pathname === "/prevencion/contratistas" ||
+    pathname.startsWith("/prevencion/contratistas/")
+  );
+}
+
 /** Subítems de Configuración (sin Notificaciones: viven bajo Cursos). */
 const CONFIG_LINKS: ReadonlyArray<NavLink> = [
   {
@@ -214,6 +216,12 @@ const CONFIG_LINKS: ReadonlyArray<NavLink> = [
     icon: Building2,
     canShow: (u) =>
       u?.internalRol === "superadmin" || u?.internalRol === "admin",
+  },
+  {
+    label: "Contratistas",
+    to: "/prevencion/contratistas",
+    icon: Building2,
+    canShow: (u) => userHasPermission(u, "contractors", "read"),
   },
   {
     label: "Flota y operación",
@@ -234,11 +242,30 @@ const CONFIG_LINKS: ReadonlyArray<NavLink> = [
     /** P16 · approval_flows:read (Admin / Superadmin / rol custom). */
     canShow: (u) => userHasPermission(u, "approval_flows", "read"),
   },
+];
+
+/**
+ * Subítems de Sistema: cuentas internas (+ roles/bitácora solo superadmin).
+ * Los invitados del portal contratista no viven acá (van en Contratistas).
+ */
+const SYSTEM_LINKS: ReadonlyArray<NavLink> = [
   {
     label: "Usuarios",
     to: "/usuarios",
     icon: Users,
     canShow: (u) => userHasPermission(u, "maestros.users", "read"),
+  },
+  {
+    label: "Roles y permisos",
+    to: "/roles",
+    icon: ShieldCheck,
+    canShow: (u) => u?.internalRol === "superadmin",
+  },
+  {
+    label: "Bitácora",
+    to: "/sistema/actividad",
+    icon: ClipboardList,
+    canShow: (u) => u?.internalRol === "superadmin",
   },
 ];
 
@@ -291,17 +318,20 @@ export function Sidebar() {
     location.pathname.startsWith("/ubicaciones") ||
     location.pathname.startsWith("/catalogos") ||
     location.pathname.startsWith("/configuracion") ||
-    location.pathname.startsWith("/usuarios");
+    isContractorsConfigPath(location.pathname);
   /** Rutas bajo Tripulación (lista + ficha). */
   const onCrewSection = location.pathname.startsWith("/embarcados");
   /** Grupo Cursos: /cursos/* y avisos (no catálogos). */
   const onCursosSection =
     location.pathname.startsWith("/cursos") ||
     location.pathname.startsWith("/notificaciones");
-  /** Grupo Prevención: /prevencion/*. */
-  const onPrevencionSection = location.pathname.startsWith("/prevencion");
-  /** Rutas bajo Sistema (solo superadmin). */
+  /** Grupo Prevención: operación HAB/avisos/PT (Contratistas va en Configuración). */
+  const onPrevencionSection =
+    location.pathname.startsWith("/prevencion") &&
+    !isContractorsConfigPath(location.pathname);
+  /** Rutas bajo Sistema (usuarios internos + roles/bitácora). */
   const onSystemSection =
+    location.pathname.startsWith("/usuarios") ||
     location.pathname.startsWith("/roles") ||
     location.pathname.startsWith("/sistema");
   const onPanel = location.pathname === "/";
@@ -347,14 +377,21 @@ export function Sidebar() {
     item.canShow(user),
   );
   const visibleConfigLinks = CONFIG_LINKS.filter((item) => item.canShow(user));
+  const visibleSystemLinks = SYSTEM_LINKS.filter((item) => item.canShow(user));
   /** Usuario externo (P9b): menú portal E*, no el de la naviera. */
   const isContractorPortal = Boolean(user?.organizationId);
+  /**
+   * Faena: solo Panel + Permisos (sin HAB ni personal).
+   * Dueño (`contratista`) ve el menú completo de Mi empresa.
+   */
+  const isContractorFaena = user?.internalRol === "contratista_faena";
   const showCrewGroup = !isContractorPortal && visibleCrewLinks.length > 0;
   const showCursosGroup = !isContractorPortal && visibleCursosLinks.length > 0;
   const showConfigGroup = !isContractorPortal && visibleConfigLinks.length > 0;
   const showPrevencion = !isContractorPortal && canSeePrevencion(user);
+  /** Sistema: Usuarios (admin+) + Roles/Bitácora (superadmin). */
   const showSystemGroup =
-    !isContractorPortal && user?.internalRol === "superadmin";
+    !isContractorPortal && visibleSystemLinks.length > 0;
   /** Etiqueta del home según rol (Figma C1 / T* / E3). */
   const panelLabel = isContractorPortal
     ? "Panel"
@@ -398,7 +435,7 @@ export function Sidebar() {
     : "Usuario";
   const displayMeta = user
     ? isContractorPortal
-      ? `Contratista · ${user.organization?.name ?? "org"}`
+      ? `${isContractorFaena ? "Faena" : "Contratista"} · ${user.organization?.name ?? "org"}`
       : `${user.internalRol} · v2.0`
     : "…";
   const initials = user ? initialsOf(user.firstName, user.lastName) : "?";
@@ -440,20 +477,24 @@ export function Sidebar() {
             />
             {isContractorPortal ? (
               <>
-                <SidebarItem
-                  label="Habilitación"
-                  icon={ClipboardCheck}
-                  to="/portal/habilitacion"
-                  active={onPortalHab}
-                  collapsed
-                />
-                <SidebarItem
-                  label="Mi personal"
-                  icon={Users}
-                  to="/portal/personal"
-                  active={onPortalPeople}
-                  collapsed
-                />
+                {!isContractorFaena ? (
+                  <>
+                    <SidebarItem
+                      label="Habilitación"
+                      icon={ClipboardCheck}
+                      to="/portal/habilitacion"
+                      active={onPortalHab}
+                      collapsed
+                    />
+                    <SidebarItem
+                      label="Mi personal"
+                      icon={Users}
+                      to="/portal/personal"
+                      active={onPortalPeople}
+                      collapsed
+                    />
+                  </>
+                ) : null}
                 <SidebarItem
                   label="Permisos"
                   icon={ClipboardList}
@@ -504,7 +545,7 @@ export function Sidebar() {
               <SidebarItem
                 label="Sistema"
                 icon={ShieldCheck}
-                to="/roles"
+                to={visibleSystemLinks[0]?.to ?? "/usuarios"}
                 active={onSystemSection}
                 collapsed
               />
@@ -554,20 +595,24 @@ export function Sidebar() {
             {isContractorPortal ? (
               <>
                 <p className="m-0 px-2.5 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-[var(--color-nav-icon)]">
-                  Mi empresa
+                  {isContractorFaena ? "Trabajos" : "Mi empresa"}
                 </p>
-                <SidebarItem
-                  label="Habilitación"
-                  icon={ClipboardCheck}
-                  to="/portal/habilitacion"
-                  active={onPortalHab}
-                />
-                <SidebarItem
-                  label="Mi personal"
-                  icon={Users}
-                  to="/portal/personal"
-                  active={onPortalPeople}
-                />
+                {!isContractorFaena ? (
+                  <>
+                    <SidebarItem
+                      label="Habilitación"
+                      icon={ClipboardCheck}
+                      to="/portal/habilitacion"
+                      active={onPortalHab}
+                    />
+                    <SidebarItem
+                      label="Mi personal"
+                      icon={Users}
+                      to="/portal/personal"
+                      active={onPortalPeople}
+                    />
+                  </>
+                ) : null}
                 <SidebarItem
                   label="Permisos"
                   icon={ClipboardList}
@@ -964,7 +1009,7 @@ export function Sidebar() {
             </div>
             ) : null}
 
-            {/* Grupo Sistema (Figma): Roles y permisos — solo superadmin. */}
+            {/* Grupo Sistema: Usuarios internos (+ roles/bitácora superadmin). */}
             {showSystemGroup ? (
             <div className="flex w-full flex-col">
               <button
@@ -1005,64 +1050,40 @@ export function Sidebar() {
               </button>
               {systemOpen ? (
                 <div className="animate-submenu-enter mb-1 ml-[18px] flex flex-col gap-0.5 border-l border-[var(--color-nav-border)] pl-1.5">
-                  <Link
-                    to="/roles"
-                    aria-current={
-                      location.pathname.startsWith("/roles")
-                        ? "page"
-                        : undefined
-                    }
-                    className={[
-                      "relative flex h-8 items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px]",
-                      location.pathname.startsWith("/roles")
-                        ? "bg-[var(--color-nav-item-active-bg)] font-medium text-[var(--color-nav-item-active-fg)]"
-                        : "text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
-                    ].join(" ")}
-                  >
-                    {location.pathname.startsWith("/roles") ? (
-                      <span
-                        className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--color-nachipa-primary)]"
-                        aria-hidden
-                      />
-                    ) : null}
-                    <ShieldCheck
-                      size={14}
-                      strokeWidth={1.5}
-                      className="shrink-0 text-[var(--color-nav-icon)]"
-                      aria-hidden
-                    />
-                    <span className="min-w-0 truncate">Roles y permisos</span>
-                  </Link>
-                  <Link
-                    to="/sistema/actividad"
-                    aria-current={
-                      location.pathname.startsWith("/sistema/actividad")
-                        ? "page"
-                        : undefined
-                    }
-                    className={[
-                      "relative flex h-8 items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px]",
-                      location.pathname.startsWith("/sistema/actividad")
-                        ? "bg-[var(--color-nav-item-active-bg)] font-medium text-[var(--color-nav-item-active-fg)]"
-                        : "text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
-                    ].join(" ")}
-                  >
-                    {location.pathname.startsWith("/sistema/actividad") ? (
-                      <span
-                        className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--color-nachipa-primary)]"
-                        aria-hidden
-                      />
-                    ) : null}
-                    <ClipboardList
-                      size={14}
-                      strokeWidth={1.5}
-                      className="shrink-0 text-[var(--color-nav-icon)]"
-                      aria-hidden
-                    />
-                    <span className="min-w-0 truncate">
-                      Registro de actividad
-                    </span>
-                  </Link>
+                  {visibleSystemLinks.map((item) => {
+                    if (!item.to) return null;
+                    const Icon = item.icon;
+                    const active =
+                      location.pathname === item.to ||
+                      location.pathname.startsWith(`${item.to}/`);
+                    return (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        aria-current={active ? "page" : undefined}
+                        className={[
+                          "relative flex h-8 items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px]",
+                          active
+                            ? "bg-[var(--color-nav-item-active-bg)] font-medium text-[var(--color-nav-item-active-fg)]"
+                            : "text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
+                        ].join(" ")}
+                      >
+                        {active ? (
+                          <span
+                            className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--color-nachipa-primary)]"
+                            aria-hidden
+                          />
+                        ) : null}
+                        <Icon
+                          size={14}
+                          strokeWidth={1.5}
+                          className="shrink-0 text-[var(--color-nav-icon)]"
+                          aria-hidden
+                        />
+                        <span className="min-w-0 truncate">{item.label}</span>
+                      </Link>
+                    );
+                  })}
                 </div>
               ) : null}
             </div>

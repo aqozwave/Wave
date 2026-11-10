@@ -59,7 +59,10 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     group: "Inicio",
     to: "/",
     keywords: ["dashboard", "inicio", "home", "kpi", "nave"],
-    canShow: (u) => u?.internalRol !== "contratista" && u?.internalRol !== "user",
+    canShow: (u) =>
+      u?.internalRol !== "contratista" &&
+      u?.internalRol !== "contratista_faena" &&
+      u?.internalRol !== "user",
   },
   {
     id: "home-contratista",
@@ -67,7 +70,9 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     group: "Inicio",
     to: "/",
     keywords: ["habilitación", "permisos", "personal"],
-    canShow: (u) => u?.internalRol === "contratista",
+    canShow: (u) =>
+      u?.internalRol === "contratista" ||
+      u?.internalRol === "contratista_faena",
   },
   {
     id: "home-tripulante",
@@ -160,11 +165,11 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
       userHasPermission(u, "accreditation_packs", "read"),
   },
   {
-    id: "prevencion-contratistas",
+    id: "config-contratistas",
     label: "Contratistas",
-    group: "Prevención",
+    group: "Configuración",
     to: "/prevencion/contratistas",
-    keywords: ["organizaciones", "externas", "RUT", "habilitación"],
+    keywords: ["organizaciones", "externas", "RUT", "habilitación", "portal"],
     canShow: (u) => userHasPermission(u, "contractors", "read"),
   },
   {
@@ -227,9 +232,9 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
   {
     id: "usuarios",
     label: "Usuarios",
-    group: "Configuración",
+    group: "Sistema",
     to: "/usuarios",
-    keywords: ["cuentas", "acceso", "rrhh"],
+    keywords: ["cuentas", "acceso", "rrhh", "invitados internos"],
     canShow: (u) => userHasPermission(u, "maestros.users", "read"),
   },
   {
@@ -242,10 +247,10 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
   },
   {
     id: "actividad",
-    label: "Registro de actividad",
+    label: "Bitácora",
     group: "Sistema",
     to: "/sistema/actividad",
-    keywords: ["auditoría", "logs"],
+    keywords: ["auditoría", "logs", "registro de actividad"],
     canShow: (u) => u?.internalRol === "superadmin",
   },
 ];

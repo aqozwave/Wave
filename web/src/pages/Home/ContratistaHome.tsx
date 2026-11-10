@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { Building2, ClipboardCheck, FileStack, Users } from "lucide-react";
+import {
+  Building2,
+  ClipboardCheck,
+  ClipboardList,
+  FileStack,
+  Users,
+} from "lucide-react";
 import { useNavigate } from "react-router";
 import { Button } from "../../components/Button/Button";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
@@ -75,6 +81,7 @@ function formatDate(iso: string | null): string {
 /**
  * Panel del contratista (P2 · E3 / E3b).
  * Usuario con organizationId: resumen HAB + pasos de documentación.
+ * Faena (`contratista_faena`): acceso mínimo a permisos / pedir cierre.
  */
 export function ContratistaHome() {
   const { accessToken, user } = useAuth();
@@ -82,6 +89,8 @@ export function ContratistaHome() {
   const navigate = useNavigate();
   const [summary, setSummary] = useState<ContractorPortalSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Trabajador a bordo: sin HAB ni personal. */
+  const isFaena = user?.internalRol === "contratista_faena";
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -103,8 +112,10 @@ export function ContratistaHome() {
   }, [accessToken, showToast]);
 
   useEffect(() => {
+    // Faena no usa el resumen HAB/personal del panel dueño.
+    if (isFaena) return;
     void load();
-  }, [load]);
+  }, [isFaena, load]);
 
   const firstName = displayName(user?.firstName ?? "");
   const orgName = summary
@@ -112,6 +123,60 @@ export function ContratistaHome() {
     : user?.organization
       ? displayName(user.organization.name)
       : "tu empresa";
+
+  // Panel mínimo para faena: ir directo a permisos.
+  if (isFaena) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <Topbar
+          breadcrumb="Panel"
+          breadcrumbIcon={Building2}
+          actions={<UserMenu />}
+        />
+        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5 lg:px-8">
+          <PageHeader
+            crumbs={[{ label: "Trabajos" }, { label: "Panel" }]}
+            title={`Hola, ${firstName}`}
+            description={`${orgName} · acceso faena: revisá los permisos activos y pedí el cierre cuando corresponda.`}
+            actions={
+              <Button
+                type="button"
+                size="medium"
+                className="!w-auto"
+                onClick={() => void navigate("/portal/permisos")}
+              >
+                Ver permisos
+              </Button>
+            }
+          />
+          <section className="flex max-w-xl flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-4">
+            <div className="flex items-start gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-nachipa-bg-page)] text-[var(--color-nachipa-primary)]">
+                <ClipboardList size={18} strokeWidth={1.5} aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <p className="m-0 text-[13px] font-semibold text-[var(--color-nachipa-title)]">
+                  Permisos de trabajo
+                </p>
+                <p className="m-0 mt-0.5 text-[12px] text-[var(--color-nachipa-secondary)]">
+                  Acá ves los trabajos de tu empresa a bordo. Cuando el trabajo
+                  esté autorizado, podés pedir el cierre desde el detalle.
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto self-start"
+              onClick={() => void navigate("/portal/permisos")}
+            >
+              Ir a permisos
+            </Button>
+          </section>
+        </div>
+      </div>
+    );
+  }
 
   const hab = summary?.accreditation ?? null;
   const docsUploaded = summary?.companyDocuments.uploaded ?? 0;
