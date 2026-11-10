@@ -69,9 +69,12 @@ export function AccreditationPacksPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const isSuperadmin = user?.internalRol === "superadmin";
-  const canRead = userHasPermission(user, "maestros.document_types", "read");
+  /** Menú / página: permiso propio (no maestros.document_types). */
+  const canRead = userHasPermission(user, "accreditation_packs", "read");
+  /** Editar membresía: update de packs + admin/superadmin (API: requireTenantManager). */
   const canManage =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
+    userHasPermission(user, "accreditation_packs", "update") &&
+    (user?.internalRol === "admin" || user?.internalRol === "superadmin");
 
   const [businesses, setBusinesses] = useState<Business[]>([]);
   /** Empresa filtro (superadmin); vacío = tenant del usuario vía API. */

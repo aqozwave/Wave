@@ -388,7 +388,21 @@ export async function deleteContractorPersonRequest(
   return body as ContractorPerson;
 }
 
-/** Resumen portal contratista (E3b). */
+/** Ítem de la bandeja de pendientes del panel E3. */
+export type ContractorPortalPendingItem = {
+  id: string;
+  kind: "observation" | "document" | "person" | "permit";
+  title: string;
+  detail: string | null;
+  appliesTo: string;
+  locationName: string | null;
+  expiresAt: string | null;
+  statusLabel: string;
+  statusTone: "success" | "warning" | "danger" | "info" | "neutral";
+  href: string | null;
+};
+
+/** Resumen portal contratista (E3 habilitado / E3b en curso). */
 export type ContractorPortalSummary = {
   organization: {
     id: string;
@@ -408,7 +422,17 @@ export type ContractorPortalSummary = {
     reviewedAt: string | null;
   } | null;
   companyDocuments: { uploaded: number; required: number };
-  people: { total: number };
+  /** Personas activas + cuántas tienen pack persona completo. */
+  people: { total: number; ready: number };
+  /** Docs empresa/persona por vencer en los próximos N días. */
+  documentsExpiring: { count: number; withinDays: number };
+  /** Permisos activos a bordo + highlight del primero. */
+  permits: {
+    activeCount: number;
+    highlight: { code: string; locationName: string } | null;
+  };
+  /** Bandeja de pendientes (observaciones, vencimientos, PT por completar). */
+  pendingItems: ContractorPortalPendingItem[];
 };
 
 /** GET /api/v1/contractors/me/summary */

@@ -175,11 +175,11 @@ export function WorkNoticesPage() {
   }, [load]);
 
   /**
-   * Catálogos del modal AT2: cada request independiente.
-   * Si una falla (p. ej. sin permit_types.read), no vacía las otras.
+   * Catálogos del modal AT2: solo al abrir el alta (no al entrar a la lista).
+   * Cada request independiente; si una falla, no vacía las otras.
    */
   useEffect(() => {
-    if (!accessToken || !canCreate) return;
+    if (!accessToken || !canCreate || !createOpen) return;
 
     void listContractorsRequest(accessToken, 1, 100, { active: true })
       .then((o) => setOrgs(o.items))
@@ -217,7 +217,7 @@ export function WorkNoticesPage() {
           "danger",
         );
       });
-  }, [accessToken, canCreate, showToast]);
+  }, [accessToken, canCreate, createOpen, showToast]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

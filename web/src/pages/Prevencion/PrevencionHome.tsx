@@ -82,7 +82,8 @@ const HUB_GROUPS: HubGroup[] = [
         legend: "ALT, CAL, ECF… con criticidad, AST, exigencias y checklist.",
         icon: FileStack,
         to: "/prevencion/tipos",
-        canShow: (u) => userHasPermission(u, "permit_types", "read"),
+        /** read = select en avisos; update = ver/editar el catálogo. */
+        canShow: (u) => userHasPermission(u, "permit_types", "update"),
       },
       {
         label: "Capacitaciones",
@@ -97,7 +98,7 @@ const HUB_GROUPS: HubGroup[] = [
         icon: Package,
         to: "/prevencion/packs",
         canShow: (u) =>
-          userHasPermission(u, "maestros.document_types", "read"),
+          userHasPermission(u, "accreditation_packs", "read"),
       },
     ],
   },

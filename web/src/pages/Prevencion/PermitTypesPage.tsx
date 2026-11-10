@@ -37,6 +37,7 @@ import {
   type PermitCriticality,
   type PermitType,
 } from "../../lib/api/permitTypes";
+import { userHasPermission } from "../../lib/api/auth";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
 /** Etiqueta de criticidad para chip. */
@@ -91,6 +92,11 @@ export function PermitTypesPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const isSuperadmin = user?.internalRol === "superadmin";
+  /**
+   * Catálogo en menú: update (no basta read).
+   * read solo sirve para selects al crear avisos (solicitante).
+   */
+  const canViewCatalog = userHasPermission(user, "permit_types", "update");
   /** API exige requireTenantManager (admin/superadmin). */
   const canManage =
     user?.internalRol === "admin" || user?.internalRol === "superadmin";
@@ -111,7 +117,7 @@ export function PermitTypesPage() {
   const [deactivating, setDeactivating] = useState(false);
 
   const load = useCallback(async () => {
-    if (!accessToken) return;
+    if (!accessToken || !canViewCatalog) return;
     setLoading(true);
     try {
       const result = await listPermitTypesRequest(accessToken, 1, 100);
@@ -126,7 +132,7 @@ export function PermitTypesPage() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, showToast]);
+  }, [accessToken, canViewCatalog, showToast]);
 
   useEffect(() => {
     void load();
@@ -279,6 +285,23 @@ export function PermitTypesPage() {
     } finally {
       setDeactivating(false);
     }
+  }
+
+  if (!canViewCatalog) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <Topbar
+          breadcrumb="Prevención"
+          breadcrumbIcon={FileStack}
+          actions={<UserMenu />}
+        />
+        <div className="px-6 py-5">
+          <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+            No tenés permiso para gestionar el catálogo de tipos de permiso.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (

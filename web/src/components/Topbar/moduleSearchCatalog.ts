@@ -139,7 +139,8 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     group: "Prevención",
     to: "/prevencion/tipos",
     keywords: ["cal", "alt", "ecf", "permit types", "checklist"],
-    canShow: (u) => userHasPermission(u, "permit_types", "read"),
+    /** Catálogo de tipos: gestionar (update), no solo read de selects. */
+    canShow: (u) => userHasPermission(u, "permit_types", "update"),
   },
   {
     id: "prevencion-capacitaciones",
@@ -156,7 +157,7 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     to: "/prevencion/packs",
     keywords: ["pack", "habilitación", "empresa", "persona", "acreditación"],
     canShow: (u) =>
-      userHasPermission(u, "maestros.document_types", "read"),
+      userHasPermission(u, "accreditation_packs", "read"),
   },
   {
     id: "prevencion-contratistas",

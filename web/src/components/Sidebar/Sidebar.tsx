@@ -122,6 +122,7 @@ const PREVENCION_MENU_RESOURCES = [
   "work_permits",
   "permit_types",
   "trainings",
+  "accreditation_packs",
 ] as const;
 
 /** ¿Puede ver el grupo Prevención? */
@@ -170,7 +171,8 @@ const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
     label: "Tipos de permiso",
     to: "/prevencion/tipos",
     icon: ClipboardList,
-    canShow: (u) => userHasPermission(u, "permit_types", "read"),
+    /** read solo alimenta selects (avisos); el catálogo pide gestionar. */
+    canShow: (u) => userHasPermission(u, "permit_types", "update"),
   },
   {
     label: "Capacitaciones",
@@ -183,7 +185,7 @@ const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
     to: "/prevencion/packs",
     icon: Package,
     canShow: (u) =>
-      userHasPermission(u, "maestros.document_types", "read"),
+      userHasPermission(u, "accreditation_packs", "read"),
   },
 ];
 
@@ -300,11 +302,35 @@ export function Sidebar() {
   const onPortalPeople = location.pathname.startsWith("/portal/personal");
   /** Permisos del portal contratista (enviar a aprobación). */
   const onPortalPermits = location.pathname.startsWith("/portal/permisos");
-  const [crewOpen, setCrewOpen] = useState(onCrewSection);
-  const [cursosOpen, setCursosOpen] = useState(onCursosSection);
-  const [prevencionOpen, setPrevencionOpen] = useState(onPrevencionSection);
-  const [configOpen, setConfigOpen] = useState(onConfigSection);
-  const [systemOpen, setSystemOpen] = useState(onSystemSection);
+  /**
+   * Acordeón: un solo grupo padre abierto a la vez.
+   * null = todos cerrados (p. ej. estás en Panel).
+   */
+  type NavGroupId =
+    | "crew"
+    | "cursos"
+    | "prevencion"
+    | "config"
+    | "system";
+  /** Grupo activo según la URL al montar. */
+  function groupFromRoute(): NavGroupId | null {
+    if (onCrewSection) return "crew";
+    if (onCursosSection) return "cursos";
+    if (onPrevencionSection) return "prevencion";
+    if (onConfigSection) return "config";
+    if (onSystemSection) return "system";
+    return null;
+  }
+  const [openGroup, setOpenGroup] = useState<NavGroupId | null>(groupFromRoute);
+  const crewOpen = openGroup === "crew";
+  const cursosOpen = openGroup === "cursos";
+  const prevencionOpen = openGroup === "prevencion";
+  const configOpen = openGroup === "config";
+  const systemOpen = openGroup === "system";
+  /** Abre un padre y cierra el resto; si ya está abierto, lo cierra. */
+  function toggleGroup(id: NavGroupId) {
+    setOpenGroup((current) => (current === id ? null : id));
+  }
 
   const visibleCrewLinks = CREW_LINKS.filter((item) => item.canShow(user));
   const visibleCursosLinks = CURSOS_LINKS.filter((item) => item.canShow(user));
@@ -334,35 +360,17 @@ export function Sidebar() {
     setReady(true);
   }, []);
 
+  /** Al navegar, abre solo el grupo de la ruta actual (acordeón). */
   useEffect(() => {
-    if (onCrewSection) {
-      setCrewOpen(true);
-    }
-  }, [onCrewSection]);
-
-  useEffect(() => {
-    if (onCursosSection) {
-      setCursosOpen(true);
-    }
-  }, [onCursosSection]);
-
-  useEffect(() => {
-    if (onPrevencionSection) {
-      setPrevencionOpen(true);
-    }
-  }, [onPrevencionSection]);
-
-  useEffect(() => {
-    if (onConfigSection) {
-      setConfigOpen(true);
-    }
-  }, [onConfigSection]);
-
-  useEffect(() => {
-    if (onSystemSection) {
-      setSystemOpen(true);
-    }
-  }, [onSystemSection]);
+    const next = groupFromRoute();
+    if (next) setOpenGroup(next);
+  }, [
+    onCrewSection,
+    onCursosSection,
+    onPrevencionSection,
+    onConfigSection,
+    onSystemSection,
+  ]);
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -566,7 +574,7 @@ export function Sidebar() {
             <div className="flex w-full flex-col">
               <button
                 type="button"
-                onClick={() => setCrewOpen((v) => !v)}
+                onClick={() => toggleGroup("crew")}
                 className={[
                   "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
                   onCrewSection || crewOpen
@@ -662,7 +670,7 @@ export function Sidebar() {
             <div className="flex w-full flex-col">
               <button
                 type="button"
-                onClick={() => setCursosOpen((v) => !v)}
+                onClick={() => toggleGroup("cursos")}
                 className={[
                   "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
                   onCursosSection || cursosOpen
@@ -759,7 +767,7 @@ export function Sidebar() {
             <div className="flex w-full flex-col">
               <button
                 type="button"
-                onClick={() => setPrevencionOpen((v) => !v)}
+                onClick={() => toggleGroup("prevencion")}
                 className={[
                   "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
                   onPrevencionSection || prevencionOpen
@@ -856,7 +864,7 @@ export function Sidebar() {
             <div className="flex w-full flex-col">
               <button
                 type="button"
-                onClick={() => setConfigOpen((v) => !v)}
+                onClick={() => toggleGroup("config")}
                 className={[
                   "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
                   onConfigSection || configOpen
@@ -952,7 +960,7 @@ export function Sidebar() {
             <div className="flex w-full flex-col">
               <button
                 type="button"
-                onClick={() => setSystemOpen((v) => !v)}
+                onClick={() => toggleGroup("system")}
                 className={[
                   "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
                   onSystemSection || systemOpen

@@ -1083,13 +1083,222 @@ export async function getContractorPortalSummary(
     });
   }
 
-  const peopleTotal = await prisma.contractorPerson.count({
+  const people = await prisma.contractorPerson.findMany({
     where: {
       organizationId: org.id,
       deletedAt: null,
       active: true,
     },
+    select: { id: true, fullName: true },
   });
+  const peopleTotal = people.length;
+
+  /** Pack persona obligatorio: tipos exigidos para “habilitado”. */
+  const requiredPersonTypes = await prisma.documentType.findMany({
+    where: {
+      businessId: org.businessId,
+      accreditationPack: "person",
+      accreditationPackRequired: true,
+      state: true,
+      deletedAt: null,
+    },
+    select: { id: true, code: true, name: true },
+  });
+  const requiredPersonTypeIds = requiredPersonTypes.map((t) => t.id);
+
+  let peopleReady = 0;
+  if (hab && requiredPersonTypeIds.length > 0 && peopleTotal > 0) {
+    const personDocs = await prisma.contractorPersonDocument.findMany({
+      where: {
+        accreditationId: hab.id,
+        personId: { in: people.map((p) => p.id) },
+        documentTypeId: { in: requiredPersonTypeIds },
+        deletedAt: null,
+        status: { not: "replaced" },
+      },
+      select: { personId: true, documentTypeId: true },
+    });
+    const byPerson = new Map<string, Set<string>>();
+    for (const d of personDocs) {
+      const set = byPerson.get(d.personId) ?? new Set<string>();
+      set.add(d.documentTypeId);
+      byPerson.set(d.personId, set);
+    }
+    for (const p of people) {
+      const have = byPerson.get(p.id);
+      if (
+        have &&
+        requiredPersonTypeIds.every((typeId) => have.has(typeId))
+      ) {
+        peopleReady += 1;
+      }
+    }
+  } else if (requiredPersonTypeIds.length === 0) {
+    peopleReady = peopleTotal;
+  }
+
+  /** Ventana de vencimiento (días) para KPI E3. */
+  const EXPIRING_WITHIN_DAYS = 30;
+  const now = new Date();
+  const horizon = new Date(
+    now.getTime() + EXPIRING_WITHIN_DAYS * 24 * 60 * 60 * 1000,
+  );
+
+  type PendingItem = {
+    id: string;
+    kind: "observation" | "document" | "person" | "permit";
+    title: string;
+    detail: string | null;
+    appliesTo: string;
+    locationName: string | null;
+    expiresAt: string | null;
+    statusLabel: string;
+    statusTone: "success" | "warning" | "danger" | "info" | "neutral";
+    href: string | null;
+  };
+  const pendingItems: PendingItem[] = [];
+
+  let documentsExpiringCount = 0;
+
+  if (hab) {
+    const companyDocs = await prisma.contractorOrgDocument.findMany({
+      where: {
+        accreditationId: hab.id,
+        deletedAt: null,
+        status: { not: "replaced" },
+      },
+      include: {
+        documentType: { select: { code: true, name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    /** Último doc por tipo. */
+    const latestCompany = new Map<string, (typeof companyDocs)[number]>();
+    for (const d of companyDocs) {
+      if (!latestCompany.has(d.documentTypeId)) {
+        latestCompany.set(d.documentTypeId, d);
+      }
+    }
+    for (const d of latestCompany.values()) {
+      if (d.status === "observed") {
+        pendingItems.push({
+          id: `obs-company-${d.id}`,
+          kind: "observation",
+          title: d.documentType.name,
+          detail: d.observation,
+          appliesTo: "Empresa",
+          locationName: null,
+          expiresAt: null,
+          statusLabel: "Observado",
+          statusTone: "danger",
+          href: "/portal/habilitacion?tab=documentos",
+        });
+      }
+      if (
+        d.expiresAt &&
+        d.expiresAt >= now &&
+        d.expiresAt <= horizon
+      ) {
+        documentsExpiringCount += 1;
+        pendingItems.push({
+          id: `exp-company-${d.id}`,
+          kind: "document",
+          title: d.documentType.name,
+          detail: d.documentType.code,
+          appliesTo: "Empresa",
+          locationName: null,
+          expiresAt: d.expiresAt.toISOString(),
+          statusLabel: "Por vencer",
+          statusTone: "warning",
+          href: "/portal/habilitacion?tab=documentos",
+        });
+      }
+    }
+
+    const personDocsExpiring = await prisma.contractorPersonDocument.findMany({
+      where: {
+        accreditationId: hab.id,
+        deletedAt: null,
+        status: { not: "replaced" },
+        expiresAt: { gte: now, lte: horizon },
+      },
+      include: {
+        documentType: { select: { code: true, name: true } },
+        person: { select: { fullName: true } },
+      },
+      orderBy: { expiresAt: "asc" },
+      take: 20,
+    });
+    for (const d of personDocsExpiring) {
+      documentsExpiringCount += 1;
+      const personName = d.person.fullName.trim() || "Persona";
+      pendingItems.push({
+        id: `exp-person-${d.id}`,
+        kind: "person",
+        title: d.documentType.name,
+        detail: personName,
+        appliesTo: personName,
+        locationName: null,
+        expiresAt: d.expiresAt ? d.expiresAt.toISOString() : null,
+        statusLabel: "Por vencer",
+        statusTone: "warning",
+        href: "/portal/personal",
+      });
+    }
+  }
+
+  const activePermits = await prisma.workPermit.findMany({
+    where: {
+      organizationId: org.id,
+      deletedAt: null,
+      status: { in: ["active", "to_verify"] },
+    },
+    include: {
+      location: { select: { name: true } },
+      permitType: { select: { name: true, code: true } },
+    },
+    orderBy: { scheduledDate: "asc" },
+  });
+  const activeOnly = activePermits.filter((p) => p.status === "active");
+  const permitHighlight =
+    activeOnly[0] != null
+      ? {
+          code: activeOnly[0].code,
+          locationName: activeOnly[0].location.name,
+        }
+      : null;
+
+  const permitsToComplete = await prisma.workPermit.findMany({
+    where: {
+      organizationId: org.id,
+      deletedAt: null,
+      status: "to_complete",
+    },
+    include: {
+      location: { select: { name: true } },
+      permitType: { select: { name: true, code: true } },
+      _count: { select: { people: true } },
+    },
+    orderBy: { scheduledDate: "asc" },
+    take: 10,
+  });
+  for (const p of permitsToComplete) {
+    pendingItems.push({
+      id: `permit-${p.id}`,
+      kind: "permit",
+      title: `${p.code} ${p.permitType.name}`,
+      detail:
+        p._count.people > 0
+          ? `${p._count.people} persona(s)`
+          : "sin personal",
+      appliesTo: "Permiso",
+      locationName: p.location.name,
+      expiresAt: null,
+      statusLabel: "Por completar",
+      statusTone: "warning",
+      href: `/portal/permisos/${p.id}`,
+    });
+  }
 
   return {
     organization: {
@@ -1121,7 +1330,16 @@ export async function getContractorPortalSummary(
       uploaded: uploadedCompany,
       required: requiredCompanyTypes,
     },
-    people: { total: peopleTotal },
+    people: { total: peopleTotal, ready: peopleReady },
+    documentsExpiring: {
+      count: documentsExpiringCount,
+      withinDays: EXPIRING_WITHIN_DAYS,
+    },
+    permits: {
+      activeCount: activeOnly.length,
+      highlight: permitHighlight,
+    },
+    pendingItems,
   };
 }
 

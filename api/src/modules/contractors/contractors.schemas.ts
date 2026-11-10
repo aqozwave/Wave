@@ -275,6 +275,20 @@ export type InviteContractorUserBody = z.infer<
   typeof inviteContractorUserBodySchema
 >;
 
+/** Fila de pendientes del panel E3 (habilitado). */
+export const contractorPortalPendingItemSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["observation", "document", "person", "permit"]),
+  title: z.string(),
+  detail: z.string().nullable(),
+  appliesTo: z.string(),
+  locationName: z.string().nullable(),
+  expiresAt: z.string().datetime().nullable(),
+  statusLabel: z.string(),
+  statusTone: z.enum(["success", "warning", "danger", "info", "neutral"]),
+  href: z.string().nullable(),
+});
+
 /**
  * Resumen del portal contratista (E3 / E3b).
  * Solo para usuarios con organizationId (sin permiso contractors.read).
@@ -312,10 +326,28 @@ export const contractorPortalSummaryResponseSchema = z
       uploaded: z.number().int().nonnegative(),
       required: z.number().int().nonnegative(),
     }),
-    /** Personas activas de la org. */
+    /** Personas activas + cuántas tienen pack persona completo. */
     people: z.object({
       total: z.number().int().nonnegative(),
+      ready: z.number().int().nonnegative(),
     }),
+    /** Docs empresa/persona con vencimiento en los próximos N días. */
+    documentsExpiring: z.object({
+      count: z.number().int().nonnegative(),
+      withinDays: z.number().int().positive(),
+    }),
+    /** Permisos activos (autorizados a bordo) + highlight. */
+    permits: z.object({
+      activeCount: z.number().int().nonnegative(),
+      highlight: z
+        .object({
+          code: z.string(),
+          locationName: z.string(),
+        })
+        .nullable(),
+    }),
+    /** Bandeja de pendientes E3. */
+    pendingItems: z.array(contractorPortalPendingItemSchema),
   })
   .openapi("ContractorPortalSummary");
 
