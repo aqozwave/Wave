@@ -28,6 +28,11 @@ export const accreditationResponseSchema = z
     status: accreditationStatusSchema,
     message: z.string().nullable(),
     reviewNote: z.string().nullable(),
+    /** HAB aprobada esperando docs adicionales del contratista. */
+    awaitingAdditionalDocs: z.boolean(),
+    additionalDocsMessage: z.string().nullable(),
+    /** Tipos pedidos en el pedido adicional (vacío si no hay pedido). */
+    additionalDocsTypeIds: z.array(z.uuid()),
     requestedAt: z.string().datetime().nullable(),
     requestedById: z.uuid().nullable(),
     dueAt: z.string().datetime().nullable(),
@@ -112,6 +117,39 @@ export const rejectAccreditationRequestSchema = z.object({
   params: accreditationIdParamsSchema,
   body: accreditationReviewNoteBodySchema,
 });
+
+/** Pedir docs adicionales a contratista (HAB ya aprobada). */
+export const requestAdditionalDocsBodySchema = z.object({
+  message: z
+    .string({ error: "El mensaje es requerido" })
+    .trim()
+    .min(1, "El mensaje es requerido")
+    .max(2000),
+  /** Al menos un tipo de documento a pedir. */
+  documentTypeIds: z
+    .array(z.uuid())
+    .min(1, "Elegí al menos un documento a solicitar"),
+});
+
+export const requestAdditionalDocsRequestSchema = z.object({
+  params: accreditationIdParamsSchema,
+  body: requestAdditionalDocsBodySchema,
+});
+
+export const clearAdditionalDocsRequestSchema = z.object({
+  params: accreditationIdParamsSchema,
+});
+
+/** Soft-delete HAB (sale de bandeja). */
+export const deleteAccreditationRequestSchema = z.object({
+  params: accreditationIdParamsSchema,
+});
+
+export const deleteAccreditationResponseSchema = accreditationResponseSchema;
+
+export type RequestAdditionalDocsBody = z.infer<
+  typeof requestAdditionalDocsBodySchema
+>;
 
 /** Query GET /accreditations/:id/history (P5h). */
 export const listAccreditationHistoryQuerySchema = z.object({

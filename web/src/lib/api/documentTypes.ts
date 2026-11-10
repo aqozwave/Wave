@@ -45,6 +45,8 @@ export type DocumentType = {
   visibility: string;
   /** null = fuera del pack empresa/persona. */
   accreditationPack: DocumentAccreditationPack | null;
+  /** Si está en pack: true = obligatorio; false = opcional. */
+  accreditationPackRequired: boolean;
   businessId: string;
   state: boolean;
   deletedAt: string | null;
@@ -72,6 +74,7 @@ export type DocumentTypeWriteBody = {
   crewCanView?: boolean;
   visibility?: DocumentVisibility;
   accreditationPack?: DocumentAccreditationPack | null;
+  accreditationPackRequired?: boolean;
   businessId?: string;
   state?: boolean;
 };

@@ -546,6 +546,7 @@ export type WorkPermitAssignablePerson = {
   missingRequirementCodes: string[];
   pendingRequirementLabels: string[];
   absentRequirementLabels: string[];
+  accreditationId: string | null;
   canAssign: boolean;
 };
 

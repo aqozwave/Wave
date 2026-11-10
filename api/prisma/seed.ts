@@ -434,6 +434,29 @@ const PREVENCION_DOCUMENT_TYPES: ReadonlyArray<{
     requiresExpiry: true,
     accreditationPack: null,
   },
+  // Evidencia por código de capacitación (faena; no pack HAB)
+  {
+    code: "EXT-01",
+    name: "Uso y manejo de extintores",
+    appliesTo: "crew_and_external",
+    requiresExpiry: true,
+    accreditationPack: null,
+  },
+  {
+    code: "ODI-01",
+    name: "Obligación de informar los riesgos (ODI)",
+    appliesTo: "crew_and_external",
+    requiresExpiry: true,
+    accreditationPack: null,
+  },
+  // Procedimiento del tipo CAL (empresa / faena)
+  {
+    code: "PS",
+    name: "Procedimiento de trabajo seguro en caliente",
+    appliesTo: "external",
+    requiresExpiry: false,
+    accreditationPack: null,
+  },
   // Cierre de permiso (fuera de pack)
   {
     code: "PP",
@@ -464,14 +487,13 @@ async function seedPrevencionDocumentTypes(): Promise<number> {
       });
 
       if (existing) {
-        // No pisa nombres ETL; asegura subtype + membresía de pack Anexo A.
+        // No pisa nombres ETL ni la membresía del pack (Prevención la edita a mano).
         await prisma.documentType.update({
           where: { id: existing.id },
           data: {
             subtype: "prevencion",
             uploadBy: "prevention_or_admin",
             viewBy: "prevention_or_admin",
-            accreditationPack: doc.accreditationPack,
           },
         });
       } else {
@@ -498,7 +520,11 @@ async function seedPrevencionDocumentTypes(): Promise<number> {
   return upserts;
 }
 
-/** Upsert de capacitaciones por empresa. */
+/**
+ * Upsert de capacitaciones por empresa.
+ * Enlaza documentTypeId cuando existe un DocumentType con el mismo código
+ * (evidencia subible en ficha de persona / faena del PT).
+ */
 async function seedTrainingsForBusinesses(): Promise<number> {
   const businesses = await prisma.business.findMany({
     where: { deletedAt: null },
@@ -508,6 +534,15 @@ async function seedTrainingsForBusinesses(): Promise<number> {
   let upserts = 0;
   for (const business of businesses) {
     for (const t of DEFAULT_TRAININGS) {
+      const evidenceDoc = await prisma.documentType.findFirst({
+        where: {
+          businessId: business.id,
+          code: t.code,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
       await prisma.training.upsert({
         where: {
           businessId_code: {
@@ -521,9 +556,12 @@ async function seedTrainingsForBusinesses(): Promise<number> {
           name: t.name,
           validityMonths: t.validityMonths,
           appliesTo: [...t.appliesTo],
+          documentTypeId: evidenceDoc?.id ?? null,
           active: true,
         },
-        update: {},
+        update: {
+          ...(evidenceDoc ? { documentTypeId: evidenceDoc.id } : {}),
+        },
       });
       upserts += 1;
     }
@@ -653,12 +691,12 @@ async function main() {
   const permitUpserts = await seedPermitTypesForBusinesses();
   console.log(`permit_types seed: ${permitUpserts} upserts`);
 
-  const trainingUpserts = await seedTrainingsForBusinesses();
-  console.log(`trainings seed: ${trainingUpserts} upserts`);
-
-  // Antes de exigencias CAL: PS/PP deben existir para enlazar documentTypeId.
+  // Docs primero: trainings y exigencias CAL enlazan documentTypeId (EXT-01, PS…).
   const docUpserts = await seedPrevencionDocumentTypes();
   console.log(`document_types (prevención pack) seed: ${docUpserts} upserts`);
+
+  const trainingUpserts = await seedTrainingsForBusinesses();
+  console.log(`trainings seed: ${trainingUpserts} upserts`);
 
   const reqUpserts = await seedCalRequirements();
   console.log(`permit_type_requirements (CAL) seed: ${reqUpserts} upserts`);

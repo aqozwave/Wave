@@ -3,6 +3,7 @@ import { AppError } from "../../lib/errors.js";
 import { auditWrite } from "../activityLogs/activityLogs.service.js";
 import {
   createAccreditationResponseSchema,
+  deleteAccreditationResponseSchema,
   getAccreditationResponseSchema,
   listAccreditationHistoryResponseSchema,
   listAccreditationsResponseSchema,
@@ -10,14 +11,18 @@ import {
   type CreateAccreditationBody,
   type ListAccreditationHistoryQuery,
   type ListAccreditationsQuery,
+  type RequestAdditionalDocsBody,
 } from "./accreditations.schemas.js";
 import {
   approveAccreditation,
+  clearAdditionalDocumentsRequest,
   createAccreditation,
+  deleteAccreditationById,
   getAccreditationById,
   listAccreditationHistory,
   listAccreditations,
   rejectAccreditation,
+  requestAdditionalDocuments,
   returnAccreditation,
   submitAccreditation,
 } from "./accreditations.service.js";
@@ -151,4 +156,66 @@ export async function rejectAccreditationHandler(
     metadata: { status: result.status },
   });
   res.status(200).json(getAccreditationResponseSchema.parse(result));
+}
+
+/** POST /accreditations/:id/request-additional-docs. */
+export async function requestAdditionalDocumentsHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as RequestAdditionalDocsBody;
+  const result = await requestAdditionalDocuments(
+    req.user,
+    req.params.id as string,
+    body,
+  );
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "contractorAccreditation",
+    resourceId: result.id,
+    targetLabel: `${result.code} · request-additional-docs`,
+    metadata: { awaitingAdditionalDocs: true },
+  });
+  res.status(200).json(getAccreditationResponseSchema.parse(result));
+}
+
+/** POST /accreditations/:id/clear-additional-docs. */
+export async function clearAdditionalDocumentsRequestHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await clearAdditionalDocumentsRequest(
+    req.user,
+    req.params.id as string,
+  );
+  auditWrite(req, {
+    action: "UPDATE",
+    resource: "contractorAccreditation",
+    resourceId: result.id,
+    targetLabel: `${result.code} · clear-additional-docs`,
+    metadata: { awaitingAdditionalDocs: false },
+  });
+  res.status(200).json(getAccreditationResponseSchema.parse(result));
+}
+
+/** DELETE /accreditations/:id — soft-delete. */
+export async function deleteAccreditationHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await deleteAccreditationById(
+    req.user,
+    req.params.id as string,
+  );
+  auditWrite(req, {
+    action: "DELETE",
+    resource: "contractorAccreditation",
+    resourceId: result.id,
+    targetLabel: `${result.code} · soft-delete`,
+    metadata: { status: result.status },
+  });
+  res.status(200).json(deleteAccreditationResponseSchema.parse(result));
 }

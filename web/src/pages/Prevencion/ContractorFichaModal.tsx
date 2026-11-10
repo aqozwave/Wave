@@ -293,6 +293,9 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [org, setOrg] = useState<ContractorOrganization | null>(null);
   const [habs, setHabs] = useState<ContractorAccreditation[]>([]);
+  /** Ya habilitada: no re-solicitar pack; docs extras van en la HAB aprobada. */
+  const hasApprovedHab = habs.some((h) => h.status === "approved");
+  const canRequestPack = canCreateHab && !hasApprovedHab;
   const [people, setPeople] = useState<ContractorPerson[]>([]);
   const [users, setUsers] = useState<ContractorUser[]>([]);
   const [permits, setPermits] = useState<WorkPermit[]>([]);
@@ -441,7 +444,7 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
   /** POST /accreditations para esta organización. */
   async function onRequestHab(e: FormEvent) {
     e.preventDefault();
-    if (!accessToken || !org || habRequesting || !canCreateHab) return;
+    if (!accessToken || !org || habRequesting || !canRequestPack) return;
     setHabRequesting(true);
     try {
       await createAccreditationRequest(accessToken, {
@@ -1028,7 +1031,7 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
                     >
                       Exportar
                     </DataTableOutlineButton>
-                    {canCreateHab ? (
+                    {canRequestPack ? (
                       <Button
                         type="button"
                         size="medium"
@@ -1038,6 +1041,11 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
                         <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
                         Solicitar documentación
                       </Button>
+                    ) : null}
+                    {canCreateHab && hasApprovedHab ? (
+                      <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                        Ya habilitada · docs adicionales en la HAB aprobada
+                      </span>
                     ) : null}
                   </div>
                 }
@@ -1055,7 +1063,7 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
                 {habs.length === 0 ? (
                   <p className="m-0 px-1 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
                     Todavía no hay HAB.
-                    {canCreateHab
+                    {canRequestPack
                       ? " Usá «Solicitar documentación»."
                       : ""}
                   </p>

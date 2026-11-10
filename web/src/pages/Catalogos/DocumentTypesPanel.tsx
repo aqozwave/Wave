@@ -101,6 +101,8 @@ type FormState = {
   crewCanView: boolean;
   /** "" = fuera del pack. */
   accreditationPack: "" | DocumentAccreditationPack;
+  /** Solo aplica si hay pack: bloquea completar HAB. */
+  accreditationPackRequired: boolean;
   businessId: string;
   state: boolean;
 };
@@ -115,6 +117,7 @@ const EMPTY_FORM: FormState = {
   viewBy: "prevention_or_admin",
   crewCanView: true,
   accreditationPack: "",
+  accreditationPackRequired: true,
   businessId: "",
   state: true,
 };
@@ -262,6 +265,7 @@ export const DocumentTypesPanel = forwardRef<DocumentTypesPanelHandle>(
         viewBy: (row.viewBy as DocumentActorScope) || "prevention_or_admin",
         crewCanView: row.crewCanView,
         accreditationPack: row.accreditationPack ?? "",
+        accreditationPackRequired: row.accreditationPackRequired ?? true,
         businessId: row.businessId,
         state: row.state,
       });
@@ -306,6 +310,9 @@ export const DocumentTypesPanel = forwardRef<DocumentTypesPanelHandle>(
           viewBy: form.viewBy,
           crewCanView: form.crewCanView,
           accreditationPack: form.accreditationPack || null,
+          accreditationPackRequired: form.accreditationPack
+            ? form.accreditationPackRequired
+            : true,
           state: form.state,
         };
         if (isSuperadmin && form.businessId) {
@@ -754,6 +761,16 @@ export const DocumentTypesPanel = forwardRef<DocumentTypesPanelHandle>(
                 una empresa o una persona externa.
               </span>
             </label>
+
+            {form.accreditationPack ? (
+              <OptionToggleRow
+                title="Obligatorio en el pack"
+                description="Si lo apagas, aparece en la HAB pero no bloquea enviar ni aprobar"
+                checked={form.accreditationPackRequired}
+                onChange={(next) => setField("accreditationPackRequired", next)}
+                aria-label="Obligatorio en el pack de habilitación"
+              />
+            ) : null}
 
             <OptionToggleRow
               title="El tripulante puede ver este documento"

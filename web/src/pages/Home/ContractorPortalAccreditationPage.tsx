@@ -188,20 +188,25 @@ export function ContractorPortalAccreditationPage() {
     hab.status === "observed" ||
     hab.status === "invited";
   /**
-   * Subir mientras HAB no esté cerrada (rejected).
-   * Approved: solo tipos vacíos (API reabre a in_review).
-   * in_review/pending/observed: subir o reemplazar.
+   * Pack en HAB abierta, o huecos si Prevención pidió docs adicionales
+   * sobre HAB aprobada.
    */
   const canUploadEditable =
     hab?.status === "pending" ||
     hab?.status === "observed" ||
     hab?.status === "invited" ||
     hab?.status === "in_review";
-  const canUploadApprovedGaps = hab?.status === "approved";
+  const canUploadAdditionalGaps =
+    hab?.status === "approved" && Boolean(hab.awaitingAdditionalDocs);
   /** true si ese slot admite Subir/Reemplazar. */
-  function canUploadSlot(hasDocument: boolean): boolean {
+  function canUploadSlot(
+    hasDocument: boolean,
+    requestedAdditional: boolean,
+  ): boolean {
     if (canUploadEditable) return true;
-    if (canUploadApprovedGaps && !hasDocument) return true;
+    if (canUploadAdditionalGaps && !hasDocument && requestedAdditional) {
+      return true;
+    }
     return false;
   }
   const canSubmit =
@@ -375,8 +380,10 @@ export function ContractorPortalAccreditationPage() {
     setForm((prev) => (prev ? { ...prev, [field]: value } : prev));
   }
 
-  const uploaded = items.filter((i) => i.document).length;
-  const required = items.length;
+  /** Progreso solo sobre obligatorios (opcionales no bloquean envío). */
+  const requiredItems = items.filter((i) => i.packRequired);
+  const uploaded = requiredItems.filter((i) => i.document).length;
+  const required = requiredItems.length;
 
   if (!user?.organizationId) {
     return (
@@ -458,6 +465,24 @@ export function ContractorPortalAccreditationPage() {
                 {hab.reviewNote ? (
                   <span className="w-full text-[12px] text-[var(--color-status-warning-fg,#b45309)]">
                     Observación: {hab.reviewNote}
+                  </span>
+                ) : null}
+                {hab.awaitingAdditionalDocs ? (
+                  <span className="w-full text-[13px] text-[var(--color-nachipa-body)]">
+                    <span className="font-medium text-[var(--color-nachipa-title)]">
+                      Prevención pide documentos adicionales.{" "}
+                    </span>
+                    {hab.additionalDocsMessage ??
+                      "Subí los tipos marcados como pedido adicional."}
+                    {items.some((i) => i.requestedAdditional) ? (
+                      <span className="mt-1 block text-[12px] text-[var(--color-nachipa-secondary)]">
+                        Pedidos:{" "}
+                        {items
+                          .filter((i) => i.requestedAdditional)
+                          .map((i) => i.documentType.name)
+                          .join(" · ")}
+                      </span>
+                    ) : null}
                   </span>
                 ) : null}
               </div>
@@ -649,7 +674,9 @@ export function ContractorPortalAccreditationPage() {
                         ? "Exigencia de tipo de permiso"
                         : item.source === "both"
                           ? "Pack + exigencia"
-                          : null;
+                          : item.source === "additional"
+                            ? "Pedido adicional"
+                            : null;
                     return (
                       <li
                         key={item.documentType.id}
@@ -677,6 +704,14 @@ export function ContractorPortalAccreditationPage() {
                           </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
+                          <StatusChip
+                            tone={item.packRequired ? "warning" : "neutral"}
+                          >
+                            {item.packRequired ? "Obligatorio" : "Opcional"}
+                          </StatusChip>
+                          {item.requestedAdditional ? (
+                            <StatusChip tone="info">Pedido adicional</StatusChip>
+                          ) : null}
                           {doc ? (
                             <StatusChip tone={docTone(doc.status)}>
                               {docLabel(doc.status)}
@@ -704,7 +739,10 @@ export function ContractorPortalAccreditationPage() {
                               Descargar
                             </button>
                           ) : null}
-                          {canUploadSlot(Boolean(doc)) ? (
+                          {canUploadSlot(
+                            Boolean(doc),
+                            item.requestedAdditional,
+                          ) ? (
                             <label className="cursor-pointer text-[12px] font-medium text-[var(--color-nachipa-title)] hover:underline">
                               {uploadingTypeId === item.documentType.id
                                 ? "Subiendo…"

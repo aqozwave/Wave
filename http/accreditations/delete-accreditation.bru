@@ -1,0 +1,38 @@
+meta {
+  name: Delete accreditation
+  type: http
+  seq: 9
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/accreditations/{{accreditationId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Soft-delete HAB (deletedAt). Sale de bandeja.
+  Bloquea status approved → 409 accreditation_delete_forbidden.
+  Permiso: accreditations.update (igual que submit/reject).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("accreditationId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y accreditationId (HAB no approved)");
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

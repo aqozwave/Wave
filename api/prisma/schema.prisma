@@ -603,6 +603,12 @@ model DocumentType {
    * company = entra en los 8 de empresa; person = los 8 de persona; null = fuera del pack.
    */
   accreditationPack AccreditationScope? @map("accreditation_pack")
+  /**
+   * Si está en pack empresa/persona: true = bloquea pack completo;
+   * false = aparece en checklist pero es opcional.
+   * Ignorado cuando accreditationPack es null.
+   */
+  accreditationPackRequired Boolean @default(true) @map("accreditation_pack_required")
   businessId    String    @map("business_id") @db.Uuid
   business      Business  @relation(fields: [businessId], references: [id])
   state         Boolean   @default(true)
@@ -1237,6 +1243,15 @@ model ContractorAccreditation {
   message        String?
   /// Observaciones al devolver o motivo de rechazo.
   reviewNote     String?             @map("review_note")
+  /**
+   * HAB aprobada: Prevención pidió docs adicionales al contratista.
+   * El portal puede subir huecos vacíos sin crear otra HAB ni perder approved.
+   */
+  awaitingAdditionalDocs Boolean @default(false) @map("awaiting_additional_docs")
+  /// Texto al contratista al pedir docs adicionales.
+  additionalDocsMessage String? @map("additional_docs_message")
+  /// Tipos de documento pedidos en el pedido adicional (uuids).
+  additionalDocsTypeIds String[] @default([]) @map("additional_docs_type_ids") @db.Uuid
   requestedAt    DateTime?           @map("requested_at") @db.Timestamptz
   requestedById  String?             @map("requested_by_id") @db.Uuid
   requestedBy    User?               @relation("AccreditationRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
@@ -1247,6 +1262,8 @@ model ContractorAccreditation {
   reviewedBy     User?               @relation("AccreditationReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
   createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+  /// Soft-delete: sale de bandeja; no borra docs en disco.
+  deletedAt      DateTime?           @map("deleted_at") @db.Timestamptz
   /// Documentos de empresa asociados a esta solicitud HAB.
   documents      ContractorOrgDocument[]
   /// Documentos por persona asociados a esta solicitud HAB.
@@ -1255,6 +1272,7 @@ model ContractorAccreditation {
   @@index([organizationId])
   @@index([status])
   @@index([requestedAt])
+  @@index([deletedAt])
   @@map("contractor_accreditations")
 }
 

@@ -285,7 +285,12 @@ export const workPermitAssignablePersonSchema = z
     missingRequirementCodes: z.array(z.string()),
     pendingRequirementLabels: z.array(z.string()),
     absentRequirementLabels: z.array(z.string()),
-    /** true solo si pack y exigencias de persona del tipo están OK. */
+    /** HAB actual de la org (para ir a cargar docs faltantes). */
+    accreditationId: z.uuid().nullable(),
+    /**
+     * true si el pack persona está completo (se puede asignar al PT).
+     * Las exigencias de faena/capacitación se piden al enviar a aprobación.
+     */
     canAssign: z.boolean(),
   })
   .openapi("WorkPermitAssignablePerson");

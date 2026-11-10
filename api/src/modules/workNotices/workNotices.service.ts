@@ -25,6 +25,7 @@ const noticeInclude = {
       contactEmail: true,
       contactPhone: true,
       accreditations: {
+        where: { deletedAt: null },
         orderBy: { createdAt: "desc" as const },
         take: 1,
         select: { status: true },

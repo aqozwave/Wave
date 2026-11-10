@@ -70,6 +70,11 @@ export const documentTypeFieldsSchema = z.object({
   visibility: documentVisibilitySchema.optional(),
   /** null saca el tipo del pack; omitido en update = no cambia. */
   accreditationPack: documentAccreditationPackSchema.nullable().optional(),
+  /**
+   * Si está en pack: true = obligatorio para completar HAB;
+   * false = aparece pero no bloquea. Default true.
+   */
+  accreditationPackRequired: z.boolean().optional(),
   businessId: z.uuid().optional(),
   state: z.boolean().optional(),
 });
@@ -88,6 +93,7 @@ export const documentTypeResponseSchema = z
     crewCanView: z.boolean(),
     visibility: z.string(),
     accreditationPack: documentAccreditationPackSchema.nullable(),
+    accreditationPackRequired: z.boolean(),
     businessId: z.uuid(),
     state: z.boolean(),
     deletedAt: z.string().datetime().nullable(),

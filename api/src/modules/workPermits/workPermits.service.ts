@@ -505,7 +505,7 @@ export async function checkWorkPermitRequirements(
   }
 
   const hab = await prisma.contractorAccreditation.findFirst({
-    where: { organizationId: org.id },
+    where: { organizationId: org.id, deletedAt: null },
     orderBy: { createdAt: "desc" },
     select: { id: true, code: true, status: true },
   });
@@ -906,48 +906,122 @@ async function assertReadyToSubmit(
   }
 }
 
-/** Exigencia document/person activa del tipo (antes de operar). */
+/**
+ * Exigencia de persona del tipo con evidencia documental (doc o capacitación
+ * enlazada a DocumentType). Pack HAB se valida aparte.
+ */
 type PersonDocRequirement = {
   key: string;
   label: string;
-  documentTypeId: string;
+  /** null = exigencia sin tipo de evidencia configurado (siempre falta). */
+  documentTypeId: string | null;
   documentType: { code: string; name: string } | null;
 };
 
-/** Carga exigencias document/person obligatorias del tipo. */
+/**
+ * Carga exigencias person/before: documentos con documentTypeId + capacitaciones
+ * con evidencia (Training.documentTypeId o DocumentType del mismo código).
+ */
 async function loadPersonDocRequirements(
   permitTypeId: string,
 ): Promise<PersonDocRequirement[]> {
+  const permitType = await prisma.permitType.findFirst({
+    where: { id: permitTypeId, deletedAt: null },
+    select: { businessId: true },
+  });
+  if (!permitType) return [];
+
   const rows = await prisma.permitTypeRequirement.findMany({
     where: {
       permitTypeId,
       active: true,
       mandatory: true,
-      kind: "document",
       scope: "person",
       moment: "before",
-      documentTypeId: { not: null },
+      OR: [{ kind: "document", documentTypeId: { not: null } }, { kind: "training" }],
     },
     include: {
       documentType: { select: { id: true, code: true, name: true } },
+      training: {
+        select: {
+          id: true,
+          code: true,
+          documentTypeId: true,
+          documentType: { select: { id: true, code: true, name: true } },
+        },
+      },
     },
   });
-  return rows
-    .filter((r) => r.documentTypeId)
-    .map((r) => ({
-      key: r.key,
-      label: r.label,
-      documentTypeId: r.documentTypeId!,
-      documentType: r.documentType
-        ? { code: r.documentType.code, name: r.documentType.name }
-        : null,
-    }));
+
+  const trainingCodesNeedingFallback = [
+    ...new Set(
+      rows
+        .filter(
+          (r) =>
+            r.kind === "training" &&
+            !r.training?.documentTypeId &&
+            (r.trainingCode || r.training?.code),
+        )
+        .map((r) => (r.trainingCode ?? r.training!.code).trim()),
+    ),
+  ];
+  const fallbackByCode = new Map<
+    string,
+    { id: string; code: string; name: string }
+  >();
+  if (trainingCodesNeedingFallback.length > 0) {
+    const found = await prisma.documentType.findMany({
+      where: {
+        businessId: permitType.businessId,
+        deletedAt: null,
+        state: true,
+        code: { in: trainingCodesNeedingFallback },
+      },
+      select: { id: true, code: true, name: true },
+    });
+    for (const d of found) fallbackByCode.set(d.code, d);
+  }
+
+  const out: PersonDocRequirement[] = [];
+  for (const r of rows) {
+    if (r.kind === "document" && r.documentTypeId) {
+      // Pack «los 8» vive en accreditationScope; aquí solo docs puntuales.
+      if (r.accreditationScope === "person") continue;
+      out.push({
+        key: r.key,
+        label: r.label,
+        documentTypeId: r.documentTypeId,
+        documentType: r.documentType
+          ? { code: r.documentType.code, name: r.documentType.name }
+          : null,
+      });
+      continue;
+    }
+    if (r.kind === "training") {
+      const linked = r.training?.documentType ?? null;
+      const code = (r.trainingCode ?? r.training?.code ?? "").trim();
+      const fallback = code ? fallbackByCode.get(code) : undefined;
+      const evidence = linked
+        ? { id: linked.id, code: linked.code, name: linked.name }
+        : fallback
+          ? { id: fallback.id, code: fallback.code, name: fallback.name }
+          : null;
+      out.push({
+        key: r.key,
+        label: r.label,
+        documentTypeId: evidence?.id ?? null,
+        documentType: evidence
+          ? { code: evidence.code, name: evidence.name }
+          : code
+            ? { code, name: r.label }
+            : null,
+      });
+    }
+  }
+  return out;
 }
 
-/**
- * Qué docs de exigencia por persona faltan (validados vigentes) en la HAB.
- * Capacitaciones quedan para P3.
- */
+/** Qué docs de exigencia por persona faltan (validados vigentes) en la HAB. */
 async function getPersonRequirementGaps(
   habId: string,
   personId: string,
@@ -967,22 +1041,29 @@ async function getPersonRequirementGaps(
     };
   }
 
+  const typeIds = requirements
+    .map((r) => r.documentTypeId)
+    .filter((id): id is string => Boolean(id));
+
   const now = Date.now();
-  const docs = await prisma.contractorPersonDocument.findMany({
-    where: {
-      accreditationId: habId,
-      personId,
-      deletedAt: null,
-      status: { not: "replaced" },
-      documentTypeId: { in: requirements.map((r) => r.documentTypeId) },
-    },
-    orderBy: { createdAt: "desc" },
-    select: {
-      documentTypeId: true,
-      status: true,
-      expiresAt: true,
-    },
-  });
+  const docs =
+    typeIds.length === 0
+      ? []
+      : await prisma.contractorPersonDocument.findMany({
+          where: {
+            accreditationId: habId,
+            personId,
+            deletedAt: null,
+            status: { not: "replaced" },
+            documentTypeId: { in: typeIds },
+          },
+          orderBy: { createdAt: "desc" },
+          select: {
+            documentTypeId: true,
+            status: true,
+            expiresAt: true,
+          },
+        });
   const byType = new Map<string, { status: string; expiresAt: Date | null }>();
   for (const doc of docs) {
     if (!byType.has(doc.documentTypeId)) {
@@ -998,6 +1079,12 @@ async function getPersonRequirementGaps(
   const pendingLabels: string[] = [];
   const absentLabels: string[] = [];
   for (const req of requirements) {
+    if (!req.documentTypeId) {
+      missingCodes.push(req.documentType?.code ?? req.key);
+      missingLabels.push(req.label);
+      absentLabels.push(req.label);
+      continue;
+    }
     const row = byType.get(req.documentTypeId);
     const ok =
       Boolean(row) &&
@@ -1038,7 +1125,7 @@ async function assertPeoplePermitPersonRequirements(
   if (requirements.length === 0) return;
 
   const hab = await prisma.contractorAccreditation.findFirst({
-    where: { organizationId },
+    where: { organizationId, deletedAt: null },
     orderBy: { createdAt: "desc" },
     select: { id: true, code: true },
   });
@@ -1100,7 +1187,7 @@ async function assertPeoplePersonPackComplete(
   if (people.length === 0) return;
 
   const hab = await prisma.contractorAccreditation.findFirst({
-    where: { organizationId },
+    where: { organizationId, deletedAt: null },
     orderBy: { createdAt: "desc" },
     select: { id: true, code: true, status: true },
   });
@@ -1715,7 +1802,7 @@ export async function listWorkPermitPeople(
     }),
     loadPersonDocRequirements(existing.permitTypeId),
     prisma.contractorAccreditation.findFirst({
-      where: { organizationId: existing.organizationId },
+      where: { organizationId: existing.organizationId, deletedAt: null },
       orderBy: { createdAt: "desc" },
       select: { id: true },
     }),
@@ -1785,6 +1872,7 @@ export type WorkPermitAssignablePersonDto = {
   missingRequirementCodes: string[];
   pendingRequirementLabels: string[];
   absentRequirementLabels: string[];
+  accreditationId: string | null;
   canAssign: boolean;
 };
 
@@ -1826,7 +1914,7 @@ export async function listWorkPermitAssignablePeople(
     }),
     loadPersonDocRequirements(existing.permitTypeId),
     prisma.contractorAccreditation.findFirst({
-      where: { organizationId: existing.organizationId },
+      where: { organizationId: existing.organizationId, deletedAt: null },
       orderBy: { createdAt: "desc" },
       select: { id: true },
     }),
@@ -1887,6 +1975,7 @@ export async function listWorkPermitAssignablePeople(
       missingRequirementCodes: gaps.missingCodes,
       pendingRequirementLabels: gaps.pendingLabels,
       absentRequirementLabels: gaps.absentLabels,
+      accreditationId: hab?.id ?? null,
       // Asignar exige solo pack; las exigencias de faena se piden al enviar a aprobación.
       canAssign: packComplete && packTypesCount > 0 && Boolean(hab),
     });

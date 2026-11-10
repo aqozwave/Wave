@@ -317,6 +317,9 @@ export function ContractorDetailPage() {
 
   const [org, setOrg] = useState<ContractorOrganization | null>(null);
   const [habs, setHabs] = useState<ContractorAccreditation[]>([]);
+  /** Ya habilitada: no re-solicitar pack; docs extras van en la HAB aprobada. */
+  const hasApprovedHab = habs.some((h) => h.status === "approved");
+  const canRequestPack = canCreateHab && !hasApprovedHab;
   const [orgUsers, setOrgUsers] = useState<ContractorUser[]>([]);
   const [people, setPeople] = useState<ContractorPerson[]>([]);
   const [permits, setPermits] = useState<WorkPermit[]>([]);
@@ -487,7 +490,7 @@ export function ContractorDetailPage() {
   /** POST /accreditations para esta organización. */
   async function onRequestHab(e: FormEvent) {
     e.preventDefault();
-    if (!accessToken || !org || habRequesting || !canCreateHab) return;
+    if (!accessToken || !org || habRequesting || !canRequestPack) return;
     setHabRequesting(true);
     try {
       await createAccreditationRequest(accessToken, {
@@ -1134,7 +1137,7 @@ export function ContractorDetailPage() {
                   >
                     Ir a bandeja
                   </Link>
-                  {canCreateHab ? (
+                  {canRequestPack ? (
                     <Button
                       type="button"
                       size="medium"
@@ -1144,6 +1147,11 @@ export function ContractorDetailPage() {
                       <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
                       Solicitar documentación
                     </Button>
+                  ) : null}
+                  {canCreateHab && hasApprovedHab ? (
+                    <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                      Ya habilitada · docs adicionales en la HAB aprobada
+                    </span>
                   ) : null}
                 </div>
               }
@@ -1161,7 +1169,7 @@ export function ContractorDetailPage() {
               {habs.length === 0 ? (
                 <p className="m-0 px-1 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
                   Todavía no hay HAB.
-                  {canCreateHab ? " Usá «Solicitar documentación»." : ""}
+                  {canRequestPack ? " Usá «Solicitar documentación»." : ""}
                 </p>
               ) : habPageItems.length === 0 ? (
                 <p className="m-0 px-1 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">

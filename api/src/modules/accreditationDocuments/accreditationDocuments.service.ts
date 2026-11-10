@@ -75,7 +75,7 @@ function assertTenantAccess(actor: Actor, businessId: string): void {
 /** Carga HAB + org; valida tenant. */
 async function loadAccreditationForActor(actor: Actor, accreditationId: string) {
   const row = await prisma.contractorAccreditation.findFirst({
-    where: { id: accreditationId },
+    where: { id: accreditationId, deletedAt: null },
     include: {
       organization: {
         select: {
@@ -111,15 +111,19 @@ function decodeBase64Content(contentBase64: string): Buffer {
 
 /**
  * Tipos empresa cargables en la HAB: pack company +
- * exigencias document/company de tipos de permiso activos (ej. OMI en ALT).
+ * exigencias document/company de tipos de permiso + pedidos adicionales.
  */
-async function resolveCompanyUploadableDocTypes(businessId: string): Promise<
+async function resolveCompanyUploadableDocTypes(
+  businessId: string,
+  opts?: { additionalTypeIds?: string[] },
+): Promise<
   Array<{
     type: DocumentType;
-    source: "pack" | "permit_requirement" | "both";
+    source: "pack" | "permit_requirement" | "both" | "additional";
   }>
 > {
-  const [packTypes, reqRows] = await Promise.all([
+  const additionalTypeIds = opts?.additionalTypeIds?.filter(Boolean) ?? [];
+  const [packTypes, reqRows, additionalTypes] = await Promise.all([
     prisma.documentType.findMany({
       where: {
         businessId,
@@ -140,14 +144,34 @@ async function resolveCompanyUploadableDocTypes(businessId: string): Promise<
       },
       select: { documentType: true },
     }),
+    additionalTypeIds.length === 0
+      ? Promise.resolve([] as DocumentType[])
+      : prisma.documentType.findMany({
+          where: {
+            businessId,
+            id: { in: additionalTypeIds },
+            deletedAt: null,
+            state: true,
+          },
+        }),
   ]);
 
   const byId = new Map<
     string,
-    { type: DocumentType; pack: boolean; requirement: boolean }
+    {
+      type: DocumentType;
+      pack: boolean;
+      requirement: boolean;
+      additional: boolean;
+    }
   >();
   for (const t of packTypes) {
-    byId.set(t.id, { type: t, pack: true, requirement: false });
+    byId.set(t.id, {
+      type: t,
+      pack: true,
+      requirement: false,
+      additional: false,
+    });
   }
   for (const row of reqRows) {
     if (!row.documentType) continue;
@@ -159,20 +183,33 @@ async function resolveCompanyUploadableDocTypes(businessId: string): Promise<
         type: row.documentType,
         pack: false,
         requirement: true,
+        additional: false,
+      });
+    }
+  }
+  for (const t of additionalTypes) {
+    const existing = byId.get(t.id);
+    if (existing) {
+      existing.additional = true;
+    } else {
+      byId.set(t.id, {
+        type: t,
+        pack: false,
+        requirement: false,
+        additional: true,
       });
     }
   }
 
   return [...byId.values()]
-    .map((row) => ({
-      type: row.type,
-      source:
-        row.pack && row.requirement
-          ? ("both" as const)
-          : row.pack
-            ? ("pack" as const)
-            : ("permit_requirement" as const),
-    }))
+    .map((row) => {
+      let source: "pack" | "permit_requirement" | "both" | "additional";
+      if (row.pack && row.requirement) source = "both";
+      else if (row.pack) source = "pack";
+      else if (row.requirement) source = "permit_requirement";
+      else source = "additional";
+      return { type: row.type, source };
+    })
     .sort((a, b) => a.type.code.localeCompare(b.type.code));
 }
 
@@ -191,16 +228,24 @@ export async function listAccreditationDocuments(
       name: string;
       requiresExpiry: boolean;
     };
-    source: "pack" | "permit_requirement" | "both";
+    source: "pack" | "permit_requirement" | "both" | "additional";
+    packRequired: boolean;
+    requestedAdditional: boolean;
     document: ContractorOrgDocumentResponse | null;
   }>;
   total: number;
 }> {
   const hab = await loadAccreditationForActor(actor, accreditationId);
 
+  const additionalTypeIds =
+    hab.awaitingAdditionalDocs && hab.additionalDocsTypeIds.length > 0
+      ? hab.additionalDocsTypeIds
+      : [];
   const uploadable = await resolveCompanyUploadableDocTypes(
     hab.organization.businessId,
+    { additionalTypeIds },
   );
+  const requestedSet = new Set(additionalTypeIds);
 
   const docs = await prisma.contractorOrgDocument.findMany({
     where: {
@@ -223,6 +268,11 @@ export async function listAccreditationDocuments(
   const items = uploadable.map((slot) => {
     const t = slot.type;
     const doc = latestByType.get(t.id) ?? null;
+    /** Exigencia / pedido adicional: obligatorio; pack respeta el flag. */
+    const packRequired =
+      slot.source === "permit_requirement" || slot.source === "additional"
+        ? true
+        : t.accreditationPackRequired;
     return {
       documentType: {
         id: t.id,
@@ -231,6 +281,8 @@ export async function listAccreditationDocuments(
         requiresExpiry: t.requiresExpiry,
       },
       source: slot.source,
+      packRequired,
+      requestedAdditional: requestedSet.has(t.id),
       document: doc ? toDocResponse(doc) : null,
     };
   });
@@ -240,11 +292,16 @@ export async function listAccreditationDocuments(
 
 /**
  * HAB rejected = cerrada.
- * Approved: solo se permite completar un tipo vacío (no reemplazar vigentes);
- * al subir, la HAB vuelve a in_review para que Prevención valide.
+ * Approved + pedido adicional: solo tipos en additionalDocsTypeIds y sin archivo.
+ * Sigue approved para no perder la habilitación.
  */
 async function assertHabAllowsCompanyUpload(
-  hab: { id: string; status: string },
+  hab: {
+    id: string;
+    status: string;
+    awaitingAdditionalDocs: boolean;
+    additionalDocsTypeIds: string[];
+  },
   documentTypeId: string,
 ): Promise<{ reopenForReview: boolean }> {
   if (hab.status === "rejected") {
@@ -256,6 +313,16 @@ async function assertHabAllowsCompanyUpload(
   }
   if (hab.status !== "approved") {
     return { reopenForReview: false };
+  }
+  if (
+    !hab.awaitingAdditionalDocs ||
+    !hab.additionalDocsTypeIds.includes(documentTypeId)
+  ) {
+    throw new AppError(
+      400,
+      "accreditation_closed",
+      "La HAB está aprobada; solo se pueden subir los tipos que Prevención pidió como adicionales",
+    );
   }
   const existing = await prisma.contractorOrgDocument.findFirst({
     where: {
@@ -273,7 +340,8 @@ async function assertHabAllowsCompanyUpload(
       "La HAB está aprobada; no se puede reemplazar un documento ya cargado. Pedile a Prevención que la observe.",
     );
   }
-  return { reopenForReview: true };
+  /** Hueco adicional: no reabrir a in_review (sigue habilitada). */
+  return { reopenForReview: false };
 }
 
 /**
@@ -287,8 +355,13 @@ export async function createAccreditationDocument(
 ): Promise<ContractorOrgDocumentResponse> {
   const hab = await loadAccreditationForActor(actor, accreditationId);
 
+  const additionalTypeIds =
+    hab.awaitingAdditionalDocs && hab.additionalDocsTypeIds.length > 0
+      ? hab.additionalDocsTypeIds
+      : [];
   const uploadable = await resolveCompanyUploadableDocTypes(
     hab.organization.businessId,
+    { additionalTypeIds },
   );
   const allowed = uploadable.find((s) => s.type.id === body.documentTypeId);
   const docType = allowed?.type ?? null;
@@ -296,7 +369,7 @@ export async function createAccreditationDocument(
     throw new AppError(
       400,
       "document_type_not_found",
-      "Tipo no válido: no está en el pack empresa ni en exigencias de tipos de permiso",
+      "Tipo no válido: no está en el pack empresa, exigencias ni pedido adicional",
     );
   }
 
@@ -662,13 +735,25 @@ async function resolvePersonUploadableDocTypes(
     "no_closure",
   ] as const;
 
+  /** Docs de faena + evidencia de capacitaciones del tipo (si la persona está en el PT). */
   const reqRows = await prisma.permitTypeRequirement.findMany({
     where: {
       active: true,
-      kind: "document",
       scope: "person",
-      documentTypeId: { not: null },
-      documentType: { deletedAt: null, state: true },
+      OR: [
+        {
+          kind: "document",
+          documentTypeId: { not: null },
+          documentType: { deletedAt: null, state: true },
+        },
+        {
+          kind: "training",
+          OR: [
+            { training: { documentTypeId: { not: null } } },
+            { trainingCode: { not: null } },
+          ],
+        },
+      ],
       permitType: {
         businessId,
         deletedAt: null,
@@ -683,7 +768,16 @@ async function resolvePersonUploadableDocTypes(
         },
       },
     },
-    select: { documentType: true },
+    select: {
+      documentType: true,
+      trainingCode: true,
+      training: {
+        select: {
+          code: true,
+          documentType: true,
+        },
+      },
+    },
   });
 
   const byId = new Map<
@@ -693,17 +787,48 @@ async function resolvePersonUploadableDocTypes(
   for (const t of packTypes) {
     byId.set(t.id, { type: t, pack: true, requirement: false });
   }
+
+  /** Códigos de capacitación sin Training.documentTypeId enlazado. */
+  const fallbackCodes = new Set<string>();
   for (const row of reqRows) {
-    if (!row.documentType) continue;
-    const existing = byId.get(row.documentType.id);
-    if (existing) {
-      existing.requirement = true;
-    } else {
-      byId.set(row.documentType.id, {
-        type: row.documentType,
-        pack: false,
-        requirement: true,
-      });
+    const linked =
+      row.documentType ?? row.training?.documentType ?? null;
+    if (linked && !linked.deletedAt && linked.state) {
+      const existing = byId.get(linked.id);
+      if (existing) {
+        existing.requirement = true;
+      } else {
+        byId.set(linked.id, {
+          type: linked,
+          pack: false,
+          requirement: true,
+        });
+      }
+      continue;
+    }
+    const code = (row.trainingCode ?? row.training?.code ?? "").trim();
+    if (code) fallbackCodes.add(code);
+  }
+  if (fallbackCodes.size > 0) {
+    const fallbackDocs = await prisma.documentType.findMany({
+      where: {
+        businessId,
+        deletedAt: null,
+        state: true,
+        code: { in: [...fallbackCodes] },
+      },
+    });
+    for (const linked of fallbackDocs) {
+      const existing = byId.get(linked.id);
+      if (existing) {
+        existing.requirement = true;
+      } else {
+        byId.set(linked.id, {
+          type: linked,
+          pack: false,
+          requirement: true,
+        });
+      }
     }
   }
 
@@ -738,6 +863,7 @@ export async function listAccreditationPersonDocuments(
     };
     /** pack = habilitación; permit_requirement = exigencia de tipo (BUC…); both = ambos. */
     source: "pack" | "permit_requirement" | "both";
+    packRequired: boolean;
     document: ContractorPersonDocumentResponse | null;
   }>;
   total: number;
@@ -773,6 +899,8 @@ export async function listAccreditationPersonDocuments(
 
   const items = uploadable.map(({ type: t, source }) => {
     const doc = latestByType.get(t.id) ?? null;
+    const packRequired =
+      source === "permit_requirement" ? true : t.accreditationPackRequired;
     return {
       documentType: {
         id: t.id,
@@ -781,6 +909,7 @@ export async function listAccreditationPersonDocuments(
         requiresExpiry: t.requiresExpiry,
       },
       source,
+      packRequired,
       document: doc ? toPersonDocResponse(doc) : null,
     };
   });
@@ -789,8 +918,8 @@ export async function listAccreditationPersonDocuments(
 }
 
 /**
- * Misma regla que empresa: approved solo permite completar tipo vacío;
- * al subir, HAB → in_review.
+ * Misma regla que empresa: approved solo completar tipo vacío;
+ * sigue approved (Prevención valida el archivo nuevo).
  */
 async function assertHabAllowsPersonUpload(
   hab: { id: string; status: string },
@@ -824,7 +953,7 @@ async function assertHabAllowsPersonUpload(
       "La HAB está aprobada; no se puede reemplazar un documento ya cargado. Pedile a Prevención que la observe.",
     );
   }
-  return { reopenForReview: true };
+  return { reopenForReview: false };
 }
 
 /** Sube doc pack person (reemplaza vigente del mismo tipo). */

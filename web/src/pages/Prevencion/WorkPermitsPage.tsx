@@ -468,7 +468,8 @@ export function WorkPermitsPage() {
                       <WorkPermitProgressCell status={row.status} />
                     </td>
                     <td className="sticky right-0 z-10 whitespace-nowrap bg-white px-3 py-2.5 text-right shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.08)] group-hover:bg-[var(--color-nachipa-bg-page)]">
-                      <span className="inline-flex flex-wrap items-center justify-end gap-2">
+                      {/* Aprobar solo dentro del PT (evita clic accidental en la lista). */}
+                      <span className="inline-flex flex-wrap items-center justify-end gap-x-5 gap-y-2">
                         {/* Siempre visible: Acciones nunca queda vacía. */}
                         <Link
                           to={`/prevencion/permisos/${row.id}`}
@@ -488,24 +489,14 @@ export function WorkPermitsPage() {
                         {canUpdate &&
                         isStaff &&
                         row.status === "to_approve" ? (
-                          <>
-                            <button
-                              type="button"
-                              className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
-                              disabled={actingId === row.id}
-                              onClick={() => openSignModal("approve", row)}
-                            >
-                              {actingId === row.id ? "…" : "Aprobar"}
-                            </button>
-                            <button
-                              type="button"
-                              className="text-[13px] font-medium text-[var(--color-nachipa-title)] hover:underline disabled:opacity-60"
-                              disabled={actingId === row.id}
-                              onClick={() => openNoteModal("return", row)}
-                            >
-                              Devolver
-                            </button>
-                          </>
+                          <button
+                            type="button"
+                            className="text-[13px] font-medium text-[var(--color-nachipa-title)] hover:underline disabled:opacity-60"
+                            disabled={actingId === row.id}
+                            onClick={() => openNoteModal("return", row)}
+                          >
+                            Devolver
+                          </button>
                         ) : null}
                         {canReceive &&
                         isStaff &&

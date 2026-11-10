@@ -165,13 +165,14 @@ export function ContractorPortalPeoplePage() {
   const [pendingDeactivate, setPendingDeactivate] =
     useState<ContractorPortalPerson | null>(null);
 
-  /** Editar/reemplazar en HAB abierta; approved solo completar huecos. */
+  /** Pack en HAB abierta; huecos si Prevención pidió adicionales en aprobada. */
   const canUploadEditable =
     hab?.status === "pending" ||
     hab?.status === "observed" ||
     hab?.status === "invited" ||
     hab?.status === "in_review";
-  const canUploadApprovedGaps = hab?.status === "approved";
+  const canUploadApprovedGaps =
+    hab?.status === "approved" && Boolean(hab.awaitingAdditionalDocs);
 
   const load = useCallback(async () => {
     if (!accessToken) return;

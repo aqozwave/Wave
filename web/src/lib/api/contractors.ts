@@ -479,6 +479,10 @@ export type ContractorPortalAccreditation = {
   status: ContractorAccreditationStatus;
   message: string | null;
   reviewNote: string | null;
+  awaitingAdditionalDocs: boolean;
+  additionalDocsMessage: string | null;
+  /** Tipos pedidos en el pedido adicional activo. */
+  additionalDocsTypeIds: string[];
   requestedAt: string | null;
   dueAt: string | null;
   submittedAt: string | null;
@@ -487,7 +491,7 @@ export type ContractorPortalAccreditation = {
   updatedAt: string;
 };
 
-/** Ítem checklist pack company (+ exigencias de tipos) en portal. */
+/** Ítem checklist pack company (+ exigencias / pedido adicional) en portal. */
 export type ContractorPortalDocChecklistItem = {
   documentType: {
     id: string;
@@ -495,7 +499,11 @@ export type ContractorPortalDocChecklistItem = {
     name: string;
     requiresExpiry: boolean;
   };
-  source: "pack" | "permit_requirement" | "both";
+  source: "pack" | "permit_requirement" | "both" | "additional";
+  /** false = pack opcional; no bloquea envío a revisión. */
+  packRequired: boolean;
+  /** Incluido en el pedido adicional activo de Prevención. */
+  requestedAdditional: boolean;
   document: {
     id: string;
     originalName: string;
@@ -706,6 +714,7 @@ export type ContractorPortalPersonDocChecklistItem = {
   };
   /** pack = HAB; permit_requirement = exigencia del tipo; both = ambos. */
   source: "pack" | "permit_requirement" | "both";
+  packRequired: boolean;
   document: {
     id: string;
     originalName: string;

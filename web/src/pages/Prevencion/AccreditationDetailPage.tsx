@@ -25,8 +25,10 @@ import { useToast } from "../../components/Toast/ToastProvider";
 import { downloadXls } from "../../lib/exportXls";
 import {
   approveAccreditationRequest,
+  clearAdditionalDocsRequest,
   createAccreditationDocumentRequest,
   createAccreditationPersonDocumentRequest,
+  deleteAccreditationRequest,
   downloadAccreditationDocumentRequest,
   downloadAccreditationPersonDocumentRequest,
   fileToBase64,
@@ -37,6 +39,7 @@ import {
   previewAccreditationDocumentRequest,
   previewAccreditationPersonDocumentRequest,
   rejectAccreditationRequest,
+  requestAdditionalDocsRequest,
   returnAccreditationRequest,
   submitAccreditationRequest,
   validateAccreditationDocumentRequest,
@@ -54,6 +57,10 @@ import {
   type ContractorOrganization,
   type ContractorPerson,
 } from "../../lib/api/contractors";
+import {
+  listDocumentTypesRequest,
+  type DocumentType,
+} from "../../lib/api/documentTypes";
 import { userHasPermission } from "../../lib/api/auth";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
@@ -254,6 +261,21 @@ export function AccreditationDetailPage() {
     null,
   );
   const [reviewNote, setReviewNote] = useState("");
+  /** Modal pedir docs adicionales (HAB aprobada). */
+  const [additionalDocsOpen, setAdditionalDocsOpen] = useState(false);
+  const [additionalDocsMessage, setAdditionalDocsMessage] = useState("");
+  /** Tipos marcados en el modal de pedido adicional. */
+  const [additionalDocsSelectedIds, setAdditionalDocsSelectedIds] = useState<
+    string[]
+  >([]);
+  /** Catálogo activo del tenant para elegir qué pedir. */
+  const [additionalDocsCatalog, setAdditionalDocsCatalog] = useState<
+    DocumentType[]
+  >([]);
+  const [additionalDocsCatalogLoading, setAdditionalDocsCatalogLoading] =
+    useState(false);
+  /** Confirmación soft-delete HAB. */
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [observeDocId, setObserveDocId] = useState<string | null>(null);
   /** Si viene, la observación es de pack person. */
   const [observePersonId, setObservePersonId] = useState<string | null>(null);
@@ -693,6 +715,142 @@ export function AccreditationDetailPage() {
     canUpdate && (hab.status === "pending" || hab.status === "observed");
   const canApprove = canUpdate && hab.status === "in_review";
   const canReturnOrReject = canUpdate && hab.status === "in_review";
+  const canRequestAdditional =
+    canUpdate && hab.status === "approved" && !hab.awaitingAdditionalDocs;
+  const canClearAdditional =
+    canUpdate && hab.status === "approved" && hab.awaitingAdditionalDocs;
+  /** Soft-delete: no en aprobadas. */
+  const canDelete = canUpdate && hab.status !== "approved";
+
+  /** Abre el modal y carga tipos activos del tenant para elegir. */
+  async function openRequestAdditionalModal() {
+    if (!accessToken || !hab) return;
+    setAdditionalDocsMessage(
+      "Favor subir los documentos adicionales solicitados por Prevención.",
+    );
+    setAdditionalDocsSelectedIds([]);
+    setAdditionalDocsOpen(true);
+    setAdditionalDocsCatalogLoading(true);
+    try {
+      const result = await listDocumentTypesRequest(accessToken, 1, 200, {
+        businessId: hab.organization.businessId,
+      });
+      /** Solo activos; prioridad pack company, luego resto por código. */
+      const active = result.items
+        .filter((t) => t.state && !t.deletedAt)
+        .sort((a, b) => {
+          const packA = a.accreditationPack === "company" ? 0 : 1;
+          const packB = b.accreditationPack === "company" ? 0 : 1;
+          if (packA !== packB) return packA - packB;
+          return a.code.localeCompare(b.code);
+        });
+      setAdditionalDocsCatalog(active);
+    } catch (err) {
+      setAdditionalDocsCatalog([]);
+      showToast(
+        err instanceof ApiError
+          ? err.message
+          : "No se pudieron cargar los tipos de documento.",
+        "danger",
+      );
+    } finally {
+      setAdditionalDocsCatalogLoading(false);
+    }
+  }
+
+  /** Marca o desmarca un tipo en el pedido adicional. */
+  function toggleAdditionalDocType(typeId: string) {
+    setAdditionalDocsSelectedIds((prev) =>
+      prev.includes(typeId)
+        ? prev.filter((id) => id !== typeId)
+        : [...prev, typeId],
+    );
+  }
+
+  /** Confirma pedido de docs adicionales al contratista. */
+  async function confirmRequestAdditional() {
+    if (
+      !accessToken ||
+      !hab ||
+      !additionalDocsMessage.trim() ||
+      additionalDocsSelectedIds.length === 0 ||
+      acting
+    ) {
+      return;
+    }
+    setActing(true);
+    try {
+      const updated = await requestAdditionalDocsRequest(
+        accessToken,
+        hab.id,
+        additionalDocsMessage.trim(),
+        additionalDocsSelectedIds,
+      );
+      setHab(updated);
+      setAdditionalDocsOpen(false);
+      setAdditionalDocsMessage("");
+      setAdditionalDocsSelectedIds([]);
+      /** Refresca checklist para ver badges «Pedido adicional». */
+      const docs = await listAccreditationDocumentsRequest(
+        accessToken,
+        hab.id,
+      );
+      setDocItems(docs.items);
+      showToast(
+        "Pedido de documentos adicionales enviado al contratista.",
+        "success",
+      );
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo solicitar.",
+        "danger",
+      );
+    } finally {
+      setActing(false);
+    }
+  }
+
+  /** Cierra el pedido de adicionales. */
+  async function onClearAdditional() {
+    if (!accessToken || !hab || acting) return;
+    setActing(true);
+    try {
+      const updated = await clearAdditionalDocsRequest(accessToken, hab.id);
+      setHab(updated);
+      const docs = await listAccreditationDocumentsRequest(
+        accessToken,
+        hab.id,
+      );
+      setDocItems(docs.items);
+      showToast("Pedido de adicionales cerrado.", "success");
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo cerrar.",
+        "danger",
+      );
+    } finally {
+      setActing(false);
+    }
+  }
+
+  /** Soft-delete HAB y vuelve a la bandeja. */
+  async function onConfirmDelete() {
+    if (!accessToken || !hab || acting) return;
+    setActing(true);
+    try {
+      await deleteAccreditationRequest(accessToken, hab.id);
+      showToast(`${hab.code} eliminada de la bandeja.`, "success");
+      setDeleteOpen(false);
+      navigate("/prevencion/habilitaciones");
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo eliminar.",
+        "danger",
+      );
+    } finally {
+      setActing(false);
+    }
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -760,6 +918,36 @@ export function AccreditationDetailPage() {
                   </button>
                 </>
               ) : null}
+              {canRequestAdditional ? (
+                <button
+                  type="button"
+                  className={outlineBtnClass}
+                  disabled={acting}
+                  onClick={() => void openRequestAdditionalModal()}
+                >
+                  Solicitar docs adicionales
+                </button>
+              ) : null}
+              {canClearAdditional ? (
+                <button
+                  type="button"
+                  className={outlineBtnClass}
+                  disabled={acting}
+                  onClick={() => void onClearAdditional()}
+                >
+                  Cerrar pedido adicionales
+                </button>
+              ) : null}
+              {canDelete ? (
+                <button
+                  type="button"
+                  className={outlineBtnClass}
+                  disabled={acting}
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  Eliminar
+                </button>
+              ) : null}
             </div>
           }
         />
@@ -768,6 +956,9 @@ export function AccreditationDetailPage() {
           <StatusChip tone={statusTone(hab.status)}>
             {statusLabel(hab.status)}
           </StatusChip>
+          {hab.awaitingAdditionalDocs ? (
+            <StatusChip tone="warning">Esperando adicionales</StatusChip>
+          ) : null}
           <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
             Solicitada {formatDate(hab.requestedAt)}
             {hab.dueAt ? ` · Plazo ${formatDate(hab.dueAt)}` : ""}
@@ -795,6 +986,24 @@ export function AccreditationDetailPage() {
               Nota de revisión:{" "}
             </span>
             {hab.reviewNote}
+          </p>
+        ) : null}
+
+        {hab.awaitingAdditionalDocs ? (
+          <p className="m-0 max-w-2xl rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3.5 py-3 text-[13px] text-[var(--color-nachipa-body)]">
+            <span className="font-medium text-[var(--color-nachipa-title)]">
+              Docs adicionales pedidos al contratista:{" "}
+            </span>
+            {hab.additionalDocsMessage ?? "Sin mensaje."}
+            {docItems.some((i) => i.requestedAdditional) ? (
+              <span className="mt-1 block text-[12px] text-[var(--color-nachipa-secondary)]">
+                Tipos:{" "}
+                {docItems
+                  .filter((i) => i.requestedAdditional)
+                  .map((i) => i.documentType.name)
+                  .join(" · ")}
+              </span>
+            ) : null}
           </p>
         ) : null}
 
@@ -842,7 +1051,9 @@ export function AccreditationDetailPage() {
                       ? "Exigencia de tipo de permiso"
                       : item.source === "both"
                         ? "Pack + exigencia"
-                        : null;
+                        : item.source === "additional"
+                          ? "Pedido adicional"
+                          : null;
                   return (
                     <li
                       key={item.documentType.id}
@@ -870,6 +1081,14 @@ export function AccreditationDetailPage() {
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
+                        <StatusChip
+                          tone={item.packRequired ? "warning" : "neutral"}
+                        >
+                          {item.packRequired ? "Obligatorio" : "Opcional"}
+                        </StatusChip>
+                        {item.requestedAdditional ? (
+                          <StatusChip tone="info">Pedido adicional</StatusChip>
+                        ) : null}
                         {doc ? (
                           <StatusChip tone={docStatusTone(doc.status)}>
                             {docStatusLabel(doc.status)}
@@ -957,9 +1176,13 @@ export function AccreditationDetailPage() {
                             </DocIconButton>
                           </>
                         ) : null}
+                        {/*
+                          HAB abierta: subir/reemplazar.
+                          HAB aprobada: solo huecos (docs adicionales); Prevención sube primero.
+                        */}
                         {canUpdate &&
-                        hab.status !== "approved" &&
-                        hab.status !== "rejected" ? (
+                        hab.status !== "rejected" &&
+                        (hab.status !== "approved" || !doc) ? (
                           <label className="cursor-pointer px-1 text-[12px] font-medium text-[var(--color-nachipa-title)] hover:underline">
                             {uploadingTypeId === item.documentType.id
                               ? "Subiendo…"
@@ -1109,6 +1332,17 @@ export function AccreditationDetailPage() {
                                       </div>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-2">
+                                      <StatusChip
+                                        tone={
+                                          item.packRequired
+                                            ? "warning"
+                                            : "neutral"
+                                        }
+                                      >
+                                        {item.packRequired
+                                          ? "Obligatorio"
+                                          : "Opcional"}
+                                      </StatusChip>
                                       {doc ? (
                                         <StatusChip
                                           tone={docStatusTone(doc.status)}
@@ -1235,8 +1469,8 @@ export function AccreditationDetailPage() {
                                         </>
                                       ) : null}
                                       {canUpdate &&
-                                      hab.status !== "approved" &&
-                                      hab.status !== "rejected" ? (
+                                      hab.status !== "rejected" &&
+                                      (hab.status !== "approved" || !doc) ? (
                                         <label className="cursor-pointer px-1 text-[11px] font-medium text-[var(--color-nachipa-title)] hover:underline">
                                           {uploadingTypeId ===
                                           item.documentType.id
@@ -1546,6 +1780,152 @@ export function AccreditationDetailPage() {
           onChange={(e) => setReviewNote(e.target.value)}
           required
         />
+      </Modal>
+
+      <Modal
+        open={additionalDocsOpen}
+        onClose={() => {
+          if (!acting) setAdditionalDocsOpen(false);
+        }}
+        icon={ClipboardCheck}
+        title="Solicitar documentos adicionales"
+        subtitle="La HAB sigue aprobada. Marcá qué tipos debe subir el contratista."
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() => setAdditionalDocsOpen(false)}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={
+                acting ||
+                !additionalDocsMessage.trim() ||
+                additionalDocsSelectedIds.length === 0
+              }
+              onClick={() => void confirmRequestAdditional()}
+            >
+              {acting ? "Enviando…" : "Solicitar al contratista"}
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <TextField
+            label="Mensaje al contratista"
+            value={additionalDocsMessage}
+            onChange={(e) => setAdditionalDocsMessage(e.target.value)}
+            required
+          />
+          <div>
+            <p className="m-0 mb-2 text-[13px] font-medium text-[var(--color-nachipa-title)]">
+              Documentos a solicitar
+              <span className="ml-1 font-normal text-[var(--color-status-danger-fg,#b91c1c)]">
+                *
+              </span>
+            </p>
+            {additionalDocsCatalogLoading ? (
+              <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+                Cargando tipos…
+              </p>
+            ) : additionalDocsCatalog.length === 0 ? (
+              <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+                No hay tipos activos en este tenant.
+              </p>
+            ) : (
+              <ul className="m-0 max-h-56 list-none space-y-1 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] p-2">
+                {additionalDocsCatalog.map((t) => {
+                  const checked = additionalDocsSelectedIds.includes(t.id);
+                  const alreadyHasFile = docItems.some(
+                    (i) => i.documentType.id === t.id && i.document,
+                  );
+                  return (
+                    <li key={t.id}>
+                      <label
+                        className={[
+                          "flex cursor-pointer items-start gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-[13px]",
+                          checked
+                            ? "bg-[var(--color-neutral-100)]"
+                            : "hover:bg-[var(--color-neutral-50)]",
+                        ].join(" ")}
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={checked}
+                          disabled={acting || alreadyHasFile}
+                          onChange={() => toggleAdditionalDocType(t.id)}
+                        />
+                        <span className="min-w-0">
+                          <span className="font-medium text-[var(--color-nachipa-title)]">
+                            {t.name}
+                          </span>
+                          <span className="ml-1.5 text-[12px] text-[var(--color-nachipa-secondary)]">
+                            {t.code}
+                            {t.accreditationPack === "company"
+                              ? " · pack empresa"
+                              : t.accreditationPack === "person"
+                                ? " · pack persona"
+                                : ""}
+                            {alreadyHasFile ? " · ya tiene archivo" : ""}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {additionalDocsSelectedIds.length > 0 ? (
+              <p className="m-0 mt-1.5 text-[12px] text-[var(--color-nachipa-secondary)]">
+                {additionalDocsSelectedIds.length} seleccionado
+                {additionalDocsSelectedIds.length === 1 ? "" : "s"}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={deleteOpen}
+        onClose={() => {
+          if (!acting) setDeleteOpen(false);
+        }}
+        title="Eliminar habilitación"
+        subtitle={`${hab.code} · ${displayName(hab.organization.name)}`}
+        maxWidthClass="max-w-[440px]"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() => setDeleteOpen(false)}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={acting}
+              onClick={() => void onConfirmDelete()}
+            >
+              {acting ? "Eliminando…" : "Eliminar"}
+            </Button>
+          </div>
+        }
+      >
+        <p className="m-0 text-[13px] text-[var(--color-nachipa-body)]">
+          Se quita de la bandeja (soft-delete). No se puede eliminar una HAB
+          aprobada.
+        </p>
       </Modal>
     </div>
   );

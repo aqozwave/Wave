@@ -38,11 +38,12 @@ export const contractorOrgDocumentResponseSchema = z
   })
   .openapi("ContractorOrgDocument");
 
-/** Origen del slot empresa: pack HAB, exigencia de tipo de permiso, o ambos. */
+/** Origen del slot empresa: pack, exigencia de permiso, ambos, o pedido adicional. */
 export const companyDocumentSlotSourceSchema = z.enum([
   "pack",
   "permit_requirement",
   "both",
+  "additional",
 ]);
 
 /**
@@ -53,6 +54,13 @@ export const accreditationDocumentChecklistItemSchema = z
   .object({
     documentType: documentTypeSummarySchema,
     source: companyDocumentSlotSourceSchema,
+    /**
+     * false = en pack pero opcional (no bloquea enviar/aprobar).
+     * Exigencias de tipo de permiso / pedido adicional: true.
+     */
+    packRequired: z.boolean(),
+    /** Incluido en el pedido adicional activo de Prevención. */
+    requestedAdditional: z.boolean(),
     document: contractorOrgDocumentResponseSchema.nullable(),
   })
   .openapi("AccreditationDocumentChecklistItem");
@@ -169,6 +177,8 @@ export const accreditationPersonDocumentChecklistItemSchema = z
   .object({
     documentType: documentTypeSummarySchema,
     source: personDocumentSlotSourceSchema,
+    /** false = pack persona opcional; exigencias de faena siempre true. */
+    packRequired: z.boolean(),
     document: contractorPersonDocumentResponseSchema.nullable(),
   })
   .openapi("AccreditationPersonDocumentChecklistItem");

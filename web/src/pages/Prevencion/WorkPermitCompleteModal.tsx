@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router";
 import { Button } from "../../components/Button/Button";
 import { Modal } from "../../components/Modal/Modal";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
@@ -53,11 +54,12 @@ export function WorkPermitCompleteModal({
   open,
   permit,
   accessToken,
-  mode: _mode,
+  mode,
   onClose,
   onDone,
 }: Props) {
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [available, setAvailable] = useState<WorkPermitAssignablePerson[]>([]);
@@ -192,10 +194,48 @@ export function WorkPermitCompleteModal({
     }
   }
 
+  /**
+   * Asigna a la persona (para desbloquear tipos de faena) y lleva a cargar docs.
+   * Portal → Personal; staff → ficha del contratista.
+   */
+  async function goUploadMissing(person: WorkPermitAssignablePerson) {
+    if (!permit || !accessToken || saving || !person.canAssign) return;
+    setSaving(true);
+    try {
+      const nextIds = new Set(selectedIds);
+      nextIds.add(person.personId);
+      await putWorkPermitPeopleRequest(accessToken, permit.id, [...nextIds]);
+      setSelectedIds(nextIds);
+      showToast(
+        "Personal guardado. Cargá los documentos faltantes y volvé a Completar.",
+        "info",
+      );
+      onDone();
+      onClose();
+      if (mode === "portal") {
+        navigate("/portal/personal");
+      } else {
+        navigate(`/prevencion/contratistas/${permit.organizationId}`);
+      }
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo asignar la persona.",
+        "danger",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const allAnswered =
     checklist.length === 0 ||
     checklist.every((item) => Boolean(answers[item.checklistItemId]));
-  const canSubmit = selectedIds.size >= 1 && allAnswered;
+  const selectedPeople = available.filter((p) => selectedIds.has(p.personId));
+  const allSelectedMeetJob =
+    selectedPeople.length > 0 && selectedPeople.every(personMeetsJob);
+  /** Enviar solo con personal Cumple + checklist completo. */
+  const canSubmit =
+    selectedIds.size >= 1 && allAnswered && allSelectedMeetJob;
 
   return (
     <Modal
@@ -257,62 +297,84 @@ export function WorkPermitCompleteModal({
               Personal ({selectedIds.size})
             </h3>
             <p className="m-0 mb-2 text-[12px] text-[var(--color-nachipa-secondary)]">
-              Badge «Cumple» = pack + docs de esta faena
+              Badge «Cumple» = pack + docs/capacitaciones de esta faena
               {requirementLabels.length > 0
                 ? ` (${requirementLabels.join(", ")})`
                 : ""}{" "}
-              validados. Podés asignar con pack OK aunque diga «No cumple»; al
-              enviar a aprobación sí deben estar todos vigentes.
+              validados. Podés asignar con pack OK; para enviar a revisión todos
+              los seleccionados deben estar en Cumple (cargá los faltantes
+              antes).
             </p>
             {available.length === 0 ? (
               <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
                 No hay personas activas en la organización.
               </p>
             ) : (
-              <ul className="m-0 flex max-h-64 list-none flex-col gap-1 overflow-y-auto p-0">
+              <ul className="m-0 flex max-h-72 list-none flex-col gap-1 overflow-y-auto p-0">
                 {available.map((p) => {
                   const hint = missingHint(p);
                   const cumple = personMeetsJob(p);
+                  const selected = selectedIds.has(p.personId);
                   return (
                     <li key={p.personId}>
-                      <label
+                      <div
                         className={`flex items-start gap-2 rounded-[var(--radius-md)] px-2 py-1.5 ${
                           p.canAssign
-                            ? "cursor-pointer hover:bg-[var(--color-nachipa-bg-page)]"
-                            : "cursor-not-allowed opacity-60"
+                            ? "hover:bg-[var(--color-nachipa-bg-page)]"
+                            : "opacity-60"
                         }`}
                       >
-                        <input
-                          type="checkbox"
-                          className="mt-1"
-                          checked={selectedIds.has(p.personId)}
-                          disabled={!p.canAssign}
-                          onChange={() => togglePerson(p)}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="flex flex-wrap items-center gap-2">
-                            <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                              {p.fullName}
+                        <label
+                          className={`flex min-w-0 flex-1 items-start gap-2 ${
+                            p.canAssign
+                              ? "cursor-pointer"
+                              : "cursor-not-allowed"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={selected}
+                            disabled={!p.canAssign}
+                            onChange={() => togglePerson(p)}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex flex-wrap items-center gap-2">
+                              <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                                {p.fullName}
+                              </span>
+                              <StatusChip
+                                tone={cumple ? "success" : "warning"}
+                              >
+                                {cumple ? "Cumple" : "No cumple"}
+                              </StatusChip>
                             </span>
-                            <StatusChip tone={cumple ? "success" : "warning"}>
-                              {cumple ? "Cumple" : "No cumple"}
-                            </StatusChip>
+                            <span className="mt-0.5 block text-[12px] tabular-nums text-[var(--color-nachipa-secondary)]">
+                              {p.rut}
+                              {p.position ? ` · ${p.position}` : ""}
+                              {!p.canAssign
+                                ? hint
+                                  ? ` · ${hint}`
+                                  : " · Sin pack"
+                                : !cumple && hint
+                                  ? ` · ${hint}`
+                                  : cumple
+                                    ? " · Listo para enviar"
+                                    : ""}
+                            </span>
                           </span>
-                          <span className="mt-0.5 block text-[12px] tabular-nums text-[var(--color-nachipa-secondary)]">
-                            {p.rut}
-                            {p.position ? ` · ${p.position}` : ""}
-                            {!p.canAssign
-                              ? hint
-                                ? ` · ${hint}`
-                                : " · Sin pack"
-                              : !cumple && hint
-                                ? ` · Asignable · Al enviar: ${hint}`
-                                : cumple
-                                  ? " · Listo para enviar"
-                                  : ""}
-                          </span>
-                        </span>
-                      </label>
+                        </label>
+                        {p.canAssign && !cumple ? (
+                          <button
+                            type="button"
+                            disabled={saving}
+                            className="shrink-0 self-center text-[12px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
+                            onClick={() => void goUploadMissing(p)}
+                          >
+                            Cargar faltantes
+                          </button>
+                        ) : null}
+                      </div>
                     </li>
                   );
                 })}

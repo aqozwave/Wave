@@ -66,6 +66,7 @@ function toResponse(row: {
   crewCanView: boolean;
   visibility: string;
   accreditationPack: "company" | "person" | null;
+  accreditationPackRequired: boolean;
   businessId: string;
   state: boolean;
   deletedAt: Date | null;
@@ -85,6 +86,7 @@ function toResponse(row: {
     crewCanView: row.crewCanView,
     visibility: row.visibility,
     accreditationPack: row.accreditationPack,
+    accreditationPackRequired: row.accreditationPackRequired,
     businessId: row.businessId,
     state: row.state,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
@@ -265,6 +267,7 @@ export async function createDocumentType(
         crewCanView,
         visibility,
         accreditationPack: body.accreditationPack ?? null,
+        accreditationPackRequired: body.accreditationPackRequired ?? true,
         businessId,
         state: body.state ?? true,
       },
@@ -340,6 +343,9 @@ export async function updateDocumentType(
   if (payload.visibility !== undefined) data.visibility = payload.visibility;
   if (payload.accreditationPack !== undefined) {
     data.accreditationPack = payload.accreditationPack;
+  }
+  if (payload.accreditationPackRequired !== undefined) {
+    data.accreditationPackRequired = payload.accreditationPackRequired;
   }
   if (payload.state !== undefined) data.state = payload.state;
   if (nextBusinessId !== existing.businessId) {

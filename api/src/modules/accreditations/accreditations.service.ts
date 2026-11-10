@@ -9,6 +9,7 @@ import type {
   CreateAccreditationBody,
   ListAccreditationHistoryQuery,
   ListAccreditationsQuery,
+  RequestAdditionalDocsBody,
 } from "./accreditations.schemas.js";
 
 /** Actor con id para auditoría de solicitud/revisión. */
@@ -35,6 +36,9 @@ function toAccreditationResponse(row: {
   status: AccreditationStatus;
   message: string | null;
   reviewNote: string | null;
+  awaitingAdditionalDocs: boolean;
+  additionalDocsMessage: string | null;
+  additionalDocsTypeIds: string[];
   requestedAt: Date | null;
   requestedById: string | null;
   dueAt: Date | null;
@@ -64,6 +68,9 @@ function toAccreditationResponse(row: {
     status: row.status,
     message: row.message,
     reviewNote: row.reviewNote,
+    awaitingAdditionalDocs: row.awaitingAdditionalDocs,
+    additionalDocsMessage: row.additionalDocsMessage,
+    additionalDocsTypeIds: row.additionalDocsTypeIds ?? [],
     requestedAt: row.requestedAt ? row.requestedAt.toISOString() : null,
     requestedById: row.requestedById,
     dueAt: row.dueAt ? row.dueAt.toISOString() : null,
@@ -83,7 +90,8 @@ function listWhere(
   actor: Actor,
   query: ListAccreditationsQuery,
 ): Prisma.ContractorAccreditationWhereInput {
-  const base: Prisma.ContractorAccreditationWhereInput = {};
+  /** Soft-deleted fuera de bandeja. */
+  const base: Prisma.ContractorAccreditationWhereInput = { deletedAt: null };
 
   if (query.status) base.status = query.status;
   if (query.organizationId) base.organizationId = query.organizationId;
@@ -212,7 +220,7 @@ export async function getAccreditationById(
   id: string,
 ): Promise<AccreditationResponse> {
   const row = await prisma.contractorAccreditation.findFirst({
-    where: { id },
+    where: { id, deletedAt: null },
     include: organizationInclude,
   });
   if (!row || row.organization.deletedAt) {
@@ -244,10 +252,29 @@ export async function createAccreditation(
   assertAccreditationTenantAccess(actor, org.businessId);
   await assertBusinessModuleEnabled(org.businessId, "contractors");
 
+  /**
+   * Si ya está habilitada: no re-solicitar el pack (nueva HAB).
+   * Docs adicionales se cargan en la HAB aprobada (tipos vacíos / exigencias).
+   */
+  const approved = await prisma.contractorAccreditation.findFirst({
+    where: { organizationId: org.id, status: "approved", deletedAt: null },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, code: true },
+  });
+  if (approved) {
+    throw new AppError(
+      409,
+      "accreditation_already_approved",
+      `La organización ya está habilitada (${approved.code}). No se puede solicitar el pack de nuevo; agregá documentos adicionales en esa HAB.`,
+      { accreditationId: approved.id, code: approved.code },
+    );
+  }
+
   const open = await prisma.contractorAccreditation.findFirst({
     where: {
       organizationId: org.id,
       status: { in: OPEN_STATUSES },
+      deletedAt: null,
     },
     select: { id: true, code: true, status: true },
   });
@@ -294,6 +321,9 @@ export async function evaluateCompanyPackUploaded(
   businessId: string,
   accreditationId: string,
 ): Promise<{
+  /** Tipos activos en el pack (obligatorios + opcionales). */
+  packTypeCount: number;
+  /** Solo obligatorios: base del progreso y del gate de envío. */
   total: number;
   uploaded: number;
   missingCodes: string[];
@@ -307,7 +337,7 @@ export async function evaluateCompanyPackUploaded(
         state: true,
         accreditationPack: "company",
       },
-      select: { id: true, code: true },
+      select: { id: true, code: true, accreditationPackRequired: true },
       orderBy: { code: "asc" },
     }),
     prisma.contractorOrgDocument.findMany({
@@ -320,16 +350,19 @@ export async function evaluateCompanyPackUploaded(
     }),
   ]);
   const present = new Set(docs.map((d) => d.documentTypeId));
-  const missingCodes = packTypes
+  /** Solo los obligatorios bloquean el envío a revisión. */
+  const requiredTypes = packTypes.filter((t) => t.accreditationPackRequired);
+  const missingCodes = requiredTypes
     .filter((t) => !present.has(t.id))
     .map((t) => t.code);
-  const total = packTypes.length;
+  const total = requiredTypes.length;
   const uploaded = total - missingCodes.length;
   return {
+    packTypeCount: packTypes.length,
     total,
     uploaded,
     missingCodes,
-    complete: total > 0 && missingCodes.length === 0,
+    complete: missingCodes.length === 0 && packTypes.length > 0,
   };
 }
 
@@ -339,7 +372,7 @@ export async function submitAccreditation(
   id: string,
 ): Promise<AccreditationResponse> {
   const existing = await prisma.contractorAccreditation.findFirst({
-    where: { id },
+    where: { id, deletedAt: null },
     include: organizationInclude,
   });
   if (!existing || existing.organization.deletedAt) {
@@ -367,7 +400,7 @@ export async function submitAccreditation(
     existing.organization.businessId,
     existing.id,
   );
-  if (pack.total === 0) {
+  if (pack.packTypeCount === 0) {
     throw new AppError(
       422,
       "company_pack_empty",
@@ -378,7 +411,7 @@ export async function submitAccreditation(
     throw new AppError(
       422,
       "company_pack_incomplete",
-      `No se puede enviar a revisión: faltan documentos del pack empresa (${pack.uploaded} de ${pack.total})`,
+      `No se puede enviar a revisión: faltan documentos obligatorios del pack empresa (${pack.uploaded} de ${pack.total})`,
       { missingCodes: pack.missingCodes, uploaded: pack.uploaded, total: pack.total },
     );
   }
@@ -422,7 +455,7 @@ export async function evaluatePersonPack(
         state: true,
         accreditationPack: "person",
       },
-      select: { id: true, code: true },
+      select: { id: true, code: true, accreditationPackRequired: true },
       orderBy: { code: "asc" },
     }),
     prisma.contractorPersonDocument.findMany({
@@ -460,10 +493,12 @@ export async function evaluatePersonPack(
     return true;
   }
 
+  /** Solo obligatorios bloquean packComplete / canAssign. */
+  const requiredTypes = packTypes.filter((t) => t.accreditationPackRequired);
   const missingCodes: string[] = [];
   const pendingCodes: string[] = [];
   const absentCodes: string[] = [];
-  for (const t of packTypes) {
+  for (const t of requiredTypes) {
     if (isOk(t.id)) continue;
     missingCodes.push(t.code);
     const row = byType.get(t.id);
@@ -483,7 +518,7 @@ export async function evaluatePersonPack(
       pendingCodes.push(t.code);
     }
   }
-  const total = packTypes.length;
+  const total = requiredTypes.length;
   const ok = total - missingCodes.length;
   return {
     total,
@@ -491,7 +526,7 @@ export async function evaluatePersonPack(
     missingCodes,
     pendingCodes,
     absentCodes,
-    complete: total > 0 && missingCodes.length === 0,
+    complete: missingCodes.length === 0 && packTypes.length > 0,
   };
 }
 
@@ -503,6 +538,9 @@ export async function evaluateCompanyPack(
   businessId: string,
   accreditationId: string,
 ): Promise<{
+  /** Tipos activos en el pack (obligatorios + opcionales). */
+  packTypeCount: number;
+  /** Solo obligatorios. */
   total: number;
   ok: number;
   missingCodes: string[];
@@ -516,7 +554,7 @@ export async function evaluateCompanyPack(
         state: true,
         accreditationPack: "company",
       },
-      select: { id: true, code: true },
+      select: { id: true, code: true, accreditationPackRequired: true },
       orderBy: { code: "asc" },
     }),
     prisma.contractorOrgDocument.findMany({
@@ -554,16 +592,18 @@ export async function evaluateCompanyPack(
     return true;
   }
 
-  const missingCodes = packTypes
+  const requiredTypes = packTypes.filter((t) => t.accreditationPackRequired);
+  const missingCodes = requiredTypes
     .filter((t) => !isOk(t.id))
     .map((t) => t.code);
-  const total = packTypes.length;
+  const total = requiredTypes.length;
   const ok = total - missingCodes.length;
   return {
+    packTypeCount: packTypes.length,
     total,
     ok,
     missingCodes,
-    complete: total > 0 && missingCodes.length === 0,
+    complete: missingCodes.length === 0 && packTypes.length > 0,
   };
 }
 
@@ -573,7 +613,7 @@ export async function approveAccreditation(
   id: string,
 ): Promise<AccreditationResponse> {
   const existing = await prisma.contractorAccreditation.findFirst({
-    where: { id },
+    where: { id, deletedAt: null },
     include: organizationInclude,
   });
   if (!existing || existing.organization.deletedAt) {
@@ -601,7 +641,7 @@ export async function approveAccreditation(
     existing.organization.businessId,
     existing.id,
   );
-  if (pack.total === 0) {
+  if (pack.packTypeCount === 0) {
     throw new AppError(
       422,
       "company_pack_empty",
@@ -612,7 +652,7 @@ export async function approveAccreditation(
     throw new AppError(
       422,
       "company_pack_incomplete",
-      `No se puede aprobar: faltan documentos del pack empresa (${pack.ok} de ${pack.total} vigentes)`,
+      `No se puede aprobar: faltan documentos obligatorios del pack empresa (${pack.ok} de ${pack.total} vigentes)`,
       { missingCodes: pack.missingCodes, ok: pack.ok, total: pack.total },
     );
   }
@@ -637,7 +677,7 @@ export async function returnAccreditation(
   body: AccreditationReviewNoteBody,
 ): Promise<AccreditationResponse> {
   const existing = await prisma.contractorAccreditation.findFirst({
-    where: { id },
+    where: { id, deletedAt: null },
     include: organizationInclude,
   });
   if (!existing || existing.organization.deletedAt) {
@@ -681,7 +721,7 @@ export async function rejectAccreditation(
   body: AccreditationReviewNoteBody,
 ): Promise<AccreditationResponse> {
   const existing = await prisma.contractorAccreditation.findFirst({
-    where: { id },
+    where: { id, deletedAt: null },
     include: organizationInclude,
   });
   if (!existing || existing.organization.deletedAt) {
@@ -713,6 +753,145 @@ export async function rejectAccreditation(
       reviewedAt: new Date(),
       reviewedById: actor.id,
     },
+    include: organizationInclude,
+  });
+  return toAccreditationResponse(updated);
+}
+
+/**
+ * HAB aprobada: pide docs adicionales al contratista (sin nueva HAB ni perder approved).
+ * El portal puede subir huecos vacíos mientras awaitingAdditionalDocs = true.
+ */
+export async function requestAdditionalDocuments(
+  actor: Actor,
+  id: string,
+  body: RequestAdditionalDocsBody,
+): Promise<AccreditationResponse> {
+  const existing = await prisma.contractorAccreditation.findFirst({
+    where: { id, deletedAt: null },
+    include: organizationInclude,
+  });
+  if (!existing || existing.organization.deletedAt) {
+    throw new AppError(
+      404,
+      "accreditation_not_found",
+      "Habilitación no encontrada",
+    );
+  }
+  assertAccreditationTenantAccess(actor, existing.organization.businessId);
+  await assertBusinessModuleEnabled(
+    existing.organization.businessId,
+    "contractors",
+  );
+
+  if (existing.status !== "approved") {
+    throw new AppError(
+      409,
+      "invalid_accreditation_transition",
+      `Solo se piden docs adicionales con HAB aprobada (ahora: ${existing.status})`,
+    );
+  }
+
+  const uniqueTypeIds = [...new Set(body.documentTypeIds)];
+  const types = await prisma.documentType.findMany({
+    where: {
+      id: { in: uniqueTypeIds },
+      businessId: existing.organization.businessId,
+      deletedAt: null,
+      state: true,
+    },
+    select: { id: true },
+  });
+  if (types.length !== uniqueTypeIds.length) {
+    throw new AppError(
+      422,
+      "invalid_document_types",
+      "Uno o más tipos de documento no existen o no están activos en esta empresa",
+    );
+  }
+
+  const updated = await prisma.contractorAccreditation.update({
+    where: { id },
+    data: {
+      awaitingAdditionalDocs: true,
+      additionalDocsMessage: body.message.trim(),
+      additionalDocsTypeIds: uniqueTypeIds,
+    },
+    include: organizationInclude,
+  });
+  return toAccreditationResponse(updated);
+}
+
+/** Cierra el pedido de docs adicionales (sigue aprobada). */
+export async function clearAdditionalDocumentsRequest(
+  actor: Actor,
+  id: string,
+): Promise<AccreditationResponse> {
+  const existing = await prisma.contractorAccreditation.findFirst({
+    where: { id, deletedAt: null },
+    include: organizationInclude,
+  });
+  if (!existing || existing.organization.deletedAt) {
+    throw new AppError(
+      404,
+      "accreditation_not_found",
+      "Habilitación no encontrada",
+    );
+  }
+  assertAccreditationTenantAccess(actor, existing.organization.businessId);
+  await assertBusinessModuleEnabled(
+    existing.organization.businessId,
+    "contractors",
+  );
+
+  const updated = await prisma.contractorAccreditation.update({
+    where: { id },
+    data: {
+      awaitingAdditionalDocs: false,
+      additionalDocsMessage: null,
+      additionalDocsTypeIds: [],
+    },
+    include: organizationInclude,
+  });
+  return toAccreditationResponse(updated);
+}
+
+/**
+ * Soft-delete HAB: sale de bandeja.
+ * Bloquea approved (hay que rechazar o pedir anulación de negocio aparte).
+ */
+export async function deleteAccreditationById(
+  actor: Actor,
+  id: string,
+): Promise<AccreditationResponse> {
+  const existing = await prisma.contractorAccreditation.findFirst({
+    where: { id, deletedAt: null },
+    include: organizationInclude,
+  });
+  if (!existing || existing.organization.deletedAt) {
+    throw new AppError(
+      404,
+      "accreditation_not_found",
+      "Habilitación no encontrada",
+    );
+  }
+  assertAccreditationTenantAccess(actor, existing.organization.businessId);
+  await assertBusinessModuleEnabled(
+    existing.organization.businessId,
+    "contractors",
+  );
+
+  if (existing.status === "approved") {
+    throw new AppError(
+      409,
+      "accreditation_delete_forbidden",
+      "No se puede eliminar una HAB aprobada. Rechazala o pedí soporte si hay que revocar la habilitación.",
+    );
+  }
+
+  const updated = await prisma.contractorAccreditation.update({
+    where: { id: existing.id },
+    data: { deletedAt: new Date() },
     include: organizationInclude,
   });
   return toAccreditationResponse(updated);

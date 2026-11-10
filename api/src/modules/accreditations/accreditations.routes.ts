@@ -29,21 +29,27 @@ import {
 } from "../accreditationDocuments/accreditationDocuments.schemas.js";
 import {
   approveAccreditationHandler,
+  clearAdditionalDocumentsRequestHandler,
   createAccreditationHandler,
+  deleteAccreditationHandler,
   getAccreditationHandler,
   listAccreditationHistoryHandler,
   listAccreditationsHandler,
   rejectAccreditationHandler,
+  requestAdditionalDocumentsHandler,
   returnAccreditationHandler,
   submitAccreditationHandler,
 } from "./accreditations.controller.js";
 import {
   approveAccreditationRequestSchema,
+  clearAdditionalDocsRequestSchema,
   createAccreditationRequestSchema,
+  deleteAccreditationRequestSchema,
   getAccreditationRequestSchema,
   listAccreditationHistoryRequestSchema,
   listAccreditationsRequestSchema,
   rejectAccreditationRequestSchema,
+  requestAdditionalDocsRequestSchema,
   returnAccreditationRequestSchema,
   submitAccreditationRequestSchema,
 } from "./accreditations.schemas.js";
@@ -251,4 +257,37 @@ accreditationsRouter.post(
   ),
   validate(rejectAccreditationRequestSchema),
   rejectAccreditationHandler,
+);
+
+accreditationsRouter.post(
+  "/:id/request-additional-docs",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(requestAdditionalDocsRequestSchema),
+  requestAdditionalDocumentsHandler,
+);
+
+accreditationsRouter.post(
+  "/:id/clear-additional-docs",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(clearAdditionalDocsRequestSchema),
+  clearAdditionalDocumentsRequestHandler,
+);
+
+accreditationsRouter.delete(
+  "/:id",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.ACCREDITATIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
+  validate(deleteAccreditationRequestSchema),
+  deleteAccreditationHandler,
 );

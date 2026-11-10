@@ -26,6 +26,7 @@ import { useToast } from "../../components/Toast/ToastProvider";
 import {
   approveAccreditationRequest,
   createAccreditationRequest,
+  deleteAccreditationRequest,
   listAccreditationsRequest,
   rejectAccreditationRequest,
   returnAccreditationRequest,
@@ -122,6 +123,8 @@ export function AccreditationsPage() {
   const canRead = userHasPermission(user, "accreditations", "read");
   const canCreate = userHasPermission(user, "accreditations", "create");
   const canUpdate = userHasPermission(user, "accreditations", "update");
+  /** Misma barra que submit/reject: soft-delete no exige deactivate aparte. */
+  const canDelete = canUpdate;
 
   const [items, setItems] = useState<ContractorAccreditation[]>([]);
   const [orgs, setOrgs] = useState<ContractorOrganization[]>([]);
@@ -137,6 +140,11 @@ export function AccreditationsPage() {
   const [noteAction, setNoteAction] = useState<NoteAction | null>(null);
   const [reviewNote, setReviewNote] = useState("");
   const [acting, setActing] = useState(false);
+  /** HAB a soft-delete (confirmación). */
+  const [deleteRow, setDeleteRow] = useState<ContractorAccreditation | null>(
+    null,
+  );
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken || !canRead) return;
@@ -177,6 +185,24 @@ export function AccreditationsPage() {
         row.organization.rut.toLowerCase().includes(q),
     );
   }, [items, search]);
+
+  /** Orgs ya habilitadas: no ofrecerlas al solicitar pack de nuevo. */
+  const approvedOrgIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const row of items) {
+      if (row.status === "approved") ids.add(row.organizationId);
+    }
+    return ids;
+  }, [items]);
+  const orgsEligibleForRequest = useMemo(
+    () =>
+      orgs.filter(
+        (o) =>
+          !approvedOrgIds.has(o.id) &&
+          o.latestAccreditation?.status !== "approved",
+      ),
+    [orgs, approvedOrgIds],
+  );
 
   const {
     pageItems,
@@ -245,6 +271,25 @@ export function AccreditationsPage() {
       );
     } finally {
       setActing(false);
+    }
+  }
+
+  /** Soft-delete HAB confirmada. */
+  async function onConfirmDelete() {
+    if (!accessToken || !deleteRow || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteAccreditationRequest(accessToken, deleteRow.id);
+      showToast(`${deleteRow.code} eliminada de la bandeja.`, "success");
+      setDeleteRow(null);
+      await load();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo eliminar.",
+        "danger",
+      );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -440,13 +485,14 @@ export function AccreditationsPage() {
                       {formatDate(row.dueAt)}
                     </td>
                     <td className="relative px-3 py-2.5 text-right">
-                      {canUpdate ? (
+                      {canUpdate ||
+                      (canDelete && row.status !== "approved") ? (
                         <>
                           <button
                             type="button"
                             className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-nachipa-secondary)] hover:bg-white hover:text-[var(--color-nachipa-title)]"
                             aria-label="Acciones"
-                            disabled={acting}
+                            disabled={acting || deleting}
                             onClick={() =>
                               setMenuId((id) =>
                                 id === row.id ? null : row.id,
@@ -461,8 +507,9 @@ export function AccreditationsPage() {
                           </button>
                           {menuId === row.id ? (
                             <div className="absolute right-3 z-10 mt-1 min-w-[180px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-sm">
-                              {(row.status === "pending" ||
-                                row.status === "observed") && (
+                              {canUpdate &&
+                              (row.status === "pending" ||
+                                row.status === "observed") ? (
                                 <button
                                   type="button"
                                   className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
@@ -470,8 +517,8 @@ export function AccreditationsPage() {
                                 >
                                   Enviar a revisión
                                 </button>
-                              )}
-                              {row.status === "in_review" ? (
+                              ) : null}
+                              {canUpdate && row.status === "in_review" ? (
                                 <>
                                   <button
                                     type="button"
@@ -506,10 +553,26 @@ export function AccreditationsPage() {
                                   </button>
                                 </>
                               ) : null}
-                              {row.status === "approved" ||
-                              row.status === "rejected" ? (
+                              {canDelete && row.status !== "approved" ? (
+                                <button
+                                  type="button"
+                                  className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                  onClick={() => {
+                                    setMenuId(null);
+                                    setDeleteRow(row);
+                                  }}
+                                >
+                                  Eliminar
+                                </button>
+                              ) : null}
+                              {row.status === "approved" && !canUpdate ? (
                                 <span className="block px-3 py-1.5 text-[12px] text-[var(--color-nachipa-secondary)]">
                                   Sin acciones
+                                </span>
+                              ) : null}
+                              {row.status === "approved" && canUpdate ? (
+                                <span className="block px-3 py-1.5 text-[12px] text-[var(--color-nachipa-secondary)]">
+                                  Ver ficha para adicionales
                                 </span>
                               ) : null}
                             </div>
@@ -536,7 +599,7 @@ export function AccreditationsPage() {
         }}
         icon={ClipboardCheck}
         title="Solicitar documentación"
-        subtitle="Crea una habilitación HAB en estado pendiente para la organización."
+        subtitle="Crea una HAB pendiente. Si la org ya está habilitada, no se puede re-solicitar el pack; agregá docs en esa HAB."
         footer={
           <div className="flex justify-end gap-2">
             <button
@@ -552,7 +615,11 @@ export function AccreditationsPage() {
               form="accreditation-create-form"
               size="medium"
               className="!w-auto"
-              disabled={submitting || !organizationId}
+              disabled={
+                submitting ||
+                !organizationId ||
+                orgsEligibleForRequest.length === 0
+              }
             >
               {submitting ? "Creando…" : "Solicitar"}
             </Button>
@@ -575,12 +642,17 @@ export function AccreditationsPage() {
               onChange={(e) => setOrganizationId(e.target.value)}
             >
               <option value="">Seleccionar…</option>
-              {orgs.map((o) => (
+              {orgsEligibleForRequest.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.rut} · {displayName(o.name)}
                 </option>
               ))}
             </select>
+            {orgsEligibleForRequest.length === 0 ? (
+              <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                No hay organizaciones sin habilitación aprobada.
+              </span>
+            ) : null}
           </label>
           <TextField
             label="Mensaje al contratista"
@@ -639,6 +711,46 @@ export function AccreditationsPage() {
           onChange={(e) => setReviewNote(e.target.value)}
           required
         />
+      </Modal>
+
+      <Modal
+        open={Boolean(deleteRow)}
+        onClose={() => {
+          if (!deleting) setDeleteRow(null);
+        }}
+        title="Eliminar habilitación"
+        subtitle={
+          deleteRow
+            ? `${deleteRow.code} · ${displayName(deleteRow.organization.name)}`
+            : undefined
+        }
+        maxWidthClass="max-w-[440px]"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => setDeleteRow(null)}
+              className={outlineBtnClass}
+            >
+              Cancelar
+            </button>
+            <Button
+              type="button"
+              size="medium"
+              className="!w-auto"
+              disabled={deleting}
+              onClick={() => void onConfirmDelete()}
+            >
+              {deleting ? "Eliminando…" : "Eliminar"}
+            </Button>
+          </div>
+        }
+      >
+        <p className="m-0 text-[13px] text-[var(--color-nachipa-body)]">
+          Se quita de la bandeja (soft-delete). No se puede eliminar una HAB
+          aprobada.
+        </p>
       </Modal>
     </div>
   );

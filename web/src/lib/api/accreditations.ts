@@ -26,6 +26,10 @@ export type ContractorAccreditation = {
   status: AccreditationStatus;
   message: string | null;
   reviewNote: string | null;
+  awaitingAdditionalDocs: boolean;
+  additionalDocsMessage: string | null;
+  /** Tipos pedidos en el pedido adicional activo. */
+  additionalDocsTypeIds: string[];
   requestedAt: string | null;
   requestedById: string | null;
   dueAt: string | null;
@@ -124,12 +128,22 @@ export async function createAccreditationRequest(
   return body as ContractorAccreditation;
 }
 
-/** POST …/submit | approve | return | reject */
+/** POST …/submit | approve | return | reject | request-additional-docs | … */
 async function postAccreditationAction(
   accessToken: string,
   id: string,
-  action: "submit" | "approve" | "return" | "reject",
-  body?: { reviewNote: string },
+  action:
+    | "submit"
+    | "approve"
+    | "return"
+    | "reject"
+    | "request-additional-docs"
+    | "clear-additional-docs",
+  body?: {
+    reviewNote?: string;
+    message?: string;
+    documentTypeIds?: string[];
+  },
 ): Promise<ContractorAccreditation> {
   const res = await fetch(`/api/v1/accreditations/${id}/${action}`, {
     method: "POST",
@@ -177,6 +191,41 @@ export function rejectAccreditationRequest(
   return postAccreditationAction(accessToken, id, "reject", { reviewNote });
 }
 
+/** Pedir docs adicionales al contratista (HAB aprobada). */
+export async function requestAdditionalDocsRequest(
+  accessToken: string,
+  id: string,
+  message: string,
+  documentTypeIds: string[],
+): Promise<ContractorAccreditation> {
+  return postAccreditationAction(accessToken, id, "request-additional-docs", {
+    message,
+    documentTypeIds,
+  });
+}
+
+/** Cierra el pedido de docs adicionales. */
+export async function clearAdditionalDocsRequest(
+  accessToken: string,
+  id: string,
+): Promise<ContractorAccreditation> {
+  return postAccreditationAction(accessToken, id, "clear-additional-docs");
+}
+
+/** Soft-delete HAB (sale de bandeja). */
+export async function deleteAccreditationRequest(
+  accessToken: string,
+  id: string,
+): Promise<ContractorAccreditation> {
+  const res = await fetch(`/api/v1/accreditations/${id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const json: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, json);
+  return json as ContractorAccreditation;
+}
+
 /** Estado de doc de empresa en HAB. */
 export type ContractorDocumentStatus =
   | "pending_validation"
@@ -212,10 +261,14 @@ export type ContractorOrgDocument = {
   updatedAt: string;
 };
 
-/** Fila checklist: tipo + doc vigente (+ origen pack / exigencia PT). */
+/** Fila checklist: tipo + doc vigente (+ origen pack / exigencia / adicional). */
 export type AccreditationDocumentChecklistItem = {
   documentType: AccreditationPackDocumentType;
-  source: "pack" | "permit_requirement" | "both";
+  source: "pack" | "permit_requirement" | "both" | "additional";
+  /** false = aparece en pack pero no bloquea enviar/aprobar. */
+  packRequired: boolean;
+  /** Incluido en el pedido adicional activo de Prevención. */
+  requestedAdditional: boolean;
   document: ContractorOrgDocument | null;
 };
 
@@ -389,6 +442,7 @@ export type AccreditationPersonDocumentChecklistItem = {
   documentType: AccreditationPackDocumentType;
   /** pack = HAB; permit_requirement = exigencia del tipo (BUC…); both = ambos. */
   source: "pack" | "permit_requirement" | "both";
+  packRequired: boolean;
   document: ContractorPersonDocument | null;
 };
 

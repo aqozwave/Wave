@@ -131,6 +131,7 @@ function toContractorResponse(row: {
 /** Include HAB más reciente (1) + conteo de personal activo. */
 const latestAccreditationInclude = {
   accreditations: {
+    where: { deletedAt: null },
     orderBy: { createdAt: "desc" as const },
     take: 1,
     select: {
@@ -1054,14 +1055,16 @@ export async function getContractorPortalSummary(
   }
 
   const hab = await prisma.contractorAccreditation.findFirst({
-    where: { organizationId: org.id },
+    where: { organizationId: org.id, deletedAt: null },
     orderBy: { createdAt: "desc" },
   });
 
+  /** Solo obligatorios del pack (opcionales no cuentan para el progreso). */
   const requiredCompanyTypes = await prisma.documentType.count({
     where: {
       businessId: org.businessId,
       accreditationPack: "company",
+      accreditationPackRequired: true,
       state: true,
       deletedAt: null,
     },
@@ -1145,21 +1148,28 @@ export async function getMyContractorAccreditation(
   actor: PortalActor,
 ): Promise<AccreditationResponse> {
   const organizationId = requirePortalOrgId(actor);
-  const hab = await prisma.contractorAccreditation.findFirst({
-    where: { organizationId },
+  const orgSelect = {
+    id: true,
+    name: true,
+    rut: true,
+    businessId: true,
+    deletedAt: true,
+  } as const;
+
+  /** Preferir HAB aprobada (habilitada); si no, la más reciente. */
+  const approved = await prisma.contractorAccreditation.findFirst({
+    where: { organizationId, status: "approved", deletedAt: null },
     orderBy: { createdAt: "desc" },
-    include: {
-      organization: {
-        select: {
-          id: true,
-          name: true,
-          rut: true,
-          businessId: true,
-          deletedAt: true,
-        },
-      },
-    },
+    include: { organization: { select: orgSelect } },
   });
+  const hab =
+    approved ??
+    (await prisma.contractorAccreditation.findFirst({
+      where: { organizationId, deletedAt: null },
+      orderBy: { createdAt: "desc" },
+      include: { organization: { select: orgSelect } },
+    }));
+
   if (!hab || hab.organization.deletedAt) {
     throw new AppError(
       404,
@@ -1180,6 +1190,9 @@ export async function getMyContractorAccreditation(
     status: hab.status,
     message: hab.message,
     reviewNote: hab.reviewNote,
+    awaitingAdditionalDocs: hab.awaitingAdditionalDocs,
+    additionalDocsMessage: hab.additionalDocsMessage,
+    additionalDocsTypeIds: hab.additionalDocsTypeIds ?? [],
     requestedAt: hab.requestedAt ? hab.requestedAt.toISOString() : null,
     requestedById: hab.requestedById,
     dueAt: hab.dueAt ? hab.dueAt.toISOString() : null,
@@ -1199,12 +1212,38 @@ export async function listMyContractorAccreditationDocuments(
   return listAccreditationDocuments(actor, hab.id);
 }
 
+/**
+ * Contratista sube pack en HAB abierta, o huecos si Prevención pidió adicionales
+ * sobre una HAB aprobada (awaitingAdditionalDocs).
+ */
+function assertPortalMayUploadDocuments(hab: {
+  status: string;
+  awaitingAdditionalDocs: boolean;
+}): void {
+  const open =
+    hab.status === "pending" ||
+    hab.status === "observed" ||
+    hab.status === "invited" ||
+    hab.status === "in_review";
+  const additionalOnApproved =
+    hab.status === "approved" && hab.awaitingAdditionalDocs;
+  if (!open && !additionalOnApproved) {
+    throw new AppError(
+      400,
+      "accreditation_upload_forbidden",
+      "No podés subir documentos ahora. Si Prevención pide adicionales, te habilitará la carga en el portal.",
+      { status: hab.status },
+    );
+  }
+}
+
 /** Upload doc empresa desde el portal. */
 export async function createMyContractorAccreditationDocument(
   actor: PortalActor,
   body: CreateContractorPortalDocumentBody,
 ): Promise<ContractorOrgDocumentResponse> {
   const hab = await getMyContractorAccreditation(actor);
+  assertPortalMayUploadDocuments(hab);
   return createAccreditationDocument(actor, hab.id, body);
 }
 
@@ -1259,13 +1298,14 @@ export async function listMyContractorPeople(
       state: true,
       deletedAt: null,
     },
-    select: { id: true },
+    select: { id: true, accreditationPackRequired: true },
   });
   const packTypeIds = new Set(packTypes.map((t) => t.id));
-  const required = packTypes.length;
+  /** Solo obligatorios cuentan para “X/Y vig.” en personal. */
+  const required = packTypes.filter((t) => t.accreditationPackRequired).length;
 
   const hab = await prisma.contractorAccreditation.findFirst({
-    where: { organizationId },
+    where: { organizationId, deletedAt: null },
     orderBy: { createdAt: "desc" },
     select: { id: true },
   });
@@ -1389,6 +1429,7 @@ export async function createMyContractorPersonDocument(
   body: CreateContractorPortalDocumentBody,
 ): Promise<ContractorPersonDocumentResponse> {
   const hab = await getMyContractorAccreditation(actor);
+  assertPortalMayUploadDocuments(hab);
   return createAccreditationPersonDocument(actor, hab.id, personId, body);
 }
 
