@@ -103,6 +103,8 @@ export function PermitTypesPage() {
 
   const [items, setItems] = useState<PermitType[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
+  /** Filtro Superadmin: empresa dueña del tipo (vacío = todas). */
+  const [filterBusinessId, setFilterBusinessId] = useState("");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [menuId, setMenuId] = useState<string | null>(null);
@@ -120,7 +122,9 @@ export function PermitTypesPage() {
     if (!accessToken || !canViewCatalog) return;
     setLoading(true);
     try {
-      const result = await listPermitTypesRequest(accessToken, 1, 100);
+      const result = await listPermitTypesRequest(accessToken, 1, 100, {
+        businessId: filterBusinessId || undefined,
+      });
       setItems(result.items);
     } catch (err) {
       showToast(
@@ -132,7 +136,14 @@ export function PermitTypesPage() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, canViewCatalog, showToast]);
+  }, [accessToken, canViewCatalog, filterBusinessId, showToast]);
+
+  /** Nombre de empresa para la columna (Superadmin). */
+  const businessNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const b of businesses) map.set(b.id, b.name);
+    return map;
+  }, [businesses]);
 
   useEffect(() => {
     void load();
@@ -334,6 +345,29 @@ export function PermitTypesPage() {
           }
         />
 
+        {isSuperadmin && businesses.length > 0 ? (
+          <label className="flex max-w-xs flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+              Empresa
+            </span>
+            <select
+              className={selectClass}
+              value={filterBusinessId}
+              onChange={(e) => setFilterBusinessId(e.target.value)}
+              autoComplete="off"
+              name="filterBusinessId"
+              aria-label="Filtrar tipos por empresa"
+            >
+              <option value="">Todas</option>
+              {businesses.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
         <DataTableCard
           toolbar={
             <DataTableSearch
@@ -364,6 +398,9 @@ export function PermitTypesPage() {
                   Código
                 </th>
                 <th className="px-3 py-2.5 font-medium">Nombre</th>
+                {isSuperadmin ? (
+                  <th className="px-3 py-2.5 font-medium">Empresa</th>
+                ) : null}
                 <th className="px-3 py-2.5 font-medium">Criticidad</th>
                 <th className="px-3 py-2.5 font-medium">AST</th>
                 <th className="px-3 py-2.5 font-medium">Flujo</th>
@@ -377,7 +414,7 @@ export function PermitTypesPage() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={isSuperadmin ? 8 : 7}
                     className="px-3 py-8 text-center text-[var(--color-nachipa-secondary)]"
                   >
                     Cargando…
@@ -386,7 +423,7 @@ export function PermitTypesPage() {
               ) : pageItems.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={isSuperadmin ? 8 : 7}
                     className="px-3 py-8 text-center text-[var(--color-nachipa-secondary)]"
                   >
                     No hay tipos de permiso.
@@ -409,6 +446,11 @@ export function PermitTypesPage() {
                     <td className="px-3 py-2.5 text-[var(--color-nachipa-title)]">
                       {row.name}
                     </td>
+                    {isSuperadmin ? (
+                      <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                        {businessNameById.get(row.businessId) ?? "—"}
+                      </td>
+                    ) : null}
                     <td className="px-3 py-2.5">
                       <StatusChip tone={criticalityTone(row.criticality)}>
                         {criticalityLabel(row.criticality)}

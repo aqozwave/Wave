@@ -29,6 +29,7 @@ import { downloadXls } from "../../lib/exportXls";
 import {
   listWorkPermitsRequest,
   requestCloseWorkPermitRequest,
+  resolveWorkPermitFlowPolicy,
   workPermitStatusLabel,
   type WorkPermit,
   type WorkPermitStatus,
@@ -475,7 +476,9 @@ export function ContractorPortalPermitsPage() {
                             Completar
                           </button>
                         ) : null}
-                        {row.status === "active" ? (
+                        {row.status === "active" &&
+                        resolveWorkPermitFlowPolicy(row.approvalFlowSnapshot)
+                          .hasRequestCloseStage ? (
                           <button
                             type="button"
                             className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"

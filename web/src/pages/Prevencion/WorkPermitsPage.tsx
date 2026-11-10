@@ -40,6 +40,7 @@ import {
   rejectCloseWorkPermitRequest,
   rejectReceiptWorkPermitRequest,
   requestCloseWorkPermitRequest,
+  resolveWorkPermitFlowPolicy,
   returnWorkPermitRequest,
   workPermitStatusLabel,
   type WorkPermit,
@@ -748,7 +749,10 @@ export function WorkPermitsPage() {
                             </button>
                           </>
                         ) : null}
-                        {canUpdate && row.status === "active" ? (
+                        {canUpdate &&
+                        row.status === "active" &&
+                        resolveWorkPermitFlowPolicy(row.approvalFlowSnapshot)
+                          .hasRequestCloseStage ? (
                           <button
                             type="button"
                             className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
