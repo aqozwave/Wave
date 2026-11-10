@@ -53,6 +53,7 @@ import {
   getCrewMemberAccessHandler,
   getCrewMemberHandler,
   grantCrewMemberAccessHandler,
+  listCrewMemberHistoryHandler,
   listCrewMembersHandler,
   revokeCrewMemberAccessHandler,
   updateCrewMemberHandler,
@@ -64,6 +65,7 @@ import {
   getCrewMemberAccessRequestSchema,
   getCrewMemberRequestSchema,
   grantCrewMemberAccessRequestSchema,
+  listCrewMemberHistoryRequestSchema,
   listCrewMembersRequestSchema,
   revokeCrewMemberAccessRequestSchema,
   updateCrewMemberRequestSchema,
@@ -90,6 +92,14 @@ crewMembersRouter.post(
   requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.CREATE),
   validate(createCrewMemberRequestSchema),
   createCrewMemberHandler,
+);
+
+crewMembersRouter.get(
+  "/:id/history",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.READ),
+  validate(listCrewMemberHistoryRequestSchema),
+  listCrewMemberHistoryHandler,
 );
 
 crewMembersRouter.get(

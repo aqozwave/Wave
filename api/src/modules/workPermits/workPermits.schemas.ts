@@ -194,12 +194,30 @@ export const rejectReceiptWorkPermitRequestSchema = z.object({
 
 export const rejectReceiptWorkPermitResponseSchema = workPermitResponseSchema;
 
+/**
+ * Body pedir cierre: observación opcional al capitán / Prevención.
+ * Vacío o ausente = sin comentario.
+ */
+export const requestCloseWorkPermitBodySchema = z.object({
+  observation: z
+    .string()
+    .trim()
+    .max(2000, "Máximo 2000 caracteres")
+    .optional()
+    .nullable(),
+});
+
 /** POST /work-permits/:id/request-close — contratista/staff pide cierre (P6a). */
 export const requestCloseWorkPermitRequestSchema = z.object({
   params: z.object({ id: z.uuid() }),
+  body: requestCloseWorkPermitBodySchema,
 });
 
 export const requestCloseWorkPermitResponseSchema = workPermitResponseSchema;
+
+export type RequestCloseWorkPermitBody = z.infer<
+  typeof requestCloseWorkPermitBodySchema
+>;
 
 /** POST /work-permits/:id/close — capitán cierra el trabajo (P6b). */
 export const closeWorkPermitRequestSchema = z.object({

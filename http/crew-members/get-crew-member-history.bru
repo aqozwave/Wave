@@ -1,0 +1,37 @@
+meta {
+  name: Get crew member history
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/history?page=1&limit=50&category=all
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Bitácora D31 (AQO-68): activity_logs + documentos.
+  Variable crewMemberId. category opcional: all|contract|document|course|observation|sanction|boarding.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+  res.body.summary: isDefined
+  res.body.total: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

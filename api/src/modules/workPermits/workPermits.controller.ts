@@ -29,6 +29,7 @@ import {
   type PutWorkPermitPeopleBody,
   type WorkPermitChecklistStage,
   type WorkPermitRequirementsCheckQuery,
+  type RequestCloseWorkPermitBody,
   type WorkPermitDigitalSignatureBody,
   type WorkPermitReviewNoteBody,
 } from "./workPermits.schemas.js";
@@ -329,15 +330,20 @@ export async function requestCloseWorkPermitHandler(
   res: Response,
 ): Promise<void> {
   if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const body = req.body as RequestCloseWorkPermitBody;
   const result = await requestCloseWorkPermit(
     req.user,
     req.params.id as string,
+    body,
   );
   auditWrite(req, {
     action: "UPDATE",
     resource: "workPermit",
     resourceId: result.id,
     targetLabel: `${result.code} · request-close`,
+    metadata: {
+      hasObservation: Boolean(body.observation?.trim()),
+    },
   });
   res.status(200).json(requestCloseWorkPermitResponseSchema.parse(result));
 }

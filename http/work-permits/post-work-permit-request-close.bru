@@ -19,12 +19,15 @@ headers {
 }
 
 body:json {
-  {}
+  {
+    "observation": "Trabajo terminado; equipos retirados. Favor verificar a bordo."
+  }
 }
 
 docs {
   P6a: contratista o staff (update) pide cierre.
-  active → to_verify. Variable workPermitId.
+  active → to_verify. observation opcional (comentario al capitán).
+  Variable workPermitId.
 }
 
 script:pre-request {

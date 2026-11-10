@@ -280,9 +280,9 @@ export function WorkPermitDetailPage() {
   const [tabLoading, setTabLoading] = useState(false);
   const [acting, setActing] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
-  const [noteModal, setNoteModal] = useState<"return" | "reject-receipt" | null>(
-    null,
-  );
+  const [noteModal, setNoteModal] = useState<
+    "return" | "reject-receipt" | "request-close" | null
+  >(null);
   const [reviewNote, setReviewNote] = useState("");
   /** Modal pad + aceptación (Prevención / capitán). */
   const [signKind, setSignKind] = useState<WorkPermitSignKind | null>(null);
@@ -406,30 +406,6 @@ export function WorkPermitDetailPage() {
     setPermit(updated);
   }
 
-  /** Staff o flujo interno: pedir verificación de cierre (sin pad). */
-  async function onRequestClose() {
-    if (!accessToken || !permit || acting) return;
-    setActing(true);
-    try {
-      const updated = await requestCloseWorkPermitRequest(
-        accessToken,
-        permit.id,
-      );
-      applyPermitAfterTransition(updated);
-      showToast(
-        `${updated.code} · ${workPermitStatusLabel("to_verify")}.`,
-        "success",
-      );
-    } catch (err) {
-      showToast(
-        err instanceof ApiError ? err.message : "No se pudo pedir el cierre.",
-        "danger",
-      );
-    } finally {
-      setActing(false);
-    }
-  }
-
   /** Confirma pad + aceptación y ejecuta la transición. */
   async function confirmSign(
     payload: WorkPermitDigitalSignaturePayload & { reviewNote?: string },
@@ -488,29 +464,39 @@ export function WorkPermitDetailPage() {
     }
   }
 
+  /** Confirma modal con nota (devolver / no autorizar / pedir cierre). */
   async function confirmNote() {
-    if (!accessToken || !permit || !noteModal || !reviewNote.trim() || acting) {
-      return;
-    }
+    if (!accessToken || !permit || !noteModal || acting) return;
+    if (noteModal !== "request-close" && !reviewNote.trim()) return;
     setActing(true);
     try {
-      const updated =
-        noteModal === "return"
-          ? await returnWorkPermitRequest(
-              accessToken,
-              permit.id,
-              reviewNote.trim(),
-            )
-          : await rejectReceiptWorkPermitRequest(
-              accessToken,
-              permit.id,
-              reviewNote.trim(),
-            );
+      let updated: WorkPermit;
+      if (noteModal === "return") {
+        updated = await returnWorkPermitRequest(
+          accessToken,
+          permit.id,
+          reviewNote.trim(),
+        );
+      } else if (noteModal === "reject-receipt") {
+        updated = await rejectReceiptWorkPermitRequest(
+          accessToken,
+          permit.id,
+          reviewNote.trim(),
+        );
+      } else {
+        updated = await requestCloseWorkPermitRequest(
+          accessToken,
+          permit.id,
+          reviewNote.trim() || null,
+        );
+      }
       applyPermitAfterTransition(updated);
       showToast(
         noteModal === "return"
           ? `${updated.code} · ${workPermitStatusLabel("to_complete")}.`
-          : `${updated.code} · vuelve a ${workPermitStatusLabel("to_approve")}.`,
+          : noteModal === "reject-receipt"
+            ? `${updated.code} · vuelve a ${workPermitStatusLabel("to_approve")}.`
+            : `${updated.code} · ${workPermitStatusLabel("to_verify")}.`,
         "success",
       );
       setNoteModal(null);
@@ -668,7 +654,10 @@ export function WorkPermitDetailPage() {
                       size="medium"
                       className="!w-auto"
                       disabled={acting}
-                      onClick={() => void onRequestClose()}
+                      onClick={() => {
+                        setReviewNote("");
+                        setNoteModal("request-close");
+                      }}
                     >
                       Pedir cierre
                     </Button>
@@ -1322,7 +1311,9 @@ export function WorkPermitDetailPage() {
         title={
           noteModal === "reject-receipt"
             ? "No autorizar recepción"
-            : "Devolver permiso al contratista"
+            : noteModal === "request-close"
+              ? "Pedir cierre"
+              : "Devolver permiso al contratista"
         }
         subtitle={permit ? permit.code : undefined}
         footer={
@@ -1339,14 +1330,19 @@ export function WorkPermitDetailPage() {
               type="button"
               size="medium"
               className="!w-auto"
-              disabled={acting || !reviewNote.trim()}
+              disabled={
+                acting ||
+                (noteModal !== "request-close" && !reviewNote.trim())
+              }
               onClick={() => void confirmNote()}
             >
               {acting
                 ? "Guardando…"
                 : noteModal === "reject-receipt"
                   ? "No autorizar"
-                  : "Devolver"}
+                  : noteModal === "request-close"
+                    ? "Pedir cierre"
+                    : "Devolver"}
             </Button>
           </div>
         }
@@ -1354,15 +1350,21 @@ export function WorkPermitDetailPage() {
         <p className="m-0 mb-3 text-[13px] text-[var(--color-nachipa-secondary)]">
           {noteModal === "reject-receipt"
             ? "El permiso vuelve a «En revisión» con tu motivo."
-            : "El permiso vuelve a «Por completar» con tu observación."}
+            : noteModal === "request-close"
+              ? "El permiso pasa a «Verificar trabajo». Podés dejar un comentario para el capitán."
+              : "El permiso vuelve a «Por completar» con tu observación."}
         </p>
         <TextField
           label={
-            noteModal === "reject-receipt" ? "Motivo" : "Observaciones"
+            noteModal === "reject-receipt"
+              ? "Motivo"
+              : noteModal === "request-close"
+                ? "Observación (opcional)"
+                : "Observaciones"
           }
           value={reviewNote}
           onChange={(e) => setReviewNote(e.target.value)}
-          required
+          required={noteModal !== "request-close"}
         />
       </Modal>
     </div>

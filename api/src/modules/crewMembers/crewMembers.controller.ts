@@ -9,11 +9,13 @@ import {
   crewAccessResponseSchema,
   deleteCrewMemberResponseSchema,
   getCrewMemberResponseSchema,
+  listCrewMemberHistoryResponseSchema,
   listCrewMembersResponseSchema,
   updateCrewMemberResponseSchema,
   type ChangeCrewMemberAccessRoleBody,
   type CreateCrewMemberBody,
   type GrantCrewMemberAccessBody,
+  type ListCrewMemberHistoryQuery,
   type ListCrewMembersQuery,
   type UpdateCrewMemberBody,
 } from "./crewMembers.schemas.js";
@@ -24,6 +26,7 @@ import {
   getCrewMemberAccess,
   getCrewMemberById,
   grantCrewMemberAccess,
+  listCrewMemberHistory,
   listCrewMembers,
   revokeCrewMemberAccess,
   updateCrewMember,
@@ -81,6 +84,20 @@ export async function getCrewMemberHandler(
   const { id } = req.params as { id: string };
   const item = await getCrewMemberById(req.user, id);
   res.status(200).json(getCrewMemberResponseSchema.parse(item));
+}
+
+/** GET /crew-members/:id/history — bitácora D31. */
+export async function listCrewMemberHistoryHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+  const { id } = req.params as { id: string };
+  const query = req.query as unknown as ListCrewMemberHistoryQuery;
+  const result = await listCrewMemberHistory(req.user, id, query);
+  res.status(200).json(listCrewMemberHistoryResponseSchema.parse(result));
 }
 
 /** PATCH /crew-members/:id — edición. */

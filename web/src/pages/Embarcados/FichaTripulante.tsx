@@ -48,6 +48,7 @@ import {
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { isRutValid, normalizeRut } from "../../lib/rut";
 import { CrewAccessPanel } from "./CrewAccessPanel";
+import { CrewBitacoraPanel } from "./CrewBitacoraPanel";
 import { CrewBoardingBookPanel } from "./CrewBoardingBookPanel";
 import { CrewCoursesPanel } from "./CrewCoursesPanel";
 import { CrewDocumentsPanel } from "./CrewDocumentsPanel";
@@ -544,7 +545,7 @@ export function FichaTripulante() {
     { id: "datos", label: "Datos personales" },
     { id: "documentos", label: "Documentos" },
     { id: "acceso", label: "Acceso" },
-    { id: "historial", label: "Historial" },
+    { id: "historial", label: "Bitácora" },
   ];
 
   return (
@@ -749,8 +750,11 @@ export function FichaTripulante() {
                 crewDisplayName={fullName(crew)}
               />
             ) : null}
-            {tab === "historial" ? (
-              <PlaceholderCard text="Bitácora / historial: Figma D31 — pendiente." />
+            {tab === "historial" && id ? (
+              <CrewBitacoraPanel
+                crewMemberId={id}
+                onOpenDocuments={() => setTab("documentos")}
+              />
             ) : null}
           </>
         )}

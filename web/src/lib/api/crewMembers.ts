@@ -271,3 +271,83 @@ export async function revokeCrewMemberAccessRequest(
   if (!res.ok) throw toApiError(res, body);
   return body as CrewAccess;
 }
+
+/** Categoría de evento en bitácora (Figma D31). */
+export type CrewHistoryCategory =
+  | "all"
+  | "contract"
+  | "document"
+  | "course"
+  | "observation"
+  | "sanction"
+  | "boarding";
+
+/** Ítem de timeline de bitácora. */
+export type CrewHistoryItem = {
+  id: string;
+  createdAt: string;
+  title: string;
+  detail: string | null;
+  category:
+    | "contract"
+    | "document"
+    | "course"
+    | "observation"
+    | "sanction"
+    | "boarding";
+  categoryLabel: string;
+  statusLabel: string | null;
+  statusTone: "success" | "warning" | "danger" | "info" | "neutral";
+  actor: string | null;
+  attachmentName: string | null;
+};
+
+/** Conteos del resumen lateral D31. */
+export type CrewHistorySummary = {
+  documents: number;
+  courses: number;
+  boardings: number;
+  observations: number;
+  sanctions: number;
+  total: number;
+};
+
+/** Respuesta GET /crew-members/:id/history. */
+export type ListCrewMemberHistoryResult = {
+  items: CrewHistoryItem[];
+  summary: CrewHistorySummary;
+  total: number;
+  page: number;
+  limit: number;
+};
+
+/** Query GET /crew-members/:id/history. */
+export type ListCrewMemberHistoryQuery = {
+  page?: number;
+  limit?: number;
+  category?: CrewHistoryCategory;
+};
+
+/** GET /api/v1/crew-members/:id/history — bitácora D31. */
+export async function listCrewMemberHistoryRequest(
+  accessToken: string,
+  crewMemberId: string,
+  query: ListCrewMemberHistoryQuery = {},
+): Promise<ListCrewMemberHistoryResult> {
+  const params = new URLSearchParams();
+  params.set("page", String(query.page ?? 1));
+  params.set("limit", String(query.limit ?? 50));
+  if (query.category && query.category !== "all") {
+    params.set("category", query.category);
+  }
+
+  const res = await fetch(
+    `/api/v1/crew-members/${crewMemberId}/history?${params}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ListCrewMemberHistoryResult;
+}

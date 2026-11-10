@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipboardCheck } from "lucide-react";
+import {
+  AlertCircle,
+  ClipboardCheck,
+  ClipboardList,
+  Clock,
+  Download,
+  FileText,
+} from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../../components/Button/Button";
 import {
@@ -23,6 +30,7 @@ import { Topbar } from "../../components/Topbar/Topbar";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { userHasPermission } from "../../lib/api/auth";
+import { downloadXls } from "../../lib/exportXls";
 import {
   approveWorkPermitRequest,
   closeWorkPermitRequest,
@@ -41,6 +49,16 @@ import {
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { WorkPermitCompleteModal } from "./WorkPermitCompleteModal";
 import { WorkPermitCreateModal } from "./WorkPermitCreateModal";
+
+/** KPI de la bandeja (Figma [P5] P3). */
+type PermitKpiKey =
+  | "to_complete"
+  | "to_approve"
+  | "to_receive"
+  | "closure_pending";
+
+/** Filtro de estado: todos o un status concreto / cierre pendiente. */
+type StatusFilter = "" | WorkPermitStatus | "closure_pending";
 
 /** Capitaliza. */
 function displayName(value: string): string {
@@ -81,9 +99,9 @@ function statusTone(
   }
 }
 
-/** Botón outline del modal. */
+/** Botón outline (modales + Exportar). */
 const outlineBtnClass =
-  "inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60";
+  "inline-flex h-9 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60";
 
 /**
  * Bandeja de permisos de trabajo (Prevención).
@@ -104,10 +122,12 @@ export function WorkPermitsPage() {
   const [items, setItems] = useState<WorkPermit[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  /** Filtro por estado (también al clickear un KPI). */
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
   const [actingId, setActingId] = useState<string | null>(null);
-  /** Modal con nota: devolver / no autorizar (sin pad). */
+  /** Modal con nota: devolver / no autorizar / pedir cierre. */
   const [noteModal, setNoteModal] = useState<{
-    kind: "return" | "reject-receipt";
+    kind: "return" | "reject-receipt" | "request-close";
     row: WorkPermit;
   } | null>(null);
   const [reviewNote, setReviewNote] = useState("");
@@ -151,8 +171,11 @@ export function WorkPermitsPage() {
     setSignModal({ kind, row });
   }
 
-  /** Abre modal con nota (devolver / no autorizar). */
-  function openNoteModal(kind: "return" | "reject-receipt", row: WorkPermit) {
+  /** Abre modal con nota (devolver / no autorizar / pedir cierre). */
+  function openNoteModal(
+    kind: "return" | "reject-receipt" | "request-close",
+    row: WorkPermit,
+  ) {
     setReviewNote("");
     setNoteModal({ kind, row });
   }
@@ -207,31 +230,11 @@ export function WorkPermitsPage() {
     }
   }
 
-  /** Pedir cierre (active → to_verify). */
-  async function onRequestClose(row: WorkPermit) {
-    if (!accessToken || !canUpdate || actingId) return;
-    if (row.status !== "active") return;
-    setActingId(row.id);
-    try {
-      await requestCloseWorkPermitRequest(accessToken, row.id);
-      showToast(
-        `${row.code} · ${workPermitStatusLabel("to_verify")}.`,
-        "success",
-      );
-      await load();
-    } catch (err) {
-      showToast(
-        err instanceof ApiError ? err.message : "No se pudo pedir el cierre.",
-        "danger",
-      );
-    } finally {
-      setActingId(null);
-    }
-  }
-
-  /** Confirma modal con nota (devolver / no autorizar). */
+  /** Confirma modal con nota (devolver / no autorizar / pedir cierre). */
   async function confirmNoteModal() {
-    if (!accessToken || !noteModal || !reviewNote.trim() || actingId) return;
+    if (!accessToken || !noteModal || actingId) return;
+    /** Pedir cierre: observación opcional; el resto exige texto. */
+    if (noteModal.kind !== "request-close" && !reviewNote.trim()) return;
     setActingId(noteModal.row.id);
     try {
       if (noteModal.kind === "return") {
@@ -244,7 +247,7 @@ export function WorkPermitsPage() {
           `${noteModal.row.code} · ${workPermitStatusLabel("to_complete")}.`,
           "success",
         );
-      } else {
+      } else if (noteModal.kind === "reject-receipt") {
         await rejectReceiptWorkPermitRequest(
           accessToken,
           noteModal.row.id,
@@ -252,6 +255,16 @@ export function WorkPermitsPage() {
         );
         showToast(
           `${noteModal.row.code} · vuelve a ${workPermitStatusLabel("to_approve")}.`,
+          "success",
+        );
+      } else {
+        await requestCloseWorkPermitRequest(
+          accessToken,
+          noteModal.row.id,
+          reviewNote.trim() || null,
+        );
+        showToast(
+          `${noteModal.row.code} · ${workPermitStatusLabel("to_verify")}.`,
           "success",
         );
       }
@@ -289,17 +302,88 @@ export function WorkPermitsPage() {
     }
   }
 
+  /** Conteos KPI desde el listado cargado (Figma P3). */
+  const kpiCounts = useMemo(() => {
+    let toComplete = 0;
+    let toApprove = 0;
+    let toReceive = 0;
+    let closurePending = 0;
+    for (const row of items) {
+      if (row.status === "to_complete") toComplete += 1;
+      else if (row.status === "to_approve") toApprove += 1;
+      else if (row.status === "to_receive") toReceive += 1;
+      else if (row.status === "active" || row.status === "to_verify") {
+        closurePending += 1;
+      }
+    }
+    return { toComplete, toApprove, toReceive, closurePending };
+  }, [items]);
+
+  /** Tarjetas KPI alineadas al frame Figma. */
+  const kpiCards: Array<{
+    key: PermitKpiKey;
+    label: string;
+    value: number;
+    chip: string;
+    hint: string;
+    icon: typeof Clock;
+    filter: StatusFilter;
+  }> = [
+    {
+      key: "to_complete",
+      label: "Por completar",
+      value: kpiCounts.toComplete,
+      chip: "contratista",
+      hint: "esperan al contratista",
+      icon: Clock,
+      filter: "to_complete",
+    },
+    {
+      key: "to_approve",
+      label: "En revisión",
+      value: kpiCounts.toApprove,
+      chip: "vuelven a ti",
+      hint: "checklist y personal",
+      icon: FileText,
+      filter: "to_approve",
+    },
+    {
+      key: "to_receive",
+      label: "Aprobado Prevención",
+      value: kpiCounts.toReceive,
+      chip: "a bordo",
+      hint: "esperan al capitán",
+      icon: ClipboardList,
+      filter: "to_receive",
+    },
+    {
+      key: "closure_pending",
+      label: "Cierre pendiente",
+      value: kpiCounts.closurePending,
+      chip: "verificar o cerrar",
+      hint: "autorizados o por verificar",
+      icon: AlertCircle,
+      filter: "closure_pending",
+    },
+  ];
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (row) =>
+    return items.filter((row) => {
+      if (statusFilter === "closure_pending") {
+        if (row.status !== "active" && row.status !== "to_verify") return false;
+      } else if (statusFilter && row.status !== statusFilter) {
+        return false;
+      }
+      if (!q) return true;
+      return (
         row.code.toLowerCase().includes(q) ||
         row.workNotice.code.toLowerCase().includes(q) ||
         row.organization.name.toLowerCase().includes(q) ||
-        row.organization.rut.toLowerCase().includes(q),
-    );
-  }, [items, search]);
+        row.organization.rut.toLowerCase().includes(q)
+      );
+    });
+  }, [items, search, statusFilter]);
 
   const {
     pageItems,
@@ -310,6 +394,46 @@ export function WorkPermitsPage() {
     pageCount,
     total,
   } = useClientTablePagination(filtered);
+
+  /** Export XLS del listado filtrado (Figma Exportar). */
+  function onExport() {
+    if (filtered.length === 0) {
+      showToast("No hay filas para exportar.", "info");
+      return;
+    }
+    downloadXls(
+      filtered,
+      [
+        { header: "Permiso", value: (row) => row.code },
+        { header: "Aviso", value: (row) => row.workNotice.code },
+        {
+          header: "Empresa",
+          value: (row) => displayName(row.organization.name),
+        },
+        { header: "RUT", value: (row) => row.organization.rut },
+        {
+          header: "Tipo",
+          value: (row) => `${row.permitType.code} · ${row.permitType.name}`,
+        },
+        { header: "Nave", value: (row) => row.location.name },
+        {
+          header: "Fecha",
+          value: (row) => formatDate(row.scheduledDate),
+        },
+        {
+          header: "Estado",
+          value: (row) => workPermitStatusLabel(row.status),
+        },
+      ],
+      "permisos-trabajo",
+    );
+  }
+
+  /** Click en KPI: filtra / limpia si ya estaba activo. */
+  function onKpiClick(filter: StatusFilter) {
+    setStatusFilter((prev) => (prev === filter ? "" : filter));
+    setPage(1);
+  }
 
   if (!canRead) {
     return (
@@ -343,15 +467,21 @@ export function WorkPermitsPage() {
             { label: "Permisos de trabajo" },
           ]}
           title="Permisos de trabajo"
-          description="Prevención crea cada permiso desde un aviso, aprueba o devuelve; el capitán recibe y fiscaliza el cierre."
+          description="Tú creas el permiso para una empresa habilitada, el contratista lo completa, tú lo apruebas y el capitán lo recibe en el puente."
           actions={
-            <div className="flex items-center gap-2">
-              <Link
-                to="/prevencion/avisos"
-                className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={outlineBtnClass}
+                onClick={onExport}
               >
-                Ir a avisos
-              </Link>
+                <Download
+                  className="mr-1.5 size-4"
+                  strokeWidth={1.5}
+                  aria-hidden
+                />
+                Exportar
+              </button>
               {canCreate && isStaff ? (
                 <Button
                   type="button"
@@ -359,20 +489,116 @@ export function WorkPermitsPage() {
                   className="!w-auto"
                   onClick={() => setCreateOpen(true)}
                 >
-                  Nuevo permiso
+                  + Nuevo permiso
                 </Button>
               ) : null}
             </div>
           }
         />
 
+        {/* Tabs Figma: Permisos | Avisos | Tipos */}
+        <div
+          role="tablist"
+          className="flex flex-wrap gap-1 border-b border-[var(--color-tremor-border)]"
+        >
+          <span
+            role="tab"
+            aria-selected
+            className="border-b-2 border-[var(--color-nachipa-primary)] px-3 py-2 text-[13px] font-medium text-[var(--color-nachipa-title)]"
+          >
+            Permisos
+            <span className="ml-1.5 text-[var(--color-nachipa-secondary)]">
+              {items.length}
+            </span>
+          </span>
+          <Link
+            to="/prevencion/avisos"
+            role="tab"
+            className="px-3 py-2 text-[13px] font-medium text-[var(--color-nachipa-secondary)] hover:text-[var(--color-nachipa-title)]"
+          >
+            Avisos
+          </Link>
+          <Link
+            to="/prevencion/tipos"
+            role="tab"
+            className="px-3 py-2 text-[13px] font-medium text-[var(--color-nachipa-secondary)] hover:text-[var(--color-nachipa-title)]"
+          >
+            Tipos de permiso
+          </Link>
+        </div>
+
+        {/* KPIs Figma [P5] P3 — click filtra la tabla */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {kpiCards.map((kpi) => {
+            const Icon = kpi.icon;
+            const active = statusFilter === kpi.filter;
+            return (
+              <button
+                key={kpi.key}
+                type="button"
+                onClick={() => onKpiClick(kpi.filter)}
+                className={[
+                  "flex flex-col gap-1.5 rounded-[var(--radius-lg)] border bg-white px-4 py-3.5 text-left transition-colors",
+                  active
+                    ? "border-[var(--color-nachipa-primary)] ring-1 ring-[var(--color-nachipa-primary)]"
+                    : "border-[var(--color-tremor-border)] hover:border-[var(--color-nachipa-secondary)]",
+                ].join(" ")}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[13px] font-medium text-[var(--color-nachipa-body)]">
+                    {kpi.label}
+                  </span>
+                  <Icon
+                    size={16}
+                    strokeWidth={1.5}
+                    className="shrink-0 text-[var(--color-nav-icon,#64748b)]"
+                    aria-hidden
+                  />
+                </div>
+                <p className="m-0 text-[28px] font-semibold leading-9 tracking-[-0.5px] tabular-nums text-[var(--color-nachipa-title)]">
+                  {loading ? "…" : kpi.value}
+                </p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <StatusChip tone="info">{kpi.chip}</StatusChip>
+                  <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                    {kpi.hint}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
         <DataTableCard
           toolbar={
-            <DataTableSearch
-              value={search}
-              onChange={setSearch}
-              placeholder="Buscar PT, aviso o empresa…"
-            />
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <DataTableSearch
+                value={search}
+                onChange={setSearch}
+                placeholder="Buscar por N° o empresa…"
+              />
+              <label className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-nachipa-secondary)]">
+                <span className="sr-only">Estado</span>
+                <select
+                  className="h-8 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-2 text-[12px] font-medium text-[var(--color-nachipa-title)]"
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value as StatusFilter);
+                    setPage(1);
+                  }}
+                >
+                  <option value="">Estado: todos</option>
+                  <option value="to_complete">Por completar</option>
+                  <option value="to_approve">En revisión</option>
+                  <option value="to_receive">Aprobado Prevención</option>
+                  <option value="active">Autorizado a bordo</option>
+                  <option value="to_verify">Verificar trabajo</option>
+                  <option value="closure_pending">Cierre pendiente</option>
+                  <option value="closed">Trabajo cerrado</option>
+                  <option value="no_closure">Sin cierre</option>
+                </select>
+              </label>
+            </div>
           }
           footer={
             <TablePagination
@@ -527,9 +753,11 @@ export function WorkPermitsPage() {
                             type="button"
                             className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
                             disabled={actingId === row.id}
-                            onClick={() => void onRequestClose(row)}
+                            onClick={() =>
+                              openNoteModal("request-close", row)
+                            }
                           >
-                            {actingId === row.id ? "…" : "Pedir cierre"}
+                            Pedir cierre
                           </button>
                         ) : null}
                         {canReceive &&
@@ -622,7 +850,9 @@ export function WorkPermitsPage() {
         title={
           noteModal?.kind === "reject-receipt"
             ? "No autorizar recepción"
-            : "Devolver permiso al contratista"
+            : noteModal?.kind === "request-close"
+              ? "Pedir cierre"
+              : "Devolver permiso al contratista"
         }
         subtitle={
           noteModal
@@ -643,14 +873,19 @@ export function WorkPermitsPage() {
               type="button"
               size="medium"
               className="!w-auto"
-              disabled={Boolean(actingId) || !reviewNote.trim()}
+              disabled={
+                Boolean(actingId) ||
+                (noteModal?.kind !== "request-close" && !reviewNote.trim())
+              }
               onClick={() => void confirmNoteModal()}
             >
               {actingId
                 ? "Guardando…"
                 : noteModal?.kind === "reject-receipt"
                   ? "No autorizar"
-                  : "Devolver"}
+                  : noteModal?.kind === "request-close"
+                    ? "Pedir cierre"
+                    : "Devolver"}
             </Button>
           </div>
         }
@@ -658,15 +893,21 @@ export function WorkPermitsPage() {
         <p className="m-0 mb-3 text-[13px] text-[var(--color-nachipa-secondary)]">
           {noteModal?.kind === "reject-receipt"
             ? "El permiso vuelve a «En revisión» (Prevención) con tu motivo."
-            : "El permiso vuelve a «Por completar» con tu observación."}
+            : noteModal?.kind === "request-close"
+              ? "El permiso pasa a «Verificar trabajo». Podés dejar un comentario para el capitán."
+              : "El permiso vuelve a «Por completar» con tu observación."}
         </p>
         <TextField
           label={
-            noteModal?.kind === "reject-receipt" ? "Motivo" : "Observaciones"
+            noteModal?.kind === "reject-receipt"
+              ? "Motivo"
+              : noteModal?.kind === "request-close"
+                ? "Observación (opcional)"
+                : "Observaciones"
           }
           value={reviewNote}
           onChange={(e) => setReviewNote(e.target.value)}
-          required
+          required={noteModal?.kind !== "request-close"}
         />
       </Modal>
 

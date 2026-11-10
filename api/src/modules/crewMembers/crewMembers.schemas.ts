@@ -221,3 +221,80 @@ export type ChangeCrewMemberAccessRoleBody = z.infer<
   typeof changeCrewMemberAccessRoleBodySchema
 >;
 export type CrewAccessResponse = z.infer<typeof crewAccessResponseSchema>;
+
+/**
+ * Categoría de evento en bitácora (Figma D31 filtros).
+ * observation/sanction reservados; hoy no hay tabla dedicada.
+ */
+export const crewHistoryCategorySchema = z.enum([
+  "all",
+  "contract",
+  "document",
+  "course",
+  "observation",
+  "sanction",
+  "boarding",
+]);
+
+/** Query GET /crew-members/:id/history (AQO-68 · D31). */
+export const listCrewMemberHistoryQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(50),
+  category: crewHistoryCategorySchema.optional().default("all"),
+});
+
+export const listCrewMemberHistoryRequestSchema = z.object({
+  params: crewMemberIdParamsSchema,
+  query: listCrewMemberHistoryQuerySchema,
+});
+
+/** Ítem timeline de bitácora. */
+export const crewHistoryItemSchema = z
+  .object({
+    id: z.string(),
+    createdAt: z.string().datetime(),
+    title: z.string(),
+    detail: z.string().nullable(),
+    category: z.enum([
+      "contract",
+      "document",
+      "course",
+      "observation",
+      "sanction",
+      "boarding",
+    ]),
+    categoryLabel: z.string(),
+    statusLabel: z.string().nullable(),
+    statusTone: z.enum(["success", "warning", "danger", "info", "neutral"]),
+    actor: z.string().nullable(),
+    /** Nombre de archivo adjunto si aplica (docs). */
+    attachmentName: z.string().nullable(),
+  })
+  .openapi("CrewHistoryItem");
+
+/** Conteos del resumen lateral D31. */
+export const crewHistorySummarySchema = z
+  .object({
+    documents: z.number().int().nonnegative(),
+    courses: z.number().int().nonnegative(),
+    boardings: z.number().int().nonnegative(),
+    observations: z.number().int().nonnegative(),
+    sanctions: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+  })
+  .openapi("CrewHistorySummary");
+
+export const listCrewMemberHistoryResponseSchema = z
+  .object({
+    items: z.array(crewHistoryItemSchema),
+    summary: crewHistorySummarySchema,
+    total: z.number().int().nonnegative(),
+    page: z.number().int().positive(),
+    limit: z.number().int().positive(),
+  })
+  .openapi("ListCrewMemberHistoryResponse");
+
+export type ListCrewMemberHistoryQuery = z.infer<
+  typeof listCrewMemberHistoryQuerySchema
+>;
+export type CrewHistoryItem = z.infer<typeof crewHistoryItemSchema>;

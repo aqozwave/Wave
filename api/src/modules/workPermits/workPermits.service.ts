@@ -1470,10 +1470,12 @@ export async function rejectReceiptWorkPermit(
 /**
  * POST /work-permits/:id/request-close — contratista o Prevención.
  * active → to_verify (Verificar trabajo).
+ * observation opcional: queda en reviewNote + nota de la firma de cierre.
  */
 export async function requestCloseWorkPermit(
   actor: Actor,
   id: string,
+  body: { observation?: string | null },
 ): Promise<WorkPermitResponse> {
   const existing = await prisma.workPermit.findFirst({
     where: { id, deletedAt: null },
@@ -1495,12 +1497,17 @@ export async function requestCloseWorkPermit(
 
   await assertPriorSignatures(id, SIGNATURES_BEFORE_CLOSE);
 
+  /** Comentario al pedir cierre (vacío → null). */
+  const observation = body.observation?.trim() || null;
+
   const updated = await prisma.workPermit.update({
     where: { id },
-    data: { status: "to_verify", reviewNote: null },
+    data: { status: "to_verify", reviewNote: observation },
     include: permitInclude,
   });
-  await upsertWorkPermitSignature(id, "contractor_request_close", actor.id);
+  await upsertWorkPermitSignature(id, "contractor_request_close", actor.id, {
+    note: observation,
+  });
   return toWorkPermitResponse(updated);
 }
 

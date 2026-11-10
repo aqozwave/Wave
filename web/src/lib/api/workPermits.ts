@@ -389,11 +389,13 @@ export async function rejectReceiptWorkPermitRequest(
 export async function requestCloseWorkPermitRequest(
   accessToken: string,
   id: string,
+  observation?: string | null,
 ): Promise<WorkPermit> {
+  const trimmed = observation?.trim() || null;
   const res = await fetch(`/api/v1/work-permits/${id}/request-close`, {
     method: "POST",
     headers: authHeaders(accessToken),
-    body: JSON.stringify({}),
+    body: JSON.stringify({ observation: trimmed }),
   });
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw toApiError(res, body);

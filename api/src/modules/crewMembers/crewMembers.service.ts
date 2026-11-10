@@ -14,8 +14,10 @@ import type {
   ChangeCrewMemberAccessRoleBody,
   CreateCrewMemberBody,
   CrewAccessResponse,
+  CrewHistoryItem,
   CrewMemberResponse,
   GrantCrewMemberAccessBody,
+  ListCrewMemberHistoryQuery,
   ListCrewMembersQuery,
   UpdateCrewMemberBody,
 } from "./crewMembers.schemas.js";
@@ -1007,4 +1009,196 @@ export async function revokeCrewMemberAccess(
   });
 
   return toCrewAccessResponse(updated);
+}
+
+/** Categoría de timeline (sin "all"). */
+type CrewHistoryCategory = Exclude<
+  ListCrewMemberHistoryQuery["category"],
+  "all" | undefined
+>;
+
+/** Mapea action/resource/metadata → categoría e ítem legible. */
+function mapCrewAuditEvent(row: {
+  id: string;
+  action: string;
+  resource: string;
+  targetLabel: string | null;
+  actorUsername: string | null;
+  actorEmail: string | null;
+  success: boolean;
+  metadata: unknown;
+  createdAt: Date;
+}): CrewHistoryItem {
+  const meta =
+    row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+      ? (row.metadata as Record<string, unknown>)
+      : {};
+  const fields = Array.isArray(meta.fields)
+    ? meta.fields.map(String)
+    : [];
+  const actor = row.actorUsername || row.actorEmail || null;
+
+  let category: CrewHistoryCategory = "contract";
+  let categoryLabel = "Contrato";
+  let title = row.targetLabel?.trim() || "Evento de ficha";
+  let statusLabel: string | null = row.success ? "OK" : "Error";
+  let statusTone: CrewHistoryItem["statusTone"] = row.success
+    ? "success"
+    : "danger";
+
+  if (row.resource === "crewMemberCourse") {
+    category = "course";
+    categoryLabel = "Curso";
+    if (row.action === "CREATE") title = `Curso asignado${row.targetLabel ? `: ${row.targetLabel}` : ""}`;
+    else if (row.action === "UPDATE") title = `Curso actualizado${row.targetLabel ? `: ${row.targetLabel}` : ""}`;
+    else if (row.action === "DELETE") title = `Curso eliminado${row.targetLabel ? `: ${row.targetLabel}` : ""}`;
+    statusTone = "info";
+    statusLabel = "Curso";
+  } else if (row.action === "CREATE" && row.resource === "crewMember") {
+    category = "contract";
+    categoryLabel = "Ingreso";
+    title = "Ingreso al sistema";
+    statusLabel = "Ingreso";
+    statusTone = "success";
+  } else if (fields.includes("locationId")) {
+    category = "boarding";
+    categoryLabel = "Embarque";
+    title = "Cambio de nave / ubicación";
+    statusLabel = "Embarque";
+    statusTone = "info";
+  } else if (fields.includes("observation")) {
+    category = "observation";
+    categoryLabel = "Observación";
+    title = "Observación de ficha actualizada";
+    statusLabel = "Observación";
+    statusTone = "warning";
+  } else if (row.action === "UPDATE") {
+    category = "contract";
+    categoryLabel = "Contrato";
+    title = "Datos de ficha actualizados";
+    if (fields.length > 0) {
+      title = `Actualización: ${fields.slice(0, 4).join(", ")}`;
+    }
+    statusLabel = "Actualización";
+    statusTone = "neutral";
+  } else if (row.action === "DELETE") {
+    category = "contract";
+    categoryLabel = "Contrato";
+    title = "Tripulante desactivado";
+    statusLabel = "Baja";
+    statusTone = "danger";
+  }
+
+  return {
+    id: row.id,
+    createdAt: row.createdAt.toISOString(),
+    title,
+    detail: row.targetLabel,
+    category,
+    categoryLabel,
+    statusLabel,
+    statusTone,
+    actor,
+    attachmentName: null,
+  };
+}
+
+/**
+ * Bitácora del tripulante (Figma D31 / AQO-68).
+ * Une activity_logs (ficha + cursos) con altas de documentos.
+ */
+export async function listCrewMemberHistory(
+  actor: Actor,
+  crewMemberId: string,
+  query: ListCrewMemberHistoryQuery,
+): Promise<{
+  items: CrewHistoryItem[];
+  summary: {
+    documents: number;
+    courses: number;
+    boardings: number;
+    observations: number;
+    sanctions: number;
+    total: number;
+  };
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  await getCrewMemberById(actor, crewMemberId);
+
+  const courseRows = await prisma.crewMemberCourse.findMany({
+    where: { crewMemberId },
+    select: { id: true },
+  });
+  const courseIds = courseRows.map((c) => c.id);
+
+  const orFilters: Prisma.ActivityLogWhereInput[] = [
+    { resource: "crewMember", resourceId: crewMemberId },
+  ];
+  if (courseIds.length > 0) {
+    orFilters.push({
+      resource: "crewMemberCourse",
+      resourceId: { in: courseIds },
+    });
+  }
+
+  const [documents, auditRows] = await Promise.all([
+    prisma.crewMemberDocument.findMany({
+      where: { crewMemberId, deletedAt: null },
+      include: {
+        documentType: { select: { name: true, code: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
+    prisma.activityLog.findMany({
+      where: { OR: orFilters },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    }),
+  ]);
+
+  const docEvents: CrewHistoryItem[] = documents.map((doc) => ({
+    id: `doc:${doc.id}`,
+    createdAt: doc.createdAt.toISOString(),
+    title: `${doc.documentType.name} subido`,
+    detail: doc.documentType.code,
+    category: "document" as const,
+    categoryLabel: "Documento",
+    statusLabel: "Documento",
+    statusTone: "info" as const,
+    actor: null,
+    attachmentName: doc.originalName,
+  }));
+
+  const auditEvents = auditRows.map(mapCrewAuditEvent);
+
+  /** Merge + orden cronológico desc. */
+  let merged = [...docEvents, ...auditEvents].sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+
+  const summary = {
+    documents: merged.filter((e) => e.category === "document").length,
+    courses: merged.filter((e) => e.category === "course").length,
+    boardings: merged.filter((e) => e.category === "boarding").length,
+    observations: merged.filter((e) => e.category === "observation").length,
+    sanctions: merged.filter((e) => e.category === "sanction").length,
+    total: merged.length,
+  };
+
+  const category = query.category ?? "all";
+  if (category !== "all") {
+    merged = merged.filter((e) => e.category === category);
+  }
+
+  const total = merged.length;
+  const page = query.page;
+  const limit = query.limit;
+  const skip = (page - 1) * limit;
+  const items = merged.slice(skip, skip + limit);
+
+  return { items, summary, total, page, limit };
 }
