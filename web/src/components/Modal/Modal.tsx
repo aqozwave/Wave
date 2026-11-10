@@ -65,6 +65,12 @@ const DEFAULT_DRAWER_WIDTH =
 const openModalStack: Array<() => void> = [];
 
 /**
+ * Cuántos modales tienen el scroll del body bloqueado.
+ * Evita restaurar overflow/padding si aún queda otro modal abierto.
+ */
+let bodyScrollLockCount = 0;
+
+/**
  * Modal overlay + card (Figma) o drawer lateral.
  * Portal a document.body: el overlay cubre viewport completo
  * (sidebar + topbar), aunque un ancestro tenga transform (animate-enter).
@@ -109,15 +115,39 @@ export function Modal({
     };
   }, [open, onClose]);
 
-  /** Bloquea scroll del fondo mientras hay al menos un modal. */
+  /**
+   * Bloquea scroll del fondo y compensa el ancho del scrollbar.
+   * Sin padding-right, al ocultar la barra el contenido se ensancha ~15px
+   * y las tablas “parpadean” al abrir/cerrar firmar o cargar docs.
+   */
   useEffect(() => {
     if (!open) {
       return;
     }
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+
+    bodyScrollLockCount += 1;
+    if (bodyScrollLockCount === 1) {
+      const scrollbarWidth =
+        window.innerWidth - document.documentElement.clientWidth;
+      document.body.dataset.modalPrevOverflow = document.body.style.overflow;
+      document.body.dataset.modalPrevPaddingRight =
+        document.body.style.paddingRight;
+      document.body.style.overflow = "hidden";
+      if (scrollbarWidth > 0) {
+        document.body.style.paddingRight = `${scrollbarWidth}px`;
+      }
+    }
+
     return () => {
-      document.body.style.overflow = prev;
+      bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1);
+      if (bodyScrollLockCount === 0) {
+        document.body.style.overflow =
+          document.body.dataset.modalPrevOverflow ?? "";
+        document.body.style.paddingRight =
+          document.body.dataset.modalPrevPaddingRight ?? "";
+        delete document.body.dataset.modalPrevOverflow;
+        delete document.body.dataset.modalPrevPaddingRight;
+      }
     };
   }, [open]);
 

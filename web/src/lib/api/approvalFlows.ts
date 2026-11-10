@@ -75,6 +75,9 @@ export type UpdateApprovalFlowBody = {
 };
 
 /** Body alta etapa. */
+/** Dónde insertar la etapa en el orden del flujo. */
+export type ApprovalFlowStagePlacement = "start" | "middle" | "end";
+
 export type CreateApprovalFlowStageBody = {
   key: string;
   label: string;
@@ -82,6 +85,8 @@ export type CreateApprovalFlowStageBody = {
   moment: ApprovalFlowStageMoment;
   requiresSignature?: boolean;
   mandatory?: boolean;
+  /** start = inicio · middle = antes del cierre · end = al final. */
+  placement?: ApprovalFlowStagePlacement;
 };
 
 /** Body patch etapa. */

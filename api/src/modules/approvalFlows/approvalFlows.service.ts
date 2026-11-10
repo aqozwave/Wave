@@ -3,6 +3,14 @@ import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import {
+  flowHasFinalCloseStage,
+  isFinalCloseStage,
+  isPreventionApprovalStage,
+  isStartOrRequestStage,
+  MIN_APPROVAL_FLOW_STAGES,
+  resolveFlowStageCoverage,
+} from "../workPermits/workPermitFlowPolicy.js";
+import {
   MAX_APPROVAL_FLOW_STAGES,
   type ApprovalFlowDetail,
   type ApprovalFlowListItem,
@@ -12,6 +20,157 @@ import {
   type UpdateApprovalFlowBody,
   type UpdateApprovalFlowStageBody,
 } from "./approvalFlows.schemas.js";
+
+/** Etapa mínima de inicio/solicitud si falta al copiar. */
+const DEFAULT_START_STAGE = {
+  key: "notice",
+  label: "Informa los trabajos y las contratistas que irán a bordo",
+  actor: "requesting_area" as const,
+  moment: "before" as const,
+  requiresSignature: false,
+  mandatory: true,
+};
+
+/** Etapa mínima de Prevención (aprobación) si falta al copiar. */
+const DEFAULT_PREVENTION_STAGE = {
+  key: "approve",
+  label: "Valida los datos y aprueba el permiso",
+  actor: "prevention" as const,
+  moment: "before" as const,
+  requiresSignature: true,
+  mandatory: true,
+};
+
+/** Etapa de cierre por defecto (Capitán) si falta en copia/truncado. */
+const DEFAULT_CLOSE_STAGE = {
+  key: "close",
+  label: "Cierra el trabajo",
+  actor: "captain" as const,
+  moment: "on_finish" as const,
+  requiresSignature: true,
+  mandatory: true,
+};
+
+type StageDraft = {
+  position: number;
+  key: string;
+  label: string;
+  actor: "requesting_area" | "prevention" | "contractor" | "captain";
+  moment: "before" | "on_arrival" | "on_finish";
+  requiresSignature: boolean;
+  mandatory: boolean;
+  fixed: boolean;
+};
+
+/**
+ * Exige inicio + Prevención + cierre y al menos 3 etapas.
+ * Mensaje concreto según lo que falte.
+ */
+function assertMinimumFlowStages(
+  stages: ReadonlyArray<{
+    key: string;
+    actor: string;
+    moment?: string | null;
+  }>,
+): void {
+  assertUniqueStartAndClose(stages);
+
+  const coverage = resolveFlowStageCoverage(stages);
+  if (
+    coverage.hasStart &&
+    coverage.hasPreventionApproval &&
+    coverage.hasClose &&
+    stages.length >= MIN_APPROVAL_FLOW_STAGES &&
+    coverage.startCount === 1 &&
+    coverage.closeCount === 1
+  ) {
+    return;
+  }
+
+  const missing: string[] = [];
+  if (!coverage.hasStart) missing.push("inicio/solicitud");
+  if (!coverage.hasPreventionApproval) {
+    missing.push("aprobación de Prevención");
+  }
+  if (!coverage.hasClose) missing.push("cierre del trabajo");
+  if (stages.length < MIN_APPROVAL_FLOW_STAGES) {
+    missing.push(`mínimo ${MIN_APPROVAL_FLOW_STAGES} etapas`);
+  }
+
+  throw new AppError(
+    400,
+    "approval_flow_incomplete",
+    `Todo flujo necesita inicio, aprobación de Prevención y cierre (${missing.join(", ")})`,
+  );
+}
+
+/**
+ * Un solo inicio y un solo cierre (no 3 cierres como en el bug de UI).
+ */
+function assertUniqueStartAndClose(
+  stages: ReadonlyArray<{
+    key: string;
+    actor: string;
+    moment?: string | null;
+  }>,
+): void {
+  const coverage = resolveFlowStageCoverage(stages);
+  if (coverage.closeCount > 1) {
+    throw new AppError(
+      400,
+      "approval_flow_duplicate_close",
+      "Solo puede haber una etapa de cierre / fin en el flujo",
+    );
+  }
+  if (coverage.startCount > 1) {
+    throw new AppError(
+      400,
+      "approval_flow_duplicate_start",
+      "Solo puede haber una etapa de inicio / solicitud en el flujo",
+    );
+  }
+}
+
+/**
+ * Completa etapas mínimas faltantes al crear una copia.
+ * Orden: inicio → … → Prevención → … → cierre al final.
+ */
+function ensureMinimumStages(stages: StageDraft[]): StageDraft[] {
+  const next = [...stages];
+
+  if (!next.some((s) => isStartOrRequestStage(s))) {
+    next.unshift({ position: 1, ...DEFAULT_START_STAGE, fixed: false });
+  }
+  if (!next.some((s) => isPreventionApprovalStage(s))) {
+    /** Inserta Prevención antes del cierre (o al final si aún no hay). */
+    const closeIdx = next.findIndex((s) => isFinalCloseStage(s));
+    const row: StageDraft = {
+      position: 0,
+      ...DEFAULT_PREVENTION_STAGE,
+      fixed: false,
+    };
+    if (closeIdx >= 0) next.splice(closeIdx, 0, row);
+    else next.push(row);
+  }
+  if (!flowHasFinalCloseStage(next)) {
+    if (next.length >= MAX_APPROVAL_FLOW_STAGES) {
+      next[next.length - 1] = {
+        position: next.length,
+        ...DEFAULT_CLOSE_STAGE,
+        fixed: false,
+      };
+    } else {
+      next.push({
+        position: next.length + 1,
+        ...DEFAULT_CLOSE_STAGE,
+        fixed: false,
+      });
+    }
+  }
+
+  /** Renumerar posiciones 1..n. */
+  return next.map((s, idx) => ({ ...s, position: idx + 1 }));
+}
 
 /** Actor mínimo (P16 · rutas Superadmin). */
 type Actor = Pick<AuthUser, "internalRol" | "businessId">;
@@ -187,7 +346,7 @@ function assertCanAccessBusiness(actor: Actor, businessId: string): void {
   }
 }
 
-/** GET detalle con etapas. */
+/** GET detalle con etapas (reordena inicio → intermedio → cierre). */
 export async function getApprovalFlowById(
   actor: Actor,
   id: string,
@@ -200,6 +359,11 @@ export async function getApprovalFlowById(
     throw new AppError(404, "approval_flow_not_found", "Flujo no encontrado");
   }
   assertCanAccessBusiness(actor, row.businessId);
+  /** Personalizados: corrige orden si quedó mal al agregar. */
+  if (!row.isSystem) {
+    await sortAndRenumberStagesByKind(id);
+    return reloadDetail(id);
+  }
   return toDetail(row);
 }
 
@@ -279,13 +443,16 @@ export async function createApprovalFlow(
     );
   }
 
-  /** Cantidad pedida; por defecto todas las del origen. */
+  /** Cantidad pedida; por defecto todas las del origen (mín. 3). */
   const targetCount = body.stageCount ?? source.stages.length;
-  if (targetCount < 1 || targetCount > MAX_APPROVAL_FLOW_STAGES) {
+  if (
+    targetCount < MIN_APPROVAL_FLOW_STAGES ||
+    targetCount > MAX_APPROVAL_FLOW_STAGES
+  ) {
     throw new AppError(
       400,
       "validation_error",
-      `stageCount debe estar entre 1 y ${MAX_APPROVAL_FLOW_STAGES}`,
+      `stageCount debe estar entre ${MIN_APPROVAL_FLOW_STAGES} y ${MAX_APPROVAL_FLOW_STAGES}`,
     );
   }
 
@@ -293,17 +460,7 @@ export async function createApprovalFlow(
     0,
     Math.min(targetCount, source.stages.length),
   );
-  type StageCreate = {
-    position: number;
-    key: string;
-    label: string;
-    actor: (typeof fromSource)[number]["actor"];
-    moment: (typeof fromSource)[number]["moment"];
-    requiresSignature: boolean;
-    mandatory: boolean;
-    fixed: boolean;
-  };
-  const stagesToCreate: StageCreate[] = fromSource.map((s, idx) => ({
+  let stagesToCreate: StageDraft[] = fromSource.map((s, idx) => ({
     position: idx + 1,
     key: s.key,
     label: s.label,
@@ -330,6 +487,17 @@ export async function createApprovalFlow(
     });
   }
 
+  /** Completa inicio + Prevención + cierre si el truncado los dejó fuera. */
+  stagesToCreate = ensureMinimumStages(stagesToCreate);
+  if (stagesToCreate.length > MAX_APPROVAL_FLOW_STAGES) {
+    throw new AppError(
+      400,
+      "validation_error",
+      `No se pudo armar el mínimo de etapas sin pasar de ${MAX_APPROVAL_FLOW_STAGES}`,
+    );
+  }
+  assertMinimumFlowStages(stagesToCreate);
+
   try {
     const created = await prisma.approvalFlow.create({
       data: {
@@ -346,7 +514,8 @@ export async function createApprovalFlow(
       },
       include: flowDetailInclude,
     });
-    return toDetail(created);
+    await sortAndRenumberStagesByKind(created.id);
+    return reloadDetail(created.id);
   } catch (err) {
     if (
       err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -394,16 +563,64 @@ async function reloadDetail(id: string): Promise<ApprovalFlowDetail> {
   return toDetail(row);
 }
 
-/** Renumera posiciones 1..n en orden actual. */
-async function renumberStages(flowId: string): Promise<void> {
+/**
+ * Orden canónico: inicio → intermedios → cierre, luego 1..n.
+ * Respeta el tope de 8 etapas.
+ */
+async function sortAndRenumberStagesByKind(flowId: string): Promise<void> {
   const stages = await prisma.approvalFlowStage.findMany({
     where: { flowId },
     orderBy: { position: "asc" },
-    select: { id: true },
   });
-  for (let i = 0; i < stages.length; i += 1) {
+  if (stages.length > MAX_APPROVAL_FLOW_STAGES) {
+    throw new AppError(
+      400,
+      "max_stages_reached",
+      `Máximo ${MAX_APPROVAL_FLOW_STAGES} etapas por flujo`,
+    );
+  }
+
+  /** 0 = inicio · 1 = intermedio · 2 = cierre. */
+  function rank(s: {
+    key: string;
+    actor: string;
+    moment: string;
+  }): number {
+    if (isStartOrRequestStage(s)) return 0;
+    if (isFinalCloseStage(s)) return 2;
+    return 1;
+  }
+
+  const sorted = [...stages].sort((a, b) => {
+    const d = rank(a) - rank(b);
+    if (d !== 0) return d;
+    return a.position - b.position;
+  });
+
+  const alreadyOk = sorted.every((s, i) => s.id === stages[i]?.id);
+  if (alreadyOk) {
+    /** Solo asegura 1..n consecutivos. */
+    for (let i = 0; i < sorted.length; i += 1) {
+      if (sorted[i]!.position !== i + 1) {
+        await prisma.approvalFlowStage.update({
+          where: { id: sorted[i]!.id },
+          data: { position: i + 1 },
+        });
+      }
+    }
+    return;
+  }
+
+  /** Libera unique (flowId, position) con negativos, luego asigna 1..n. */
+  for (let i = 0; i < sorted.length; i += 1) {
     await prisma.approvalFlowStage.update({
-      where: { id: stages[i]!.id },
+      where: { id: sorted[i]!.id },
+      data: { position: -(i + 1) },
+    });
+  }
+  for (let i = 0; i < sorted.length; i += 1) {
+    await prisma.approvalFlowStage.update({
+      where: { id: sorted[i]!.id },
       data: { position: i + 1 },
     });
   }
@@ -431,7 +648,10 @@ export async function updateApprovalFlow(
   return reloadDetail(id);
 }
 
-/** POST etapa extra al final (máx. 8). */
+/**
+ * POST etapa extra (máx. 8).
+ * `placement` tipifica la etapa; el orden final lo fija sort (inicio→medio→cierre).
+ */
 export async function addApprovalFlowStage(
   actor: Actor,
   flowId: string,
@@ -456,13 +676,19 @@ export async function addApprovalFlowStage(
     );
   }
 
-  const position = flow.stages.length + 1;
+  const draftNew = {
+    key: body.key,
+    actor: body.actor,
+    moment: body.moment,
+  };
+  /** Simula el set completo para rechazar 2º cierre / 2º inicio antes de escribir. */
+  assertUniqueStartAndClose([...flow.stages, draftNew]);
 
   try {
     await prisma.approvalFlowStage.create({
       data: {
         flowId,
-        position,
+        position: flow.stages.length + 1,
         key: body.key,
         label: body.label,
         actor: body.actor,
@@ -486,6 +712,7 @@ export async function addApprovalFlowStage(
     throw err;
   }
 
+  await sortAndRenumberStagesByKind(flowId);
   return reloadDetail(flowId);
 }
 
@@ -502,6 +729,18 @@ export async function updateApprovalFlowStage(
     throw new AppError(404, "stage_not_found", "Etapa no encontrada");
   }
 
+  /** Simula el resultado para no romper inicio / Prevención / cierre. */
+  const nextStages = flow.stages.map((s) =>
+    s.id === stageId
+      ? {
+          key: s.key,
+          actor: body.actor ?? s.actor,
+          moment: body.moment ?? s.moment,
+        }
+      : { key: s.key, actor: s.actor, moment: s.moment },
+  );
+  assertMinimumFlowStages(nextStages);
+
   await prisma.approvalFlowStage.update({
     where: { id: stageId },
     data: {
@@ -515,6 +754,7 @@ export async function updateApprovalFlowStage(
     },
   });
 
+  await sortAndRenumberStagesByKind(flowId);
   return reloadDetail(flowId);
 }
 
@@ -561,7 +801,8 @@ export async function deleteApprovalFlowStage(
    * (incluidas las que vinieron marcadas fixed al copiar EST viejo).
    * EST sistema no llega acá (loadEditableFlow lo bloquea).
    */
-  if (flow.stages.length <= 1) {
+  const remaining = flow.stages.filter((s) => s.id !== stageId);
+  if (remaining.length === 0) {
     throw new AppError(
       400,
       "validation_error",
@@ -569,7 +810,64 @@ export async function deleteApprovalFlowStage(
     );
   }
 
+  const before = resolveFlowStageCoverage(flow.stages);
+  const after = resolveFlowStageCoverage(remaining);
+  const removingDuplicateClose =
+    isFinalCloseStage(stage) && before.closeCount > 1;
+  const removingDuplicateStart =
+    isStartOrRequestStage(stage) && before.startCount > 1;
+
+  /**
+   * Limpiar cierres/inicios duplicados siempre se permite.
+   * Si no es duplicado, hay que dejar la tríada mínima intacta.
+   */
+  if (!removingDuplicateClose && !removingDuplicateStart) {
+    if (after.closeCount < 1) {
+      throw new AppError(
+        400,
+        "approval_flow_missing_close",
+        "Debe quedar una etapa de cierre",
+      );
+    }
+    if (after.startCount < 1) {
+      throw new AppError(
+        400,
+        "approval_flow_incomplete",
+        "Debe quedar una etapa de inicio / solicitud",
+      );
+    }
+    if (
+      after.hasPreventionApproval === false &&
+      isPreventionApprovalStage(stage)
+    ) {
+      throw new AppError(
+        400,
+        "approval_flow_incomplete",
+        "Debe quedar una etapa de Prevención",
+      );
+    }
+    if (remaining.length < MIN_APPROVAL_FLOW_STAGES) {
+      throw new AppError(
+        400,
+        "validation_error",
+        `El flujo debe conservar al menos ${MIN_APPROVAL_FLOW_STAGES} etapas`,
+      );
+    }
+  } else if (removingDuplicateClose && after.closeCount < 1) {
+    throw new AppError(
+      400,
+      "approval_flow_missing_close",
+      "Debe quedar una etapa de cierre",
+    );
+  } else if (removingDuplicateStart && after.startCount < 1) {
+    throw new AppError(
+      400,
+      "approval_flow_incomplete",
+      "Debe quedar una etapa de inicio / solicitud",
+    );
+  }
+
   await prisma.approvalFlowStage.delete({ where: { id: stageId } });
-  await renumberStages(flowId);
+  await sortAndRenumberStagesByKind(flowId);
   return reloadDetail(flowId);
 }

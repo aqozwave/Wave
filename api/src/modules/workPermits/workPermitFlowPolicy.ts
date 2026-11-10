@@ -66,6 +66,117 @@ function isCloseKey(key: string): boolean {
 }
 
 /**
+ * ¿Esta etapa es el cierre final del trabajo?
+ * Regla producto: todo flujo (EST o personalizado) debe tener al menos una.
+ */
+export function isFinalCloseStage(stage: {
+  key: string;
+  actor: string;
+  moment?: string | null;
+}): boolean {
+  if (isCloseKey(stage.key)) return true;
+  if (isRequestCloseKey(stage.key) && stage.actor === "prevention") return true;
+  if (
+    stage.moment === "on_finish" &&
+    (stage.actor === "prevention" || stage.actor === "captain")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** ¿El listado de etapas incluye un cierre final? */
+export function flowHasFinalCloseStage(
+  stages: ReadonlyArray<{
+    key: string;
+    actor: string;
+    moment?: string | null;
+  }>,
+): boolean {
+  return stages.some((s) => isFinalCloseStage(s));
+}
+
+/**
+ * Inicio / solicitud (aviso de trabajos).
+ * Área solicitante o claves notice/aviso/solicitud.
+ * No cuenta cierres (p. ej. request_close de Prevención).
+ */
+export function isStartOrRequestStage(stage: {
+  key: string;
+  actor: string;
+  moment?: string | null;
+}): boolean {
+  if (isFinalCloseStage(stage)) return false;
+  if (stage.actor === "requesting_area") return true;
+  const k = stage.key.toLowerCase();
+  return (
+    k === "notice" ||
+    k.includes("notice") ||
+    k.includes("aviso") ||
+    k.includes("solicitud") ||
+    (k.includes("request") && !isRequestCloseKey(k))
+  );
+}
+
+/**
+ * Trabajo de Prevención que no es el cierre
+ * (generar permiso, aprobar, etc.).
+ */
+export function isPreventionApprovalStage(stage: {
+  key: string;
+  actor: string;
+  moment?: string | null;
+}): boolean {
+  if (stage.actor !== "prevention") return false;
+  if (isFinalCloseStage(stage)) return false;
+  return true;
+}
+
+/** Mínimo de etapas por flujo (inicio + Prevención + cierre). */
+export const MIN_APPROVAL_FLOW_STAGES = 3;
+
+/**
+ * Cobertura mínima de roles de etapas.
+ * Falta alguna → el flujo no es válido para operar un PT de punta a punta.
+ */
+export function resolveFlowStageCoverage(
+  stages: ReadonlyArray<{
+    key: string;
+    actor: string;
+    moment?: string | null;
+  }>,
+): {
+  hasStart: boolean;
+  hasPreventionApproval: boolean;
+  hasClose: boolean;
+  startCount: number;
+  closeCount: number;
+  ok: boolean;
+} {
+  const startCount = stages.filter((s) => isStartOrRequestStage(s)).length;
+  const hasPreventionApproval = stages.some((s) =>
+    isPreventionApprovalStage(s),
+  );
+  const closeCount = stages.filter((s) => isFinalCloseStage(s)).length;
+  const hasStart = startCount >= 1;
+  const hasClose = closeCount >= 1;
+  return {
+    hasStart,
+    hasPreventionApproval,
+    hasClose,
+    startCount,
+    closeCount,
+    ok:
+      stages.length >= MIN_APPROVAL_FLOW_STAGES &&
+      hasStart &&
+      hasPreventionApproval &&
+      hasClose &&
+      startCount === 1 &&
+      closeCount === 1,
+  };
+}
+
+/**
  * Deriva política del snapshot.
  * Sin etapas → EST: recibe y cierra el capitán.
  */

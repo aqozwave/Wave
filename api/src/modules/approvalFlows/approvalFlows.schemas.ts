@@ -1,7 +1,11 @@
 import { z } from "../../lib/zod.js";
+import { MIN_APPROVAL_FLOW_STAGES } from "../workPermits/workPermitFlowPolicy.js";
 
 /** Tope de etapas por flujo (decisión producto 2026-11-10). */
 export const MAX_APPROVAL_FLOW_STAGES = 8;
+
+/** Reexport del mínimo (inicio + Prevención + cierre). */
+export { MIN_APPROVAL_FLOW_STAGES };
 
 /** Actor de una etapa (P16). */
 export const approvalFlowStageActorSchema = z.enum([
@@ -129,14 +133,14 @@ export const createApprovalFlowBodySchema = z.object({
   /** Flujo origen; si falta, se usa EST de esa empresa. */
   sourceFlowId: z.uuid().optional(),
   /**
-   * Cuántas etapas debe tener la copia (1..8).
-   * Si es menor que el origen, toma las primeras N.
+   * Cuántas etapas debe tener la copia (3..8).
+   * Si es menor que el origen, toma las primeras N (y se completan inicio/Prevención/cierre).
    * Si es mayor, rellena con etapas editables placeholder.
    */
   stageCount: z.coerce
     .number()
     .int()
-    .min(1)
+    .min(MIN_APPROVAL_FLOW_STAGES)
     .max(MAX_APPROVAL_FLOW_STAGES)
     .optional(),
 });
@@ -186,6 +190,16 @@ const stageKeySchema = z
     message: "Clave: snake_case, 1–40 caracteres",
   });
 
+/**
+ * Dónde insertar la etapa nueva en el orden del flujo.
+ * start = al inicio · middle = antes del cierre · end = al final.
+ */
+export const approvalFlowStagePlacementSchema = z.enum([
+  "start",
+  "middle",
+  "end",
+]);
+
 /** Body POST …/stages (etapa extra; fixed=false). */
 export const createApprovalFlowStageBodySchema = z.object({
   key: stageKeySchema,
@@ -198,6 +212,8 @@ export const createApprovalFlowStageBodySchema = z.object({
   moment: approvalFlowStageMomentSchema,
   requiresSignature: z.boolean().default(false),
   mandatory: z.boolean().default(true),
+  /** Posición relativa; default end (comportamiento histórico). */
+  placement: approvalFlowStagePlacementSchema.optional().default("end"),
 });
 
 export const createApprovalFlowStageRequestSchema = z.object({

@@ -74,6 +74,14 @@ body,
   height: 100%;
 }
 
+/**
+ * Reserva el ancho del scrollbar clásico para que al abrir/cerrar modales
+ * (overflow:hidden en body) la tabla y el layout no “salten” de ancho.
+ */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   font-family: var(--font-sans);

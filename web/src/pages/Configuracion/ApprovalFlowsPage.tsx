@@ -545,9 +545,9 @@ export function ApprovalFlowsPage() {
               onChange={(e) => setStageCount(Number(e.target.value))}
               required
             >
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+              {[3, 4, 5, 6, 7, 8].map((n) => (
                 <option key={n} value={n}>
-                  {n} etapa{n === 1 ? "" : "s"}
+                  {n} etapas
                 </option>
               ))}
             </FieldSelect>
@@ -569,8 +569,9 @@ export function ApprovalFlowsPage() {
             Basado en: <strong className="font-medium text-[var(--color-nachipa-title)]">Estándar</strong>
           </p>
           <p className="m-0 rounded-[var(--radius-md)] border border-[var(--color-brand-sky)]/30 bg-[color-mix(in_srgb,var(--color-brand-sky)_8%,white)] px-3 py-2 text-[12px] text-[var(--color-nachipa-body)]">
-            Hasta 5 etapas se copian del Estándar. Si elegís más, se agregan
-            etapas editables para completar (máximo 8).
+            Se copian etapas del Estándar (incluye cierre). Si pedís más, se
+            agregan editables; si el truncado deja fuera el cierre, se fuerza
+            uno al final (máximo 8).
           </p>
           <div className="flex justify-end gap-2 pt-1">
             <button

@@ -99,8 +99,109 @@ function momentLabel(moment: ApprovalFlowStageMoment): string {
   }
 }
 
+/** Mínimo de etapas (inicio + Prevención + cierre). */
+const MIN_FLOW_STAGES = 3;
+
+/**
+ * ¿La etapa es cierre final? (misma heurística que el motor API).
+ */
+function isFinalCloseStage(stage: {
+  key: string;
+  actor: ApprovalFlowStageActor;
+  moment: ApprovalFlowStageMoment;
+}): boolean {
+  const k = stage.key.toLowerCase();
+  const isRequestClose =
+    k === "request_close" ||
+    k.includes("request_close") ||
+    k.includes("pedir_cierre");
+  const isCloseKey =
+    !isRequestClose &&
+    (k === "close" ||
+      k === "cierra" ||
+      k === "captain_close" ||
+      k.includes("close") ||
+      k.includes("cierre") ||
+      k.includes("cierra"));
+  if (isCloseKey) return true;
+  if (isRequestClose && stage.actor === "prevention") return true;
+  if (
+    stage.moment === "on_finish" &&
+    (stage.actor === "prevention" || stage.actor === "captain")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Inicio / solicitud (aviso). No cuenta cierres (request_close). */
+function isStartOrRequestStage(stage: {
+  key: string;
+  actor: ApprovalFlowStageActor;
+  moment: ApprovalFlowStageMoment;
+}): boolean {
+  if (isFinalCloseStage(stage)) return false;
+  if (stage.actor === "requesting_area") return true;
+  const k = stage.key.toLowerCase();
+  const isRequestClose =
+    k === "request_close" ||
+    k.includes("request_close") ||
+    k.includes("pedir_cierre");
+  return (
+    k === "notice" ||
+    k.includes("notice") ||
+    k.includes("aviso") ||
+    k.includes("solicitud") ||
+    (k.includes("request") && !isRequestClose)
+  );
+}
+
+/** Prevención que no es el cierre. */
+function isPreventionApprovalStage(stage: {
+  key: string;
+  actor: ApprovalFlowStageActor;
+  moment: ApprovalFlowStageMoment;
+}): boolean {
+  if (stage.actor !== "prevention") return false;
+  if (isFinalCloseStage(stage)) return false;
+  return true;
+}
+
+/** Rol de orden en el flujo (select al agregar). */
+type StagePlacement = "start" | "middle" | "end";
+
+/**
+ * Tipo de etapa para tabla / form (misma lógica que Inicio · Intermedio · Cierre).
+ */
+function stagePlacementOf(stage: {
+  key: string;
+  actor: ApprovalFlowStageActor;
+  moment: ApprovalFlowStageMoment;
+}): StagePlacement {
+  if (isFinalCloseStage(stage)) return "end";
+  if (isStartOrRequestStage(stage)) return "start";
+  return "middle";
+}
+
+/** Etiqueta corta del tipo de etapa. */
+function stageTypeLabel(stage: {
+  key: string;
+  actor: ApprovalFlowStageActor;
+  moment: ApprovalFlowStageMoment;
+}): string {
+  switch (stagePlacementOf(stage)) {
+    case "start":
+      return "Inicio / solicitud";
+    case "end":
+      return "Cierre / fin";
+    default:
+      return "Intermedio";
+  }
+}
+
 /** Form de etapa (alta / edición). */
 type StageForm = {
+  placement: StagePlacement;
   key: string;
   label: string;
   actor: ApprovalFlowStageActor;
@@ -109,14 +210,63 @@ type StageForm = {
   mandatory: boolean;
 };
 
-const EMPTY_STAGE: StageForm = {
-  key: "request_close",
-  label: "Registra el término y entrega el área",
-  actor: "contractor",
-  moment: "on_finish",
-  requiresSignature: true,
-  mandatory: false,
-};
+/**
+ * Plantilla según Inicio / Intermedio / Cierre.
+ * Clave libre si ya está usada.
+ */
+function stageFormForPlacement(
+  placement: StagePlacement,
+  stages: ReadonlyArray<ApprovalFlowStage>,
+): StageForm {
+  const used = new Set(stages.map((s) => s.key));
+  const uniqueKey = (preferred: string, fallback: string) =>
+    used.has(preferred) ? fallback : preferred;
+
+  if (placement === "start") {
+    return {
+      placement,
+      key: uniqueKey("notice", "inicio_solicitud"),
+      label: "Informa los trabajos y las contratistas que irán a bordo",
+      actor: "requesting_area",
+      moment: "before",
+      requiresSignature: false,
+      mandatory: true,
+    };
+  }
+  if (placement === "end") {
+    return {
+      placement,
+      key: uniqueKey("close", "cierre_trabajo"),
+      label: "Cierra el trabajo",
+      actor: "captain",
+      moment: "on_finish",
+      requiresSignature: true,
+      mandatory: true,
+    };
+  }
+  return {
+    placement,
+    key: uniqueKey("approve", `etapa_${stages.length + 1}`),
+    label: "Valida los datos y aprueba el permiso",
+    actor: "prevention",
+    moment: "before",
+    requiresSignature: true,
+    mandatory: true,
+  };
+}
+
+/** Prefill al abrir «Agregar»: prioriza lo que falta. */
+function suggestNewStageForm(
+  stages: ReadonlyArray<ApprovalFlowStage>,
+): StageForm {
+  const hasStart = stages.some((s) => isStartOrRequestStage(s));
+  const hasPrevention = stages.some((s) => isPreventionApprovalStage(s));
+  const hasClose = stages.some((s) => isFinalCloseStage(s));
+  if (!hasStart) return stageFormForPlacement("start", stages);
+  if (!hasPrevention) return stageFormForPlacement("middle", stages);
+  if (!hasClose) return stageFormForPlacement("end", stages);
+  return stageFormForPlacement("middle", stages);
+}
 
 /**
  * P15e / P15f · Detalle de flujo de aprobación.
@@ -144,7 +294,9 @@ export function ApprovalFlowDetailPage() {
   const [editingStage, setEditingStage] = useState<ApprovalFlowStage | null>(
     null,
   );
-  const [stageForm, setStageForm] = useState<StageForm>(EMPTY_STAGE);
+  const [stageForm, setStageForm] = useState<StageForm>(() =>
+    suggestNewStageForm([]),
+  );
   const [pendingRemove, setPendingRemove] = useState<ApprovalFlowStage | null>(
     null,
   );
@@ -219,13 +371,14 @@ export function ApprovalFlowDetailPage() {
 
   function openAddStage() {
     setEditingStage(null);
-    setStageForm(EMPTY_STAGE);
+    setStageForm(suggestNewStageForm(flow?.stages ?? []));
     setStageModal("add");
   }
 
   function openEditStage(stage: ApprovalFlowStage) {
     setEditingStage(stage);
     setStageForm({
+      placement: stagePlacementOf(stage),
       key: stage.key,
       label: stage.label,
       actor: stage.actor,
@@ -250,6 +403,7 @@ export function ApprovalFlowDetailPage() {
               moment: stageForm.moment,
               requiresSignature: stageForm.requiresSignature,
               mandatory: stageForm.mandatory,
+              placement: stageForm.placement,
             })
           : editingStage
             ? await updateApprovalFlowStageRequest(
@@ -322,6 +476,60 @@ export function ApprovalFlowDetailPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  const startCount = flow
+    ? flow.stages.filter((s) => isStartOrRequestStage(s)).length
+    : 0;
+  const preventionCount = flow
+    ? flow.stages.filter((s) => isPreventionApprovalStage(s)).length
+    : 0;
+  const finalCloseCount = flow
+    ? flow.stages.filter((s) => isFinalCloseStage(s)).length
+    : 0;
+  const flowCoverageOk =
+    Boolean(flow) &&
+    flow!.stages.length >= MIN_FLOW_STAGES &&
+    startCount === 1 &&
+    preventionCount >= 1 &&
+    finalCloseCount === 1;
+
+  /**
+   * Se puede quitar si:
+   * - sobra un cierre o un inicio duplicado, o
+   * - al sacar la etapa sigue habiendo inicio + Prevención + cierre (≥ 3).
+   */
+  function canRemoveStage(stage: ApprovalFlowStage): boolean {
+    if (!flow || flow.stages.length <= 1) return false;
+    /** Duplicados: siempre se pueden limpiar. */
+    if (isFinalCloseStage(stage) && finalCloseCount > 1) return true;
+    if (isStartOrRequestStage(stage) && startCount > 1) return true;
+
+    if (flow.stages.length <= MIN_FLOW_STAGES) return false;
+    let nextStart = startCount;
+    let nextPrev = preventionCount;
+    let nextClose = finalCloseCount;
+    if (isStartOrRequestStage(stage)) nextStart -= 1;
+    if (isPreventionApprovalStage(stage)) nextPrev -= 1;
+    if (isFinalCloseStage(stage)) nextClose -= 1;
+    return nextStart >= 1 && nextPrev >= 1 && nextClose >= 1;
+  }
+
+  /** Texto cuando la etapa no se puede quitar. */
+  function requiredStageLabel(stage: ApprovalFlowStage): string {
+    if (isFinalCloseStage(stage) && finalCloseCount <= 1) {
+      return "Cierre requerido";
+    }
+    if (isStartOrRequestStage(stage) && startCount <= 1) {
+      return "Inicio requerido";
+    }
+    if (isPreventionApprovalStage(stage) && preventionCount <= 1) {
+      return "Prevención requerida";
+    }
+    if (flow && flow.stages.length <= MIN_FLOW_STAGES) {
+      return "Mín. 3 etapas";
+    }
+    return "—";
   }
 
   if (!canRead) {
@@ -420,14 +628,49 @@ export function ApprovalFlowDetailPage() {
           }
         />
 
+        {!loading && flow && (finalCloseCount > 1 || startCount > 1) ? (
+          <p
+            className="m-0 rounded-[var(--radius-md)] border border-[var(--color-status-warning-fg,#d97706)]/30 bg-[var(--color-status-warning-bg,#fef3c7)] px-3 py-2 text-[13px] text-[var(--color-status-warning-fg,#d97706)]"
+            role="alert"
+          >
+            Solo puede haber un inicio y un cierre.
+            {finalCloseCount > 1
+              ? ` Tenés ${finalCloseCount} cierres: quitá los de más.`
+              : ""}
+            {startCount > 1
+              ? ` Tenés ${startCount} inicios: quitá los de más.`
+              : ""}
+          </p>
+        ) : null}
+
+        {!loading && flow && !flowCoverageOk && finalCloseCount <= 1 && startCount <= 1 ? (
+          <p
+            className="m-0 rounded-[var(--radius-md)] border border-[var(--color-status-danger,#b42318)]/30 bg-[var(--color-status-danger-bg,#fef2f2)] px-3 py-2 text-[13px] text-[var(--color-status-danger-fg,#b42318)]"
+            role="alert"
+          >
+            Todo flujo necesita al menos 3 etapas: inicio/solicitud, aprobación
+            de Prevención y cierre
+            {startCount < 1 ? " · falta inicio" : ""}
+            {preventionCount < 1 ? " · falta Prevención" : ""}
+            {finalCloseCount < 1 ? " · falta cierre" : ""}
+            {flow.stages.length < MIN_FLOW_STAGES
+              ? ` · hoy ${flow.stages.length}`
+              : ""}
+            . Usá «Agregar etapa».
+          </p>
+        ) : null}
+
         {!loading && flow ? (
           <DataTableCard>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[800px] border-collapse text-left text-[13px]">
+              <table className="w-full min-w-[960px] border-collapse text-left text-[13px]">
                 <thead>
                   <tr className="border-b border-[var(--color-tremor-border)] bg-[var(--color-table-head-bg,#f8f9fb)]">
                     <th className="h-10 px-4 font-semibold text-[var(--color-table-head-text)]">
                       Etapa
+                    </th>
+                    <th className="h-10 px-4 font-semibold text-[var(--color-table-head-text)]">
+                      Tipo de etapa
                     </th>
                     <th className="h-10 px-4 font-semibold text-[var(--color-table-head-text)]">
                       Qué se hace
@@ -444,15 +687,9 @@ export function ApprovalFlowDetailPage() {
                     <th className="h-10 px-4 font-semibold text-[var(--color-table-head-text)]">
                       Obligatoria
                     </th>
-                    {!flow.isSystem && canUpdate ? (
-                      <th className="h-10 px-4 font-semibold text-[var(--color-table-head-text)]">
-                        Acciones
-                      </th>
-                    ) : (
-                      <th className="h-10 px-4 font-semibold text-[var(--color-table-head-text)]">
-                        Tipo
-                      </th>
-                    )}
+                    <th className="h-10 px-4 font-semibold text-[var(--color-table-head-text)]">
+                      Acciones
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -463,6 +700,9 @@ export function ApprovalFlowDetailPage() {
                     >
                       <td className="h-12 px-4 tabular-nums font-medium">
                         {stage.position}
+                      </td>
+                      <td className="h-12 whitespace-nowrap px-4 text-[var(--color-nachipa-body)]">
+                        {stageTypeLabel(stage)}
                       </td>
                       <td className="h-12 max-w-md px-4 text-[var(--color-nachipa-title)]">
                         {stage.label}
@@ -497,11 +737,7 @@ export function ApprovalFlowDetailPage() {
                             >
                               Editar
                             </button>
-                            {stage.fixed ? (
-                              <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
-                                Fija
-                              </span>
-                            ) : (
+                            {canRemoveStage(stage) ? (
                               <button
                                 type="button"
                                 className="text-[13px] font-medium text-[var(--color-status-danger,#b42318)] hover:underline"
@@ -509,6 +745,13 @@ export function ApprovalFlowDetailPage() {
                               >
                                 Quitar
                               </button>
+                            ) : (
+                              <span
+                                className="text-[12px] text-[var(--color-nachipa-secondary)]"
+                                title="El flujo debe conservar al menos un cierre"
+                              >
+                                {requiredStageLabel(stage)}
+                              </span>
                             )}
                           </span>
                         )}
@@ -536,15 +779,46 @@ export function ApprovalFlowDetailPage() {
           onSubmit={(e) => void onSaveStage(e)}
         >
           {stageModal === "add" ? (
-            <TextField
-              label="Clave * (snake_case)"
-              name="key"
-              value={stageForm.key}
-              onChange={(e) =>
-                setStageForm((f) => ({ ...f, key: e.target.value }))
-              }
-              required
-            />
+            <>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Tipo de etapa *
+                </span>
+                <FieldSelect
+                  name="stagePlacement"
+                  value={stageForm.placement}
+                  onChange={(e) => {
+                    const placement = e.target.value as StagePlacement;
+                    setStageForm(
+                      stageFormForPlacement(placement, flow?.stages ?? []),
+                    );
+                  }}
+                  required
+                >
+                  <option value="start" disabled={startCount >= 1}>
+                    Inicio / solicitud
+                    {startCount >= 1 ? " (ya existe)" : ""}
+                  </option>
+                  <option value="middle">Intermedio</option>
+                  <option value="end" disabled={finalCloseCount >= 1}>
+                    Cierre / fin
+                    {finalCloseCount >= 1 ? " (ya existe)" : ""}
+                  </option>
+                </FieldSelect>
+                <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                  Solo un inicio y un cierre. Intermedio va antes del cierre.
+                </span>
+              </label>
+              <TextField
+                label="Clave * (snake_case)"
+                name="key"
+                value={stageForm.key}
+                onChange={(e) =>
+                  setStageForm((f) => ({ ...f, key: e.target.value }))
+                }
+                required
+              />
+            </>
           ) : null}
           <label className="flex flex-col gap-1.5">
             <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">

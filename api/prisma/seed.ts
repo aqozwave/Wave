@@ -70,6 +70,14 @@ const EST_STAGES: ReadonlyArray<{
     moment: ApprovalFlowStageMoment.on_arrival,
     requiresSignature: true,
   },
+  {
+    position: 6,
+    key: "close",
+    label: "Cierra el trabajo",
+    actor: ApprovalFlowStageActor.captain,
+    moment: ApprovalFlowStageMoment.on_finish,
+    requiresSignature: true,
+  },
 ];
 
 /**
@@ -93,14 +101,14 @@ async function seedEstApprovalFlows(): Promise<number> {
         code: "EST",
         name: "Estándar",
         description:
-          "Flujo de sistema · 5 etapas fijas (Docx Nachipa).",
+          "Flujo de sistema · 6 etapas fijas (aviso → recepción → cierre Capitán).",
         isSystem: true,
         active: true,
       },
       update: {
         name: "Estándar",
         description:
-          "Flujo de sistema · 5 etapas fijas (Docx Nachipa).",
+          "Flujo de sistema · 6 etapas fijas (aviso → recepción → cierre Capitán).",
         isSystem: true,
         active: true,
         deletedAt: null,
