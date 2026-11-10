@@ -231,8 +231,8 @@ const CONFIG_LINKS: ReadonlyArray<NavLink> = [
     label: "Flujos de aprobación",
     to: "/configuracion/flujos",
     icon: GitBranch,
-    /** P16 · solo Superadmin (misma regla que la API). */
-    canShow: (u) => u?.internalRol === "superadmin",
+    /** P16 · approval_flows:read (Admin / Superadmin / rol custom). */
+    canShow: (u) => userHasPermission(u, "approval_flows", "read"),
   },
   {
     label: "Usuarios",

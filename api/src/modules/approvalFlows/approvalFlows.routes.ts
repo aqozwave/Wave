@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { authenticate } from "../../middlewares/authenticate.js";
-import { requireSuperadmin } from "../../middlewares/requireSuperadmin.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
+import { requirePermission } from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
+import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import {
   addApprovalFlowStageHandler,
   createApprovalFlowHandler,
@@ -26,14 +26,17 @@ import {
 
 /**
  * Flujos de aprobación bajo /api/v1/approval-flows (P16).
- * Lectura: admin/superadmin (asignar a tipo). Escritura: solo Superadmin.
+ * RBAC: approval_flows (Admin + Superadmin por preset; editable en Roles).
  */
 export const approvalFlowsRouter = Router();
 
 approvalFlowsRouter.get(
   "/",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.APPROVAL_FLOWS,
+    PERMISSION_ACTION.READ,
+  ),
   validate(listApprovalFlowsRequestSchema),
   listApprovalFlowsHandler,
 );
@@ -41,7 +44,10 @@ approvalFlowsRouter.get(
 approvalFlowsRouter.post(
   "/",
   authenticate,
-  requireSuperadmin,
+  requirePermission(
+    PERMISSION_RESOURCE.APPROVAL_FLOWS,
+    PERMISSION_ACTION.CREATE,
+  ),
   validate(createApprovalFlowRequestSchema),
   createApprovalFlowHandler,
 );
@@ -49,7 +55,10 @@ approvalFlowsRouter.post(
 approvalFlowsRouter.get(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.APPROVAL_FLOWS,
+    PERMISSION_ACTION.READ,
+  ),
   validate(getApprovalFlowRequestSchema),
   getApprovalFlowHandler,
 );
@@ -57,7 +66,10 @@ approvalFlowsRouter.get(
 approvalFlowsRouter.patch(
   "/:id",
   authenticate,
-  requireSuperadmin,
+  requirePermission(
+    PERMISSION_RESOURCE.APPROVAL_FLOWS,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(updateApprovalFlowRequestSchema),
   updateApprovalFlowHandler,
 );
@@ -65,7 +77,10 @@ approvalFlowsRouter.patch(
 approvalFlowsRouter.delete(
   "/:id",
   authenticate,
-  requireSuperadmin,
+  requirePermission(
+    PERMISSION_RESOURCE.APPROVAL_FLOWS,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
   validate(deleteApprovalFlowRequestSchema),
   deleteApprovalFlowHandler,
 );
@@ -73,7 +88,10 @@ approvalFlowsRouter.delete(
 approvalFlowsRouter.post(
   "/:id/stages",
   authenticate,
-  requireSuperadmin,
+  requirePermission(
+    PERMISSION_RESOURCE.APPROVAL_FLOWS,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(createApprovalFlowStageRequestSchema),
   addApprovalFlowStageHandler,
 );
@@ -81,7 +99,10 @@ approvalFlowsRouter.post(
 approvalFlowsRouter.patch(
   "/:id/stages/:stageId",
   authenticate,
-  requireSuperadmin,
+  requirePermission(
+    PERMISSION_RESOURCE.APPROVAL_FLOWS,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(updateApprovalFlowStageRequestSchema),
   updateApprovalFlowStageHandler,
 );
@@ -89,7 +110,10 @@ approvalFlowsRouter.patch(
 approvalFlowsRouter.delete(
   "/:id/stages/:stageId",
   authenticate,
-  requireSuperadmin,
+  requirePermission(
+    PERMISSION_RESOURCE.APPROVAL_FLOWS,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(deleteApprovalFlowStageRequestSchema),
   deleteApprovalFlowStageHandler,
 );

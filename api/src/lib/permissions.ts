@@ -68,6 +68,11 @@ export const PERMISSION_RESOURCE = {
   WORK_PERMITS: "work_permits",
   /** Catálogo de tipos de permiso (módulo work_permits). */
   PERMIT_TYPES: "permit_types",
+  /**
+   * Plantillas de etapas de aprobación de PT (Configuración · Flujos).
+   * CRUD de copias de empresa; EST de sistema no se edita.
+   */
+  APPROVAL_FLOWS: "approval_flows",
   /** Capacitaciones del módulo Prevención (no confundir con cursos OMI). */
   TRAININGS: "trainings",
   /**
@@ -104,6 +109,7 @@ export const RESOURCE_TO_MODULE_KEY: Readonly<
   [PERMISSION_RESOURCE.WORK_NOTICES]: BUSINESS_MODULE_KEY.WORK_PERMITS,
   [PERMISSION_RESOURCE.WORK_PERMITS]: BUSINESS_MODULE_KEY.WORK_PERMITS,
   [PERMISSION_RESOURCE.PERMIT_TYPES]: BUSINESS_MODULE_KEY.WORK_PERMITS,
+  [PERMISSION_RESOURCE.APPROVAL_FLOWS]: BUSINESS_MODULE_KEY.WORK_PERMITS,
   [PERMISSION_RESOURCE.TRAININGS]: BUSINESS_MODULE_KEY.TRAININGS,
   [PERMISSION_RESOURCE.ACCREDITATION_PACKS]: BUSINESS_MODULE_KEY.CONTRACTORS,
 };
@@ -115,6 +121,7 @@ export const PREVENCION_RESOURCES = [
   PERMISSION_RESOURCE.WORK_NOTICES,
   PERMISSION_RESOURCE.WORK_PERMITS,
   PERMISSION_RESOURCE.PERMIT_TYPES,
+  PERMISSION_RESOURCE.APPROVAL_FLOWS,
   PERMISSION_RESOURCE.TRAININGS,
   PERMISSION_RESOURCE.ACCREDITATION_PACKS,
 ] as const;
@@ -297,6 +304,12 @@ export const PERMISSION_CATALOG: PermissionCatalogModule[] = [
         actions: PERMISSION_ACTIONS,
       },
       {
+        resource: PERMISSION_RESOURCE.APPROVAL_FLOWS,
+        label: "Flujos de aprobación",
+        hint: "Plantillas EST / EST-C · menú Configuración · asignables a tipos de PT.",
+        actions: PERMISSION_ACTIONS,
+      },
+      {
         resource: PERMISSION_RESOURCE.TRAININGS,
         label: "Capacitaciones (Prevención)",
         actions: PERMISSION_ACTIONS,
@@ -432,6 +445,7 @@ export const SYSTEM_ROLE_DEFS = [
       allActions(PERMISSION_RESOURCE.WORK_NOTICES),
       allActions(PERMISSION_RESOURCE.WORK_PERMITS),
       allActions(PERMISSION_RESOURCE.PERMIT_TYPES),
+      allActions(PERMISSION_RESOURCE.APPROVAL_FLOWS),
       allActions(PERMISSION_RESOURCE.TRAININGS),
       allActions(PERMISSION_RESOURCE.ACCREDITATION_PACKS),
     ],

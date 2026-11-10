@@ -31,6 +31,7 @@ import {
   type ApprovalFlowStageActor,
   type ApprovalFlowStageMoment,
 } from "../../lib/api/approvalFlows";
+import { userHasPermission } from "../../lib/api/auth";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
 /** Tope de etapas (misma regla que API). */
@@ -126,7 +127,14 @@ export function ApprovalFlowDetailPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
-  const isSuperadmin = user?.internalRol === "superadmin";
+  /** Lectura del detalle. */
+  const canRead = userHasPermission(user, "approval_flows", "read");
+  /** Crear copia (Duplicar). */
+  const canCreate = userHasPermission(user, "approval_flows", "create");
+  /** Editar etapas / metadatos. */
+  const canUpdate = userHasPermission(user, "approval_flows", "update");
+  /** Soft-delete del flujo. */
+  const canDeactivate = userHasPermission(user, "approval_flows", "deactivate");
 
   const [flow, setFlow] = useState<ApprovalFlowDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -144,7 +152,7 @@ export function ApprovalFlowDetailPage() {
   const [confirmDeleteFlow, setConfirmDeleteFlow] = useState(false);
 
   const load = useCallback(async () => {
-    if (!accessToken || !id || !isSuperadmin) return;
+    if (!accessToken || !id || !canRead) return;
     setLoading(true);
     try {
       const row = await getApprovalFlowRequest(accessToken, id);
@@ -158,7 +166,7 @@ export function ApprovalFlowDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, id, isSuperadmin, showToast]);
+  }, [accessToken, id, canRead, showToast]);
 
   useEffect(() => {
     void load();
@@ -316,7 +324,7 @@ export function ApprovalFlowDetailPage() {
     }
   }
 
-  if (!isSuperadmin) {
+  if (!canRead) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <Topbar
@@ -325,7 +333,7 @@ export function ApprovalFlowDetailPage() {
           actions={<UserMenu />}
         />
         <div className="px-6 py-5 text-[13px] text-[var(--color-nachipa-secondary)]">
-          Solo Superadmin.
+          No tenés permiso para ver este flujo.
         </div>
       </div>
     );
@@ -362,7 +370,7 @@ export function ApprovalFlowDetailPage() {
                 <StatusChip tone={flow.isSystem ? "info" : "warning"}>
                   {flow.isSystem ? "Sistema" : "Personalizado"}
                 </StatusChip>
-                {flow.isSystem ? (
+                {flow.isSystem && canCreate ? (
                   <Button
                     type="button"
                     size="medium"
@@ -372,7 +380,8 @@ export function ApprovalFlowDetailPage() {
                   >
                     + Duplicar flujo
                   </Button>
-                ) : (
+                ) : null}
+                {!flow.isSystem && canUpdate ? (
                   <>
                     <Button
                       type="button"
@@ -394,16 +403,18 @@ export function ApprovalFlowDetailPage() {
                     >
                       {flow.active ? "Desactivar flujo" : "Activar flujo"}
                     </button>
-                    <button
-                      type="button"
-                      className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-status-danger,#b42318)] bg-white px-3 text-[13px] font-medium text-[var(--color-status-danger,#b42318)]"
-                      disabled={busy}
-                      onClick={() => setConfirmDeleteFlow(true)}
-                    >
-                      Eliminar flujo
-                    </button>
                   </>
-                )}
+                ) : null}
+                {!flow.isSystem && canDeactivate ? (
+                  <button
+                    type="button"
+                    className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-status-danger,#b42318)] bg-white px-3 text-[13px] font-medium text-[var(--color-status-danger,#b42318)]"
+                    disabled={busy}
+                    onClick={() => setConfirmDeleteFlow(true)}
+                  >
+                    Eliminar flujo
+                  </button>
+                ) : null}
               </div>
             ) : null
           }
@@ -433,7 +444,7 @@ export function ApprovalFlowDetailPage() {
                     <th className="h-10 px-4 font-semibold text-[var(--color-table-head-text)]">
                       Obligatoria
                     </th>
-                    {!flow.isSystem ? (
+                    {!flow.isSystem && canUpdate ? (
                       <th className="h-10 px-4 font-semibold text-[var(--color-table-head-text)]">
                         Acciones
                       </th>
@@ -473,9 +484,9 @@ export function ApprovalFlowDetailPage() {
                         </StatusChip>
                       </td>
                       <td className="h-12 px-4">
-                        {flow.isSystem ? (
+                        {flow.isSystem || !canUpdate ? (
                           <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
-                            Fija
+                            {flow.isSystem ? "Fija" : "—"}
                           </span>
                         ) : (
                           <span className="inline-flex gap-2">

@@ -222,7 +222,7 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     group: "Configuración",
     to: "/configuracion/flujos",
     keywords: ["EST", "etapas", "permiso de trabajo", "P16"],
-    canShow: (u) => u?.internalRol === "superadmin",
+    canShow: (u) => userHasPermission(u, "approval_flows", "read"),
   },
   {
     id: "usuarios",

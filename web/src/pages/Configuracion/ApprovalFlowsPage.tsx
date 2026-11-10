@@ -35,6 +35,7 @@ import {
   listBusinessesRequest,
   type Business,
 } from "../../lib/api/businesses";
+import { userHasPermission } from "../../lib/api/auth";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
 /**
@@ -77,13 +78,21 @@ function formatDate(iso: string | null): string {
 }
 
 /**
- * P16 · Listado de flujos de aprobación (Configuración · Superadmin).
+ * P16 · Listado de flujos de aprobación (Configuración · approval_flows).
  */
 export function ApprovalFlowsPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const isSuperadmin = user?.internalRol === "superadmin";
+  /** Lectura del catálogo / menú. */
+  const canRead = userHasPermission(user, "approval_flows", "read");
+  /** Alta de copias de empresa. */
+  const canCreate = userHasPermission(user, "approval_flows", "create");
+  /** Editar nombre/etapas. */
+  const canUpdate = userHasPermission(user, "approval_flows", "update");
+  /** Soft-delete. */
+  const canDeactivate = userHasPermission(user, "approval_flows", "deactivate");
 
   const [items, setItems] = useState<ApprovalFlowListItem[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -110,7 +119,7 @@ export function ApprovalFlowsPage() {
   const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
-    if (!accessToken || !isSuperadmin) return;
+    if (!accessToken || !canRead) return;
     setLoading(true);
     try {
       const result = await listApprovalFlowsRequest(accessToken, 1, 100, {
@@ -126,13 +135,14 @@ export function ApprovalFlowsPage() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, isSuperadmin, businessId, showToast]);
+  }, [accessToken, canRead, businessId, showToast]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
+    /** Solo Superadmin elige empresa; Admin queda en su tenant. */
     if (!accessToken || !isSuperadmin) return;
     void listBusinessesRequest(accessToken)
       .then((res) => setBusinesses(res.items))
@@ -250,7 +260,7 @@ export function ApprovalFlowsPage() {
     }
   }
 
-  if (!isSuperadmin) {
+  if (!canRead) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <Topbar
@@ -260,7 +270,7 @@ export function ApprovalFlowsPage() {
         />
         <div className="px-6 py-5">
           <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
-            Solo Superadmin puede gestionar flujos de aprobación.
+            No tenés permiso para ver flujos de aprobación.
           </p>
         </div>
       </div>
@@ -283,19 +293,21 @@ export function ApprovalFlowsPage() {
           title="Flujos de aprobación"
           description="Plantillas de etapas para permisos de trabajo. El Estándar es de sistema; las copias son editables (máx. 8 etapas)."
           actions={
-            <Button
-              type="button"
-              size="medium"
-              className="!w-auto"
-              onClick={openCreate}
-            >
-              <Plus size={16} strokeWidth={1.5} aria-hidden />
-              Nuevo flujo
-            </Button>
+            canCreate ? (
+              <Button
+                type="button"
+                size="medium"
+                className="!w-auto"
+                onClick={openCreate}
+              >
+                <Plus size={16} strokeWidth={1.5} aria-hidden />
+                Nuevo flujo
+              </Button>
+            ) : null
           }
         />
 
-        {businesses.length > 1 ? (
+        {isSuperadmin && businesses.length > 1 ? (
           <label className="flex max-w-xs flex-col gap-1.5">
             <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
               Empresa
@@ -415,7 +427,7 @@ export function ApprovalFlowsPage() {
                         {row.typeCount} tipo{row.typeCount === 1 ? "" : "s"}
                       </td>
                       <td className="h-12 px-4 text-[var(--color-nachipa-body)]">
-                        {row.isSystem ? "Sistema" : "Superadmin"}
+                        {row.isSystem ? "Sistema" : "Empresa"}
                       </td>
                       <td className="h-12 px-4">
                         <StatusChip tone={row.active ? "success" : "neutral"}>
@@ -431,25 +443,25 @@ export function ApprovalFlowsPage() {
                             to={`/configuracion/flujos/${row.id}`}
                             className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
                           >
-                            {row.isSystem ? "Ver" : "Editar etapas"}
+                            {row.isSystem || !canUpdate ? "Ver" : "Editar etapas"}
                           </Link>
-                          {!row.isSystem ? (
-                            <>
-                              <button
-                                type="button"
-                                className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
-                                onClick={() => openEdit(row)}
-                              >
-                                Editar datos
-                              </button>
-                              <button
-                                type="button"
-                                className="text-[13px] font-medium text-[var(--color-status-danger,#b42318)] hover:underline"
-                                onClick={() => setDeleteRow(row)}
-                              >
-                                Eliminar
-                              </button>
-                            </>
+                          {!row.isSystem && canUpdate ? (
+                            <button
+                              type="button"
+                              className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                              onClick={() => openEdit(row)}
+                            >
+                              Editar datos
+                            </button>
+                          ) : null}
+                          {!row.isSystem && canDeactivate ? (
+                            <button
+                              type="button"
+                              className="text-[13px] font-medium text-[var(--color-status-danger,#b42318)] hover:underline"
+                              onClick={() => setDeleteRow(row)}
+                            >
+                              Eliminar
+                            </button>
                           ) : null}
                         </span>
                       </td>
@@ -485,7 +497,7 @@ export function ApprovalFlowsPage() {
           onSubmit={(e) => void onSubmit(e)}
           autoComplete="off"
         >
-          {businesses.length > 1 ? (
+          {isSuperadmin && businesses.length > 1 ? (
             <label className="flex flex-col gap-1.5">
               <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
                 Empresa *
