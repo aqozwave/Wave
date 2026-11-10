@@ -127,11 +127,19 @@ export function TrainingsPage() {
   }, [load]);
 
   useEffect(() => {
-    if (!accessToken || !isSuperadmin) return;
+    if (!accessToken) return;
+    // Nombres para la columna Empresa (superadmin ve varios tenants).
     void listBusinessesRequest(accessToken)
       .then((res) => setBusinesses(res.items))
       .catch(() => setBusinesses([]));
-  }, [accessToken, isSuperadmin]);
+  }, [accessToken]);
+
+  /** businessId → nombre para la tabla. */
+  const businessNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const b of businesses) map.set(b.id, b.name);
+    return map;
+  }, [businesses]);
 
   /** Carga tipos de documento de la empresa del form (o la del admin). */
   const loadDocumentTypes = useCallback(
@@ -168,12 +176,17 @@ export function TrainingsPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return items;
-    return items.filter(
-      (row) =>
+    return items.filter((row) => {
+      const businessName = (
+        businessNameById.get(row.businessId) ?? ""
+      ).toLowerCase();
+      return (
         row.code.toLowerCase().includes(q) ||
-        row.name.toLowerCase().includes(q),
-    );
-  }, [items, search]);
+        row.name.toLowerCase().includes(q) ||
+        businessName.includes(q)
+      );
+    });
+  }, [items, search, businessNameById]);
 
   const {
     pageItems,
@@ -385,6 +398,7 @@ export function TrainingsPage() {
                   Código
                 </th>
                 <th className="px-3 py-2.5 font-medium">Nombre</th>
+                <th className="px-3 py-2.5 font-medium">Empresa</th>
                 <th className="px-3 py-2.5 font-medium">Vigencia</th>
                 <th className="px-3 py-2.5 font-medium">Aplica a</th>
                 <th className="px-3 py-2.5 font-medium">Estado</th>
@@ -397,7 +411,7 @@ export function TrainingsPage() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-center text-[var(--color-nachipa-secondary)]"
                   >
                     Cargando…
@@ -406,7 +420,7 @@ export function TrainingsPage() {
               ) : pageItems.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-center text-[var(--color-nachipa-secondary)]"
                   >
                     No hay capacitaciones.
@@ -423,6 +437,9 @@ export function TrainingsPage() {
                     </td>
                     <td className="px-3 py-2.5 text-[var(--color-nachipa-title)]">
                       {row.name}
+                    </td>
+                    <td className="px-3 py-2.5 text-[var(--color-nachipa-secondary)]">
+                      {businessNameById.get(row.businessId) ?? "—"}
                     </td>
                     <td className="px-3 py-2.5 tabular-nums text-[var(--color-nachipa-secondary)]">
                       {row.validityMonths != null

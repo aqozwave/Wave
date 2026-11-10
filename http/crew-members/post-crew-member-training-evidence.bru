@@ -1,0 +1,60 @@
+meta {
+  name: Post crew member training evidence
+  type: http
+  seq: 29
+}
+
+post {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/trainings/{{crewTrainingAssignmentId}}/evidence
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "fileName": "evidencia-capacitacion.pdf",
+    "mimeType": "application/pdf",
+    "contentBase64": "JVBERi0xLjAKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUl0KL0NvdW50IDEKPD4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL01lZGlhQm94IFswIDAgMzAwIDEyMF0KL1BhcmVudCAyIDAgUgo+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNjMgMDAwMDAgbiAKMDAwMDAwMDEyMCAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDQKL1Jvb3QgMSAwIFIKPj4Kc3RhcnR4cmVmCjE5MQolJUVPRgo=",
+    "expiresAt": "2027-02-01T12:00:00.000Z"
+  }
+}
+
+docs {
+  Sube evidencia de la asignación. El documentTypeId sale del catálogo Training.
+  Si la capacitación no tiene documentTypeId → 400 training_without_document_type.
+  Variables: crewMemberId, crewTrainingAssignmentId. Exige trainings.update.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const crewMemberId = bru.getEnvVar("crewMemberId");
+  const assignmentId = bru.getEnvVar("crewTrainingAssignmentId");
+  if (!token) throw new Error("Sin accessToken");
+  if (!crewMemberId) throw new Error("Sin crewMemberId");
+  if (!assignmentId) throw new Error("Sin crewTrainingAssignmentId — corré Post crew member training");
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body && body.evidenceDocumentId) {
+    bru.setEnvVar("crewDocumentId", body.evidenceDocumentId);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.evidenceDocumentId: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

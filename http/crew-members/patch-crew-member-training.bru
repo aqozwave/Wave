@@ -1,0 +1,49 @@
+meta {
+  name: Patch crew member training
+  type: http
+  seq: 27
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/trainings/{{crewTrainingAssignmentId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "completedAt": "2026-02-01T12:00:00.000Z"
+  }
+}
+
+docs {
+  Actualiza fechas; si solo mandás completedAt, expiresAt se recalcula con validityMonths.
+  Variables: crewMemberId, crewTrainingAssignmentId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const crewMemberId = bru.getEnvVar("crewMemberId");
+  const assignmentId = bru.getEnvVar("crewTrainingAssignmentId");
+  if (!token) throw new Error("Sin accessToken");
+  if (!crewMemberId) throw new Error("Sin crewMemberId");
+  if (!assignmentId) throw new Error("Sin crewTrainingAssignmentId");
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

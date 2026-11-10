@@ -1046,7 +1046,30 @@ function mapCrewAuditEvent(row: {
     ? "success"
     : "danger";
 
-  if (row.resource === "crewMemberCourse") {
+  const metaKind = typeof meta.kind === "string" ? meta.kind : null;
+
+  // Capacitaciones Prevención asignadas a la ficha (audit con kind en metadata).
+  if (
+    metaKind === "crew_member_training" ||
+    metaKind === "crew_member_training_evidence"
+  ) {
+    category = "course";
+    categoryLabel = "Capacitación";
+    const label = row.targetLabel ? `: ${row.targetLabel}` : "";
+    if (metaKind === "crew_member_training_evidence") {
+      title = `Evidencia de capacitación${label}`;
+    } else if (row.action === "CREATE") {
+      title = `Capacitación asignada${label}`;
+    } else if (row.action === "UPDATE") {
+      title = `Capacitación actualizada${label}`;
+    } else if (row.action === "DELETE") {
+      title = `Capacitación quitada${label}`;
+    } else {
+      title = `Capacitación${label}`;
+    }
+    statusTone = "info";
+    statusLabel = "Capacitación";
+  } else if (row.resource === "crewMemberCourse") {
     category = "course";
     categoryLabel = "Curso";
     if (row.action === "CREATE") title = `Curso asignado${row.targetLabel ? `: ${row.targetLabel}` : ""}`;
@@ -1135,6 +1158,11 @@ export async function listCrewMemberHistory(
 
   const orFilters: Prisma.ActivityLogWhereInput[] = [
     { resource: "crewMember", resourceId: crewMemberId },
+    // Asignaciones auditadas antes del fix (resource=training + metadata.crewMemberId).
+    {
+      resource: "training",
+      metadata: { path: ["crewMemberId"], equals: crewMemberId },
+    },
   ];
   if (courseIds.length > 0) {
     orFilters.push({

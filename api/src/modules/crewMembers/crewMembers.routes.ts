@@ -35,6 +35,22 @@ import {
   updateCrewMemberCourseRequestSchema,
 } from "../crewMemberCourses/crewMemberCourses.schemas.js";
 import {
+  createCrewMemberTrainingHandler,
+  deleteCrewMemberTrainingHandler,
+  getCrewMemberTrainingHandler,
+  listCrewMemberTrainingsHandler,
+  updateCrewMemberTrainingHandler,
+  uploadCrewMemberTrainingEvidenceHandler,
+} from "../crewMemberTrainings/crewMemberTrainings.controller.js";
+import {
+  createCrewMemberTrainingRequestSchema,
+  deleteCrewMemberTrainingRequestSchema,
+  getCrewMemberTrainingRequestSchema,
+  listCrewMemberTrainingsRequestSchema,
+  updateCrewMemberTrainingRequestSchema,
+  uploadCrewMemberTrainingEvidenceRequestSchema,
+} from "../crewMemberTrainings/crewMemberTrainings.schemas.js";
+import {
   createCrewMemberDocumentHandler,
   deleteCrewMemberDocumentHandler,
   downloadCrewMemberDocumentHandler,
@@ -199,6 +215,57 @@ crewMembersRouter.delete(
   ),
   validate(deleteCrewMemberCourseRequestSchema),
   deleteCrewMemberCourseHandler,
+);
+
+crewMembersRouter.get(
+  "/:id/trainings",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.READ),
+  validate(listCrewMemberTrainingsRequestSchema),
+  listCrewMemberTrainingsHandler,
+);
+
+crewMembersRouter.post(
+  "/:id/trainings",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.CREATE),
+  validate(createCrewMemberTrainingRequestSchema),
+  createCrewMemberTrainingHandler,
+);
+
+crewMembersRouter.get(
+  "/:id/trainings/:assignmentId",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.READ),
+  validate(getCrewMemberTrainingRequestSchema),
+  getCrewMemberTrainingHandler,
+);
+
+crewMembersRouter.patch(
+  "/:id/trainings/:assignmentId",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.UPDATE),
+  validate(updateCrewMemberTrainingRequestSchema),
+  updateCrewMemberTrainingHandler,
+);
+
+crewMembersRouter.delete(
+  "/:id/trainings/:assignmentId",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.TRAININGS,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
+  validate(deleteCrewMemberTrainingRequestSchema),
+  deleteCrewMemberTrainingHandler,
+);
+
+crewMembersRouter.post(
+  "/:id/trainings/:assignmentId/evidence",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.UPDATE),
+  validate(uploadCrewMemberTrainingEvidenceRequestSchema),
+  uploadCrewMemberTrainingEvidenceHandler,
 );
 
 crewMembersRouter.get(

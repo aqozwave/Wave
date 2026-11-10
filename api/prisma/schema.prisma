@@ -143,6 +143,17 @@ enum CrewCourseStatus {
 }
 
 /**
+ * Estado de una capacitación de Prevención asignada al tripulante.
+ * Misma semántica que CrewCourseStatus; enum propio para no acoplar dominios.
+ */
+enum CrewTrainingStatus {
+  pending
+  valid
+  expiring_soon
+  expired
+}
+
+/**
  * Origen de la asignación (portal viejo CREW_COURSE_SOURCE).
  * rank = legacy (ya no se auto-crea); certificate = por título; manual = a mano.
  */
@@ -864,6 +875,8 @@ model CrewMember {
   travesiaAssignments        CrewMemberTravesia[]
   /// Cursos asignados a este tripulante (ficha).
   courseAssignments          CrewMemberCourse[]
+  /// Capacitaciones Prevención asignadas a este tripulante (ficha).
+  trainingAssignments        CrewMemberTraining[]
   /// Avisos de vencimiento dirigidos a este tripulante.
   notificationOutbox         NotificationOutbox[]
 
@@ -981,6 +994,7 @@ model CrewMemberTravesia {
 /**
  * Documento de tripulante (archivo en disco local).
  * Tipo vía DocumentType; sourceModule indica quién lo cargó.
+ * expiresAt: evidencia de capacitaciones / docs que vencen (Figma «Vence»).
  */
 model CrewMemberDocument {
   id             String       @id @default(uuid()) @db.Uuid
@@ -996,15 +1010,20 @@ model CrewMemberDocument {
   filePath       String       @map("file_path")
   /// crew | prevention | assets | system
   sourceModule   String       @default("crew") @map("source_module")
+  /// Vencimiento del documento; null = sin caducidad.
+  expiresAt      DateTime?    @map("expires_at") @db.Timestamptz
   uploadedById   String?      @map("uploaded_by_id") @db.Uuid
   uploadedBy     User?        @relation(fields: [uploadedById], references: [id])
   deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  /// Asignaciones de capacitación que usan este archivo como evidencia.
+  trainingEvidenceFor CrewMemberTraining[]
 
   @@index([crewMemberId])
   @@index([documentTypeId])
   @@index([sourceModule])
+  @@index([expiresAt])
   @@map("crew_member_documents")
 }
 
@@ -1543,11 +1562,45 @@ model Training {
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   /// Exigencias de permiso que apuntan a esta capacitación.
   permitTypeRequirements PermitTypeRequirement[]
+  /// Asignaciones a tripulantes (ficha Embarcados).
+  crewAssignments        CrewMemberTraining[]
 
   @@unique([businessId, code])
   @@index([businessId])
   @@index([active])
   @@map("trainings")
+}
+
+/**
+ * Asignación de una capacitación Prevención a un tripulante.
+ * Única por (crewMember, training) entre no borradas (índice parcial en migración).
+ * expiresAt se calcula con completedAt + Training.validityMonths (si hay).
+ */
+model CrewMemberTraining {
+  id                  String             @id @default(uuid()) @db.Uuid
+  crewMemberId        String             @map("crew_member_id") @db.Uuid
+  crewMember          CrewMember         @relation(fields: [crewMemberId], references: [id])
+  trainingId          String             @map("training_id") @db.Uuid
+  training            Training           @relation(fields: [trainingId], references: [id])
+  /// Fecha en que completó / aprobó; null = pendiente.
+  completedAt         DateTime?          @map("completed_at") @db.Timestamptz
+  /// Vencimiento; null = sin caducidad (catálogo sin validityMonths).
+  expiresAt           DateTime?          @map("expires_at") @db.Timestamptz
+  /// Estado persistido; la API lo recalcula al leer/escribir.
+  status              CrewTrainingStatus @default(pending)
+  /// Evidencia documental opcional (mismo expediente del tripulante).
+  evidenceDocumentId  String?            @map("evidence_document_id") @db.Uuid
+  evidenceDocument    CrewMemberDocument? @relation(fields: [evidenceDocumentId], references: [id], onDelete: SetNull)
+  deletedAt           DateTime?          @map("deleted_at") @db.Timestamptz
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([crewMemberId])
+  @@index([trainingId])
+  @@index([expiresAt])
+  @@index([status])
+  @@index([evidenceDocumentId])
+  @@map("crew_member_trainings")
 }
 
 /**

@@ -20,6 +20,8 @@ export const crewMemberDocumentResponseSchema = z
     mimeType: z.string(),
     size: z.number().int().positive(),
     sourceModule: z.string(),
+    /** Vencimiento del documento; null = sin caducidad. */
+    expiresAt: z.string().datetime().nullable(),
     uploadedById: z.uuid().nullable(),
     deletedAt: z.string().datetime().nullable(),
     createdAt: z.string().datetime(),
@@ -45,6 +47,7 @@ export const listCrewMemberDocumentsRequestSchema = z.object({
 /**
  * Body JSON con archivo en base64.
  * documentTypeId apunta al maestro por empresa.
+ * expiresAt obligatorio si el tipo tiene requiresExpiry.
  */
 export const createCrewMemberDocumentBodySchema = z.object({
   documentTypeId: z.uuid(),
@@ -56,6 +59,8 @@ export const createCrewMemberDocumentBodySchema = z.object({
     .enum(["crew", "prevention", "assets", "system"])
     .optional()
     .default("crew"),
+  /** ISO; obligatorio si el tipo requiresExpiry. */
+  expiresAt: z.string().datetime().nullable().optional(),
 });
 
 export const createCrewMemberDocumentRequestSchema = z.object({

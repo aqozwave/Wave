@@ -1,0 +1,59 @@
+meta {
+  name: Post crew member training
+  type: http
+  seq: 25
+}
+
+post {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/trainings
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "trainingId": "{{trainingId}}",
+    "completedAt": "2026-01-15T12:00:00.000Z"
+  }
+}
+
+docs {
+  Alta de capacitación al tripulante. Si el catálogo tiene validityMonths,
+  expiresAt se calcula desde completedAt. Variables: crewMemberId, trainingId.
+  Exige trainings.create. Capacitación con appliesTo que incluya crew.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const crewMemberId = bru.getEnvVar("crewMemberId");
+  const trainingId = bru.getEnvVar("trainingId");
+  if (!token) throw new Error("Sin accessToken");
+  if (!crewMemberId) throw new Error("Sin crewMemberId");
+  if (!trainingId) throw new Error("Sin trainingId (corré Get trainings)");
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body && body.id) {
+    bru.setEnvVar("crewTrainingAssignmentId", body.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.trainingId: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

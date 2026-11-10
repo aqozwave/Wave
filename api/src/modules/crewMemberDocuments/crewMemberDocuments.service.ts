@@ -44,6 +44,7 @@ function toDocumentResponse(row: DocWithType): CrewMemberDocumentResponse {
     mimeType: row.mimeType,
     size: row.size,
     sourceModule: row.sourceModule,
+    expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
     uploadedById: row.uploadedById,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
@@ -165,6 +166,18 @@ export async function createCrewMemberDocument(
     roleKey,
   });
 
+  const expiresAt =
+    body.expiresAt === undefined || body.expiresAt === null
+      ? null
+      : new Date(body.expiresAt);
+  if (docType.requiresExpiry && !expiresAt) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "Este tipo exige fecha de vencimiento",
+    );
+  }
+
   if (!ALLOWED_CREW_DOC_MIMES.has(body.mimeType)) {
     throw new AppError(
       400,
@@ -219,6 +232,7 @@ export async function createCrewMemberDocument(
       size: written.size,
       filePath: written.relativePath,
       sourceModule: body.sourceModule ?? "crew",
+      expiresAt,
       uploadedById: actor.id,
     },
     include: { documentType: true },

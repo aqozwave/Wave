@@ -52,6 +52,7 @@ import { CrewBitacoraPanel } from "./CrewBitacoraPanel";
 import { CrewBoardingBookPanel } from "./CrewBoardingBookPanel";
 import { CrewCoursesPanel } from "./CrewCoursesPanel";
 import { CrewDocumentsPanel } from "./CrewDocumentsPanel";
+import { CrewTrainingsPanel } from "./CrewTrainingsPanel";
 import { OfficerAssignmentsPanel } from "./OfficerAssignmentsPanel";
 
 /** Form de edición (Figma D34 · Actualizar embarcado). */
@@ -138,6 +139,7 @@ export function FichaTripulante() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<FichaTab>("cursos");
   const [courseTotal, setCourseTotal] = useState(0);
+  const [trainingTotal, setTrainingTotal] = useState(0);
   const [assignCourseOpen, setAssignCourseOpen] = useState(false);
   const [locations, setLocations] = useState<Location[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
@@ -540,7 +542,10 @@ export function FichaTripulante() {
 
   const tabs: { id: FichaTab; label: string }[] = [
     { id: "cursos", label: `Cursos (${courseTotal})` },
-    { id: "capacitaciones", label: "Capacitaciones" },
+    {
+      id: "capacitaciones",
+      label: `Capacitaciones (${trainingTotal})`,
+    },
     { id: "libreta", label: "Libreta de embarque" },
     { id: "datos", label: "Datos personales" },
     { id: "documentos", label: "Documentos" },
@@ -740,8 +745,12 @@ export function FichaTripulante() {
                 }}
               />
             ) : null}
-            {tab === "capacitaciones" ? (
-              <PlaceholderCard text="Capacitaciones (Prevención) llegan con ese módulo." />
+            {tab === "capacitaciones" && id ? (
+              <CrewTrainingsPanel
+                crewMemberId={id}
+                businessId={crew.businessId}
+                onTotalChange={setTrainingTotal}
+              />
             ) : null}
             {tab === "acceso" && id && crew ? (
               <CrewAccessPanel
@@ -1045,15 +1054,6 @@ function Field({
       <dd className="mt-1 text-[13px] text-[var(--color-nachipa-title)]">
         {value}
       </dd>
-    </div>
-  );
-}
-
-/** Placeholder de tabs sin datos aún. */
-function PlaceholderCard({ text }: { text: string }) {
-  return (
-    <div className="rounded-2xl border border-[var(--color-tremor-border)] bg-white px-5 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]">
-      {text}
     </div>
   );
 }
