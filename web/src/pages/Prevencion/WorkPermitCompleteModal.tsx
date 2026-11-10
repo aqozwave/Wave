@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../components/Button/Button";
 import { Modal } from "../../components/Modal/Modal";
+import { StatusChip } from "../../components/StatusChip/StatusChip";
 import { useToast } from "../../components/Toast/ToastProvider";
 import {
   getWorkPermitChecklistRequest,
@@ -19,6 +20,19 @@ import { ApiError } from "../../lib/auth/AuthContext";
 /** Botón outline del footer. */
 const outlineBtnClass =
   "inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60";
+
+/**
+ * Cumple todo lo exigido por este PT (pack + faena del tipo).
+ * Distinto de canAssign (solo pack): se puede asignar sin cumplir faena aún.
+ */
+function personMeetsJob(person: WorkPermitAssignablePerson): boolean {
+  return (
+    person.packComplete &&
+    person.missingRequirementLabels.length === 0 &&
+    person.pendingRequirementLabels.length === 0 &&
+    person.absentRequirementLabels.length === 0
+  );
+}
 
 type Props = {
   open: boolean;
@@ -243,21 +257,22 @@ export function WorkPermitCompleteModal({
               Personal ({selectedIds.size})
             </h3>
             <p className="m-0 mb-2 text-[12px] text-[var(--color-nachipa-secondary)]">
-              Solo personal con pack
+              Badge «Cumple» = pack + docs de esta faena
               {requirementLabels.length > 0
-                ? ` y docs de faena (${requirementLabels.join(", ")})`
+                ? ` (${requirementLabels.join(", ")})`
                 : ""}{" "}
-              validados por Prevención. Subir el archivo no alcanza: tienen que
-              estar vigentes.
+              validados. Podés asignar con pack OK aunque diga «No cumple»; al
+              enviar a aprobación sí deben estar todos vigentes.
             </p>
             {available.length === 0 ? (
               <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
                 No hay personas activas en la organización.
               </p>
             ) : (
-              <ul className="m-0 flex max-h-56 list-none flex-col gap-1 overflow-y-auto p-0">
+              <ul className="m-0 flex max-h-64 list-none flex-col gap-1 overflow-y-auto p-0">
                 {available.map((p) => {
                   const hint = missingHint(p);
+                  const cumple = personMeetsJob(p);
                   return (
                     <li key={p.personId}>
                       <label
@@ -274,14 +289,27 @@ export function WorkPermitCompleteModal({
                           disabled={!p.canAssign}
                           onChange={() => togglePerson(p)}
                         />
-                        <span>
-                          <span className="block text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                            {p.fullName}
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                              {p.fullName}
+                            </span>
+                            <StatusChip tone={cumple ? "success" : "warning"}>
+                              {cumple ? "Cumple" : "No cumple"}
+                            </StatusChip>
                           </span>
-                          <span className="text-[12px] tabular-nums text-[var(--color-nachipa-secondary)]">
+                          <span className="mt-0.5 block text-[12px] tabular-nums text-[var(--color-nachipa-secondary)]">
                             {p.rut}
                             {p.position ? ` · ${p.position}` : ""}
-                            {p.canAssign ? " · Listo" : hint ? ` · Falta ${hint}` : " · No asignable"}
+                            {!p.canAssign
+                              ? hint
+                                ? ` · ${hint}`
+                                : " · Sin pack"
+                              : !cumple && hint
+                                ? ` · Asignable · Al enviar: ${hint}`
+                                : cumple
+                                  ? " · Listo para enviar"
+                                  : ""}
                           </span>
                         </span>
                       </label>

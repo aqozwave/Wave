@@ -870,6 +870,39 @@ export async function listContractorPeople(
   };
 }
 
+/**
+ * Un trabajador externo no puede ser usuario del portal ni tripulante del tenant.
+ * Comparte el mismo RUN = misma persona física → se rechaza el alta/edición.
+ */
+async function assertPersonRutNotInternalIdentity(
+  businessId: string,
+  rut: string,
+): Promise<void> {
+  const user = await prisma.user.findFirst({
+    where: { run: rut, deletedAt: null },
+    select: { id: true },
+  });
+  if (user) {
+    throw new AppError(
+      409,
+      "rut_is_system_user",
+      "Ese RUN ya pertenece a un usuario del sistema",
+    );
+  }
+
+  const crew = await prisma.crewMember.findFirst({
+    where: { businessId, run: rut, deletedAt: null },
+    select: { id: true },
+  });
+  if (crew) {
+    throw new AppError(
+      409,
+      "rut_is_crew_member",
+      "Ese RUN ya pertenece a un tripulante embarcado",
+    );
+  }
+}
+
 /** POST /contractors/:id/people — alta de persona. */
 export async function createContractorPerson(
   actor: Actor,
@@ -878,6 +911,7 @@ export async function createContractorPerson(
 ): Promise<ContractorPersonResponse> {
   const org = await loadOrgForUsers(actor, organizationId);
   await assertBusinessModuleEnabled(org.businessId, "contractors");
+  await assertPersonRutNotInternalIdentity(org.businessId, body.rut);
 
   try {
     const row = await prisma.contractorPerson.create({
@@ -938,6 +972,11 @@ export async function updateContractorPerson(
   const existing = await loadPersonInOrg(actor, organizationId, personId);
   const org = await loadOrgForUsers(actor, organizationId);
   await assertBusinessModuleEnabled(org.businessId, "contractors");
+
+  // Si cambia el RUN, también debe quedar fuera de users/crew del tenant.
+  if (payload.rut !== undefined && payload.rut !== existing.rut) {
+    await assertPersonRutNotInternalIdentity(org.businessId, payload.rut);
+  }
 
   const data: Prisma.ContractorPersonUpdateInput = {};
   if (payload.rut !== undefined) data.rut = payload.rut;

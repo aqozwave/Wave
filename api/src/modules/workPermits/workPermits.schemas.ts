@@ -139,9 +139,33 @@ export const workPermitReviewNoteBodySchema = z.object({
     .max(2000),
 });
 
+/**
+ * Firma digital (pad PNG + nombre + aceptación).
+ * Obligatoria en Aprobar / Autorizar a bordo / Cerrar / Sin cierre.
+ */
+export const workPermitDigitalSignatureBodySchema = z.object({
+  signerName: z
+    .string({ error: "El nombre del firmante es requerido" })
+    .trim()
+    .min(1, "El nombre del firmante es requerido")
+    .max(200),
+  /** Debe ser true: confirma que acepta firmar el hito. */
+  accepted: z.literal(true),
+  /** Data URL PNG del trazo (signature_pad). */
+  signatureImage: z
+    .string({ error: "La firma manuscrita es requerida" })
+    .min(32, "La firma manuscrita es requerida")
+    .max(500_000, "La imagen de firma es demasiado grande")
+    .refine(
+      (v) => v.startsWith("data:image/png;base64,"),
+      "La firma debe ser una imagen PNG",
+    ),
+});
+
 /** POST /work-permits/:id/approve — Prevención aprueba → por recibir. */
 export const approveWorkPermitRequestSchema = z.object({
   params: z.object({ id: z.uuid() }),
+  body: workPermitDigitalSignatureBodySchema,
 });
 
 export const approveWorkPermitResponseSchema = workPermitResponseSchema;
@@ -157,6 +181,7 @@ export const returnWorkPermitResponseSchema = workPermitResponseSchema;
 /** POST /work-permits/:id/receive — capitán recibe → autorizado a bordo. */
 export const receiveWorkPermitRequestSchema = z.object({
   params: z.object({ id: z.uuid() }),
+  body: workPermitDigitalSignatureBodySchema,
 });
 
 export const receiveWorkPermitResponseSchema = workPermitResponseSchema;
@@ -179,17 +204,24 @@ export const requestCloseWorkPermitResponseSchema = workPermitResponseSchema;
 /** POST /work-permits/:id/close — capitán cierra el trabajo (P6b). */
 export const closeWorkPermitRequestSchema = z.object({
   params: z.object({ id: z.uuid() }),
+  body: workPermitDigitalSignatureBodySchema,
 });
 
 export const closeWorkPermitResponseSchema = workPermitResponseSchema;
 
-/** POST /work-permits/:id/reject-close — capitán deja sin cierre (P6b). */
+/** POST /work-permits/:id/reject-close — capitán deja sin cierre (P6b) + firma. */
 export const rejectCloseWorkPermitRequestSchema = z.object({
   params: z.object({ id: z.uuid() }),
-  body: workPermitReviewNoteBodySchema,
+  body: workPermitReviewNoteBodySchema.merge(
+    workPermitDigitalSignatureBodySchema,
+  ),
 });
 
 export const rejectCloseWorkPermitResponseSchema = workPermitResponseSchema;
+
+export type WorkPermitDigitalSignatureBody = z.infer<
+  typeof workPermitDigitalSignatureBodySchema
+>;
 
 /** Etapa del checklist del PT. */
 export const workPermitChecklistStageSchema = z.enum([
@@ -467,6 +499,10 @@ export const workPermitDocumentSignatureSchema = z
     signerName: z.string(),
     signedAt: z.string().datetime(),
     note: z.string().nullable(),
+    /** Trazo PNG (data URL) si hubo pad digital. */
+    signatureImage: z.string().nullable(),
+    /** ISO de aceptación; null si solo registro automático. */
+    acceptedAt: z.string().datetime().nullable(),
   })
   .openapi("WorkPermitDocumentSignature");
 
@@ -475,8 +511,24 @@ export const getWorkPermitDocumentRequestSchema = z.object({
   params: z.object({ id: z.uuid() }),
 });
 
+/** Empresa mandante (tenant) que emite el permiso. */
+export const workPermitDocumentIssuerSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    rut: z.string().nullable(),
+    giro: z.string().nullable(),
+    commune: z.string().nullable(),
+    city: z.string().nullable(),
+    phone: z.string().nullable(),
+    email: z.string().nullable(),
+  })
+  .openapi("WorkPermitDocumentIssuer");
+
 export const workPermitDocumentResponseSchema = z
   .object({
+    /** Empresa mandante (logo + datos en cabecera del documento). */
+    issuer: workPermitDocumentIssuerSchema,
     permit: workPermitResponseSchema,
     people: z.array(
       z.object({

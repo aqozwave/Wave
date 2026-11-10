@@ -644,6 +644,12 @@ export function ContractorPortalAccreditationPage() {
                 ) : (
                   items.map((item) => {
                     const doc = item.document;
+                    const sourceHint =
+                      item.source === "permit_requirement"
+                        ? "Exigencia de tipo de permiso"
+                        : item.source === "both"
+                          ? "Pack + exigencia"
+                          : null;
                     return (
                       <li
                         key={item.documentType.id}
@@ -656,6 +662,11 @@ export function ContractorPortalAccreditationPage() {
                           <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
                             {item.documentType.name}
                           </span>
+                          {sourceHint ? (
+                            <span className="ml-2 text-[12px] text-[var(--color-nachipa-secondary)]">
+                              · {sourceHint}
+                            </span>
+                          ) : null}
                           <div className="text-[12px] text-[var(--color-nachipa-secondary)]">
                             {doc
                               ? `${doc.originalName}${doc.expiresAt ? ` · vence ${formatDate(doc.expiresAt)}` : ""}`

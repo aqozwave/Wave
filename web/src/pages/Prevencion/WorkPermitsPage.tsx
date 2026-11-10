@@ -11,6 +11,10 @@ import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
 import { WorkPermitProgressCell } from "../../components/WorkPermitProgressCell/WorkPermitProgressCell";
 import {
+  WorkPermitSignModal,
+  type WorkPermitSignKind,
+} from "../../components/WorkPermitSignModal/WorkPermitSignModal";
+import {
   TablePagination,
   useClientTablePagination,
 } from "../../components/TablePagination/TablePagination";
@@ -31,6 +35,7 @@ import {
   returnWorkPermitRequest,
   workPermitStatusLabel,
   type WorkPermit,
+  type WorkPermitDigitalSignaturePayload,
   type WorkPermitStatus,
 } from "../../lib/api/workPermits";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
@@ -100,12 +105,17 @@ export function WorkPermitsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [actingId, setActingId] = useState<string | null>(null);
-  /** Modal con nota: devolver / no autorizar / sin cierre. */
+  /** Modal con nota: devolver / no autorizar (sin pad). */
   const [noteModal, setNoteModal] = useState<{
-    kind: "return" | "reject-receipt" | "reject-close";
+    kind: "return" | "reject-receipt";
     row: WorkPermit;
   } | null>(null);
   const [reviewNote, setReviewNote] = useState("");
+  /** Modal firma digital: aprobar / recibir / cerrar / sin cierre. */
+  const [signModal, setSignModal] = useState<{
+    kind: WorkPermitSignKind;
+    row: WorkPermit;
+  } | null>(null);
   /** Modal completar personal + checklist (también staff, opción B). */
   const [completeRow, setCompleteRow] = useState<WorkPermit | null>(null);
   /** Modal Nuevo permiso P13/P13b. */
@@ -136,52 +146,60 @@ export function WorkPermitsPage() {
     void load();
   }, [load]);
 
-  /** Por aprobar → Por recibir. */
-  async function onApprove(row: WorkPermit) {
-    if (!accessToken || !canUpdate || !isStaff || actingId) return;
-    if (row.status !== "to_approve") return;
-    setActingId(row.id);
-    try {
-      await approveWorkPermitRequest(accessToken, row.id);
-      showToast(
-        `${row.code} · ${workPermitStatusLabel("to_receive")}.`,
-        "success",
-      );
-      await load();
-    } catch (err) {
-      showToast(
-        err instanceof ApiError ? err.message : "No se pudo aprobar.",
-        "danger",
-      );
-    } finally {
-      setActingId(null);
-    }
+  /** Abre modal de firma digital (Prevención / capitán). */
+  function openSignModal(kind: WorkPermitSignKind, row: WorkPermit) {
+    setSignModal({ kind, row });
   }
 
-  /** Abre modal con nota (devolver / no autorizar / sin cierre). */
-  function openNoteModal(
-    kind: "return" | "reject-receipt" | "reject-close",
-    row: WorkPermit,
-  ) {
+  /** Abre modal con nota (devolver / no autorizar). */
+  function openNoteModal(kind: "return" | "reject-receipt", row: WorkPermit) {
     setReviewNote("");
     setNoteModal({ kind, row });
   }
 
-  /** Capitán: Aprobado Prevención → Autorizado a bordo. */
-  async function onReceive(row: WorkPermit) {
-    if (!accessToken || !canReceive || !isStaff || actingId) return;
-    if (row.status !== "to_receive") return;
+  /** Confirma firma digital y ejecuta la transición. */
+  async function confirmSign(
+    payload: WorkPermitDigitalSignaturePayload & { reviewNote?: string },
+  ) {
+    if (!accessToken || !signModal || actingId) return;
+    const { kind, row } = signModal;
     setActingId(row.id);
     try {
-      await receiveWorkPermitRequest(accessToken, row.id);
-      showToast(
-        `${row.code} · ${workPermitStatusLabel("active")}.`,
-        "success",
-      );
+      if (kind === "approve") {
+        await approveWorkPermitRequest(accessToken, row.id, payload);
+        showToast(
+          `${row.code} · ${workPermitStatusLabel("to_receive")}.`,
+          "success",
+        );
+      } else if (kind === "receive") {
+        await receiveWorkPermitRequest(accessToken, row.id, payload);
+        showToast(
+          `${row.code} · ${workPermitStatusLabel("active")}.`,
+          "success",
+        );
+      } else if (kind === "close") {
+        await closeWorkPermitRequest(accessToken, row.id, payload);
+        showToast(
+          `${row.code} · ${workPermitStatusLabel("closed")}.`,
+          "success",
+        );
+      } else {
+        await rejectCloseWorkPermitRequest(
+          accessToken,
+          row.id,
+          payload.reviewNote ?? "",
+          payload,
+        );
+        showToast(
+          `${row.code} · ${workPermitStatusLabel("no_closure")}.`,
+          "success",
+        );
+      }
+      setSignModal(null);
       await load();
     } catch (err) {
       showToast(
-        err instanceof ApiError ? err.message : "No se pudo recibir.",
+        err instanceof ApiError ? err.message : "No se pudo firmar.",
         "danger",
       );
     } finally {
@@ -211,29 +229,7 @@ export function WorkPermitsPage() {
     }
   }
 
-  /** Capitán: Verificar trabajo → Trabajo cerrado. */
-  async function onClose(row: WorkPermit) {
-    if (!accessToken || !canReceive || !isStaff || actingId) return;
-    if (row.status !== "to_verify") return;
-    setActingId(row.id);
-    try {
-      await closeWorkPermitRequest(accessToken, row.id);
-      showToast(
-        `${row.code} · ${workPermitStatusLabel("closed")}.`,
-        "success",
-      );
-      await load();
-    } catch (err) {
-      showToast(
-        err instanceof ApiError ? err.message : "No se pudo cerrar.",
-        "danger",
-      );
-    } finally {
-      setActingId(null);
-    }
-  }
-
-  /** Confirma modal con nota. */
+  /** Confirma modal con nota (devolver / no autorizar). */
   async function confirmNoteModal() {
     if (!accessToken || !noteModal || !reviewNote.trim() || actingId) return;
     setActingId(noteModal.row.id);
@@ -246,16 +242,6 @@ export function WorkPermitsPage() {
         );
         showToast(
           `${noteModal.row.code} · ${workPermitStatusLabel("to_complete")}.`,
-          "success",
-        );
-      } else if (noteModal.kind === "reject-close") {
-        await rejectCloseWorkPermitRequest(
-          accessToken,
-          noteModal.row.id,
-          reviewNote.trim(),
-        );
-        showToast(
-          `${noteModal.row.code} · ${workPermitStatusLabel("no_closure")}.`,
           "success",
         );
       } else {
@@ -507,7 +493,7 @@ export function WorkPermitsPage() {
                               type="button"
                               className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
                               disabled={actingId === row.id}
-                              onClick={() => void onApprove(row)}
+                              onClick={() => openSignModal("approve", row)}
                             >
                               {actingId === row.id ? "…" : "Aprobar"}
                             </button>
@@ -529,7 +515,7 @@ export function WorkPermitsPage() {
                               type="button"
                               className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
                               disabled={actingId === row.id}
-                              onClick={() => void onReceive(row)}
+                              onClick={() => openSignModal("receive", row)}
                             >
                               {actingId === row.id ? "…" : "Autorizar a bordo"}
                             </button>
@@ -563,7 +549,7 @@ export function WorkPermitsPage() {
                               type="button"
                               className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
                               disabled={actingId === row.id}
-                              onClick={() => void onClose(row)}
+                              onClick={() => openSignModal("close", row)}
                             >
                               {actingId === row.id ? "…" : "Cerrar trabajo"}
                             </button>
@@ -572,7 +558,7 @@ export function WorkPermitsPage() {
                               className="text-[13px] font-medium text-[var(--color-nachipa-title)] hover:underline disabled:opacity-60"
                               disabled={actingId === row.id}
                               onClick={() =>
-                                openNoteModal("reject-close", row)
+                                openSignModal("reject-close", row)
                               }
                             >
                               Sin cierre
@@ -621,6 +607,22 @@ export function WorkPermitsPage() {
         />
       ) : null}
 
+      <WorkPermitSignModal
+        open={Boolean(signModal)}
+        kind={signModal?.kind ?? null}
+        permitCode={signModal?.row.code}
+        defaultSignerName={
+          user
+            ? `${user.firstName} ${user.lastName}`.trim() || user.email
+            : ""
+        }
+        submitting={Boolean(actingId && signModal)}
+        onClose={() => {
+          if (!actingId) setSignModal(null);
+        }}
+        onConfirm={(payload) => void confirmSign(payload)}
+      />
+
       <Modal
         open={Boolean(noteModal)}
         onClose={() => {
@@ -629,9 +631,7 @@ export function WorkPermitsPage() {
         title={
           noteModal?.kind === "reject-receipt"
             ? "No autorizar recepción"
-            : noteModal?.kind === "reject-close"
-              ? "Marcar sin cierre"
-              : "Devolver permiso al contratista"
+            : "Devolver permiso al contratista"
         }
         subtitle={
           noteModal
@@ -659,9 +659,7 @@ export function WorkPermitsPage() {
                 ? "Guardando…"
                 : noteModal?.kind === "reject-receipt"
                   ? "No autorizar"
-                  : noteModal?.kind === "reject-close"
-                    ? "Confirmar sin cierre"
-                    : "Devolver"}
+                  : "Devolver"}
             </Button>
           </div>
         }
@@ -669,16 +667,11 @@ export function WorkPermitsPage() {
         <p className="m-0 mb-3 text-[13px] text-[var(--color-nachipa-secondary)]">
           {noteModal?.kind === "reject-receipt"
             ? "El permiso vuelve a «En revisión» (Prevención) con tu motivo."
-            : noteModal?.kind === "reject-close"
-              ? "El permiso queda en «Sin cierre» con tu motivo."
-              : "El permiso vuelve a «Por completar» con tu observación."}
+            : "El permiso vuelve a «Por completar» con tu observación."}
         </p>
         <TextField
           label={
-            noteModal?.kind === "reject-receipt" ||
-            noteModal?.kind === "reject-close"
-              ? "Motivo"
-              : "Observaciones"
+            noteModal?.kind === "reject-receipt" ? "Motivo" : "Observaciones"
           }
           value={reviewNote}
           onChange={(e) => setReviewNote(e.target.value)}

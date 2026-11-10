@@ -225,3 +225,38 @@ body {
     animation: none;
   }
 }
+
+/*
+ * Impresión del documento de permiso de trabajo:
+ * solo la hoja #work-permit-print, sin chrome del portal.
+ */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: white !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  #work-permit-print,
+  #work-permit-print * {
+    visibility: visible !important;
+  }
+
+  #work-permit-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    box-shadow: none !important;
+    background: white !important;
+  }
+}

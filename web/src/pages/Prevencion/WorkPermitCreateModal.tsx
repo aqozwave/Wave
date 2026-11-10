@@ -393,7 +393,21 @@ export function WorkPermitCreateModal({
                   {check.accreditation &&
                   check.accreditation.status !== "approved"
                     ? `No se puede crear: la HAB ${check.accreditation.code} sigue en «${check.accreditation.status}». Validar documentos no alcanza — Prevención tiene que Aprobar la habilitación.`
-                    : "No se puede crear: la empresa debe tener habilitación aprobada y el pack empresa al día. Las exigencias por persona se verifican al asignar personal."}
+                    : (() => {
+                        const missingCompany = check.items
+                          .filter(
+                            (i) =>
+                              i.status === "missing" &&
+                              i.mandatory &&
+                              i.scope === "company" &&
+                              i.moment === "before",
+                          )
+                          .map((i) => i.label);
+                        if (missingCompany.length > 0) {
+                          return `No se puede crear: faltan exigencias de empresa obligatorias — ${missingCompany.join(", ")}. Subilas/validalas en la HAB. Las de personal se verifican al asignar.`;
+                        }
+                        return "No se puede crear: la empresa debe tener habilitación aprobada y el pack empresa al día. Las exigencias por persona se verifican al asignar personal.";
+                      })()}
                 </p>
               ) : check.summary.later > 0 ? (
                 <p className="m-0 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-[var(--color-nachipa-bg-page)] px-3 py-2 text-[13px] text-[var(--color-nachipa-body)]">

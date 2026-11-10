@@ -1566,8 +1566,8 @@ model WorkPermit {
 }
 
 /**
- * Firma de un hito del PT (quién y cuándo aprobó / recibió / cerró).
- * Sirve al documento imprimible; no es firma criptográfica.
+ * Firma de un hito del PT (quién / cuándo + trazo PNG opcional).
+ * Prevención/capitán: pad + aceptación. Contratista pedir cierre: solo registro.
  */
 model WorkPermitSignature {
   id           String                  @id @default(uuid()) @db.Uuid
@@ -1578,6 +1578,10 @@ model WorkPermitSignature {
   signedBy     User?                   @relation("WorkPermitSignatureSignedBy", fields: [signedById], references: [id], onDelete: SetNull)
   /// Nombre visible congelado al firmar.
   signerName   String                  @map("signer_name")
+  /// Trazo PNG (data URL); null en hitos sin pad (ej. pedir cierre).
+  signatureImage String?               @map("signature_image") @db.Text
+  /// Cuándo marcó «Confirmo» (pad digital); null si solo registro automático.
+  acceptedAt   DateTime?               @map("accepted_at") @db.Timestamptz
   note         String?
   signedAt     DateTime                @default(now()) @map("signed_at") @db.Timestamptz
   createdAt    DateTime                @default(now()) @map("created_at") @db.Timestamptz

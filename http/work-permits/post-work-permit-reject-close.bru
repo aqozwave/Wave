@@ -20,13 +20,16 @@ headers {
 
 body:json {
   {
-    "reviewNote": "Trabajo incompleto / no se pudo verificar"
+    "reviewNote": "Trabajo incompleto / no se pudo verificar",
+    "signerName": "Capitan Test",
+    "accepted": true,
+    "signatureImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
   }
 }
 
 docs {
-  P6b: capitán (receive) marca sin cierre.
-  to_verify → no_closure. Variable workPermitId + reviewNote.
+  P6b: capitán marca sin cierre (+ firma digital).
+  to_verify → no_closure. Variable workPermitId + reviewNote + pad.
 }
 
 script:pre-request {

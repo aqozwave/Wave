@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, ClipboardCheck } from "lucide-react";
 import { Link, useLocation, useParams } from "react-router";
 import { Button } from "../../components/Button/Button";
+import { Logo } from "../../components/Logo/Logo";
 import { Modal } from "../../components/Modal/Modal";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
@@ -9,6 +10,10 @@ import { TextField } from "../../components/TextField/TextField";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { useToast } from "../../components/Toast/ToastProvider";
+import {
+  WorkPermitSignModal,
+  type WorkPermitSignKind,
+} from "../../components/WorkPermitSignModal/WorkPermitSignModal";
 import { userHasPermission } from "../../lib/api/auth";
 import {
   downloadAccreditationPersonDocumentRequest,
@@ -33,7 +38,9 @@ import {
   workPermitStatusLabel,
   type WorkPermit,
   type WorkPermitChecklistItem,
+  type WorkPermitDigitalSignaturePayload,
   type WorkPermitDocument,
+  type WorkPermitDocumentIssuer,
   type WorkPermitDocumentSignature,
   type WorkPermitHistoryItem,
   type WorkPermitPerson,
@@ -273,10 +280,12 @@ export function WorkPermitDetailPage() {
   const [tabLoading, setTabLoading] = useState(false);
   const [acting, setActing] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
-  const [noteModal, setNoteModal] = useState<
-    "return" | "reject-receipt" | "reject-close" | null
-  >(null);
+  const [noteModal, setNoteModal] = useState<"return" | "reject-receipt" | null>(
+    null,
+  );
   const [reviewNote, setReviewNote] = useState("");
+  /** Modal pad + aceptación (Prevención / capitán). */
+  const [signKind, setSignKind] = useState<WorkPermitSignKind | null>(null);
 
   const loadPermit = useCallback(async () => {
     if (!accessToken || !id || !canRead) return;
@@ -397,47 +406,7 @@ export function WorkPermitDetailPage() {
     setPermit(updated);
   }
 
-  async function onApprove() {
-    if (!accessToken || !permit || acting) return;
-    setActing(true);
-    try {
-      const updated = await approveWorkPermitRequest(accessToken, permit.id);
-      applyPermitAfterTransition(updated);
-      showToast(
-        `${updated.code} · ${workPermitStatusLabel("to_receive")}.`,
-        "success",
-      );
-    } catch (err) {
-      showToast(
-        err instanceof ApiError ? err.message : "No se pudo aprobar.",
-        "danger",
-      );
-    } finally {
-      setActing(false);
-    }
-  }
-
-  async function onReceive() {
-    if (!accessToken || !permit || acting) return;
-    setActing(true);
-    try {
-      const updated = await receiveWorkPermitRequest(accessToken, permit.id);
-      applyPermitAfterTransition(updated);
-      showToast(
-        `${updated.code} · ${workPermitStatusLabel("active")}.`,
-        "success",
-      );
-    } catch (err) {
-      showToast(
-        err instanceof ApiError ? err.message : "No se pudo recibir.",
-        "danger",
-      );
-    } finally {
-      setActing(false);
-    }
-  }
-
-  /** Staff o flujo interno: pedir verificación de cierre. */
+  /** Staff o flujo interno: pedir verificación de cierre (sin pad). */
   async function onRequestClose() {
     if (!accessToken || !permit || acting) return;
     setActing(true);
@@ -461,20 +430,57 @@ export function WorkPermitDetailPage() {
     }
   }
 
-  /** Capitán confirma que el trabajo terminó bien. */
-  async function onClosePermit() {
-    if (!accessToken || !permit || acting) return;
+  /** Confirma pad + aceptación y ejecuta la transición. */
+  async function confirmSign(
+    payload: WorkPermitDigitalSignaturePayload & { reviewNote?: string },
+  ) {
+    if (!accessToken || !permit || !signKind || acting) return;
     setActing(true);
     try {
-      const updated = await closeWorkPermitRequest(accessToken, permit.id);
+      let updated: WorkPermit;
+      if (signKind === "approve") {
+        updated = await approveWorkPermitRequest(
+          accessToken,
+          permit.id,
+          payload,
+        );
+        showToast(
+          `${updated.code} · ${workPermitStatusLabel("to_receive")}.`,
+          "success",
+        );
+      } else if (signKind === "receive") {
+        updated = await receiveWorkPermitRequest(
+          accessToken,
+          permit.id,
+          payload,
+        );
+        showToast(
+          `${updated.code} · ${workPermitStatusLabel("active")}.`,
+          "success",
+        );
+      } else if (signKind === "close") {
+        updated = await closeWorkPermitRequest(accessToken, permit.id, payload);
+        showToast(
+          `${updated.code} · ${workPermitStatusLabel("closed")}.`,
+          "success",
+        );
+      } else {
+        updated = await rejectCloseWorkPermitRequest(
+          accessToken,
+          permit.id,
+          payload.reviewNote ?? "",
+          payload,
+        );
+        showToast(
+          `${updated.code} · ${workPermitStatusLabel("no_closure")}.`,
+          "success",
+        );
+      }
       applyPermitAfterTransition(updated);
-      showToast(
-        `${updated.code} · ${workPermitStatusLabel("closed")}.`,
-        "success",
-      );
+      setSignKind(null);
     } catch (err) {
       showToast(
-        err instanceof ApiError ? err.message : "No se pudo cerrar.",
+        err instanceof ApiError ? err.message : "No se pudo firmar.",
         "danger",
       );
     } finally {
@@ -495,23 +501,15 @@ export function WorkPermitDetailPage() {
               permit.id,
               reviewNote.trim(),
             )
-          : noteModal === "reject-close"
-            ? await rejectCloseWorkPermitRequest(
-                accessToken,
-                permit.id,
-                reviewNote.trim(),
-              )
-            : await rejectReceiptWorkPermitRequest(
-                accessToken,
-                permit.id,
-                reviewNote.trim(),
-              );
+          : await rejectReceiptWorkPermitRequest(
+              accessToken,
+              permit.id,
+              reviewNote.trim(),
+            );
       applyPermitAfterTransition(updated);
       showToast(
         noteModal === "return"
           ? `${updated.code} · ${workPermitStatusLabel("to_complete")}.`
-          : noteModal === "reject-close"
-            ? `${updated.code} · ${workPermitStatusLabel("no_closure")}.`
           : `${updated.code} · vuelve a ${workPermitStatusLabel("to_approve")}.`,
         "success",
       );
@@ -560,148 +558,149 @@ export function WorkPermitDetailPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <Topbar
-        breadcrumb={isPortal ? "Mi empresa" : "Prevención"}
-        breadcrumbIcon={ClipboardCheck}
-        actions={<UserMenu />}
-      />
-      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
-        <PageHeader
-          crumbs={
-            isPortal
-              ? [
-                  { label: "Permisos de trabajo", to: listPath },
-                  { label: permit?.code ?? "…" },
-                ]
-              : [
-                  { label: "Prevención", to: "/prevencion" },
-                  { label: "Permisos de trabajo", to: listPath },
-                  { label: permit?.code ?? "…" },
-                ]
-          }
-          title={
-            permit
-              ? `${permit.code} · ${permit.permitType.name}`
-              : loading
-                ? "Cargando…"
-                : "Permiso"
-          }
-          description={
-            permit
-              ? `${displayName(permit.organization.name)} · ${displayName(permit.location.name)}`
-              : undefined
-          }
-          actions={
-            permit ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusChip tone={statusTone(permit.status)}>
-                  {workPermitStatusLabel(permit.status)}
-                </StatusChip>
-                {permitDoc && signedCount > 0 ? (
-                  <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
-                    {signedCount} firma{signedCount === 1 ? "" : "s"}
-                  </span>
-                ) : null}
-                {canUpdate && permit.status === "to_complete" ? (
-                  <Button
-                    type="button"
-                    size="medium"
-                    className="!w-auto"
-                    onClick={() => setCompleteOpen(true)}
-                  >
-                    Completar
-                  </Button>
-                ) : null}
-                {canUpdate && isStaff && permit.status === "to_approve" ? (
-                  <>
-                    <Button
-                      type="button"
-                      size="medium"
-                      className="!w-auto"
-                      disabled={acting}
-                      onClick={() => void onApprove()}
-                    >
-                      Aprobar
-                    </Button>
-                    <button
-                      type="button"
-                      className={outlineBtnClass}
-                      disabled={acting}
-                      onClick={() => {
-                        setReviewNote("");
-                        setNoteModal("return");
-                      }}
-                    >
-                      Devolver
-                    </button>
-                  </>
-                ) : null}
-                {canReceive && isStaff && permit.status === "to_receive" ? (
-                  <>
-                    <Button
-                      type="button"
-                      size="medium"
-                      className="!w-auto"
-                      disabled={acting}
-                      onClick={() => void onReceive()}
-                    >
-                      Autorizar a bordo
-                    </Button>
-                    <button
-                      type="button"
-                      className={outlineBtnClass}
-                      disabled={acting}
-                      onClick={() => {
-                        setReviewNote("");
-                        setNoteModal("reject-receipt");
-                      }}
-                    >
-                      No autorizar
-                    </button>
-                  </>
-                ) : null}
-                {canUpdate && permit.status === "active" ? (
-                  <Button
-                    type="button"
-                    size="medium"
-                    className="!w-auto"
-                    disabled={acting}
-                    onClick={() => void onRequestClose()}
-                  >
-                    Pedir cierre
-                  </Button>
-                ) : null}
-                {canReceive && isStaff && permit.status === "to_verify" ? (
-                  <>
-                    <Button
-                      type="button"
-                      size="medium"
-                      className="!w-auto"
-                      disabled={acting}
-                      onClick={() => void onClosePermit()}
-                    >
-                      Cerrar trabajo
-                    </Button>
-                    <button
-                      type="button"
-                      className={outlineBtnClass}
-                      disabled={acting}
-                      onClick={() => {
-                        setReviewNote("");
-                        setNoteModal("reject-close");
-                      }}
-                    >
-                      Sin cierre
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            ) : undefined
-          }
+    <div className="flex min-h-0 flex-1 flex-col print:overflow-visible">
+      <div className="print:hidden">
+        <Topbar
+          breadcrumb={isPortal ? "Mi empresa" : "Prevención"}
+          breadcrumbIcon={ClipboardCheck}
+          actions={<UserMenu />}
         />
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5 print:overflow-visible print:p-0">
+        <div className="print:hidden">
+          <PageHeader
+            crumbs={
+              isPortal
+                ? [
+                    { label: "Permisos de trabajo", to: listPath },
+                    { label: permit?.code ?? "…" },
+                  ]
+                : [
+                    { label: "Prevención", to: "/prevencion" },
+                    { label: "Permisos de trabajo", to: listPath },
+                    { label: permit?.code ?? "…" },
+                  ]
+            }
+            title={
+              permit
+                ? `${permit.code} · ${permit.permitType.name}`
+                : loading
+                  ? "Cargando…"
+                  : "Permiso"
+            }
+            description={
+              permit
+                ? `${displayName(permit.organization.name)} · ${displayName(permit.location.name)}`
+                : undefined
+            }
+            actions={
+              permit ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusChip tone={statusTone(permit.status)}>
+                    {workPermitStatusLabel(permit.status)}
+                  </StatusChip>
+                  {permitDoc && signedCount > 0 ? (
+                    <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                      {signedCount} firma{signedCount === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
+                  {canUpdate && permit.status === "to_complete" ? (
+                    <Button
+                      type="button"
+                      size="medium"
+                      className="!w-auto"
+                      onClick={() => setCompleteOpen(true)}
+                    >
+                      Completar
+                    </Button>
+                  ) : null}
+                  {canUpdate && isStaff && permit.status === "to_approve" ? (
+                    <>
+                      <Button
+                        type="button"
+                        size="medium"
+                        className="!w-auto"
+                        disabled={acting}
+                        onClick={() => setSignKind("approve")}
+                      >
+                        Aprobar
+                      </Button>
+                      <button
+                        type="button"
+                        className={outlineBtnClass}
+                        disabled={acting}
+                        onClick={() => {
+                          setReviewNote("");
+                          setNoteModal("return");
+                        }}
+                      >
+                        Devolver
+                      </button>
+                    </>
+                  ) : null}
+                  {canReceive && isStaff && permit.status === "to_receive" ? (
+                    <>
+                      <Button
+                        type="button"
+                        size="medium"
+                        className="!w-auto"
+                        disabled={acting}
+                        onClick={() => setSignKind("receive")}
+                      >
+                        Autorizar a bordo
+                      </Button>
+                      <button
+                        type="button"
+                        className={outlineBtnClass}
+                        disabled={acting}
+                        onClick={() => {
+                          setReviewNote("");
+                          setNoteModal("reject-receipt");
+                        }}
+                      >
+                        No autorizar
+                      </button>
+                    </>
+                  ) : null}
+                  {canUpdate && permit.status === "active" ? (
+                    <Button
+                      type="button"
+                      size="medium"
+                      className="!w-auto"
+                      disabled={acting}
+                      onClick={() => void onRequestClose()}
+                    >
+                      Pedir cierre
+                    </Button>
+                  ) : null}
+                  {canReceive && isStaff && permit.status === "to_verify" ? (
+                    <>
+                      <Button
+                        type="button"
+                        size="medium"
+                        className="!w-auto"
+                        disabled={acting}
+                        onClick={() => setSignKind("close")}
+                      >
+                        Cerrar trabajo
+                      </Button>
+                      <button
+                        type="button"
+                        className={outlineBtnClass}
+                        disabled={acting}
+                        onClick={() => setSignKind("reject-close")}
+                      >
+                        Sin cierre
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              ) : undefined
+            }
+          />
+        </div>
 
-        <div className="flex gap-1 border-b border-[var(--color-tremor-border)]">
+        <div className="flex gap-1 border-b border-[var(--color-tremor-border)] print:hidden">
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -984,7 +983,7 @@ export function WorkPermitDetailPage() {
               No se pudo cargar el documento.
             </p>
           ) : (
-            <div className="flex max-w-3xl flex-col gap-4">
+            <div className="flex max-w-3xl flex-col gap-4 print:max-w-none">
               <div className="flex print:hidden">
                 <Button
                   type="button"
@@ -997,143 +996,230 @@ export function WorkPermitDetailPage() {
               </div>
               <div
                 id="work-permit-print"
-                className="rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-5 text-[13px] print:border-0"
+                className="rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-6 text-[13px] text-black print:rounded-none print:border-0 print:p-0"
               >
-                <h2 className="m-0 text-[20px] font-semibold text-[var(--color-nachipa-title)]">
-                  Permiso de trabajo {permitDoc.permit.code}
-                </h2>
-                <p className="mt-1 mb-4 text-[var(--color-nachipa-secondary)]">
-                  {permitDoc.permit.permitType.code} ·{" "}
-                  {permitDoc.permit.permitType.name} ·{" "}
-                  {workPermitStatusLabel(permitDoc.permit.status)}
-                </p>
-                <div className="grid gap-2">
-                  <Row
-                    label="Empresa"
-                    value={`${displayName(permitDoc.permit.organization.name)} · ${permitDoc.permit.organization.rut}`}
-                  />
-                  <Row
-                    label="Nave"
-                    value={displayName(permitDoc.permit.location.name)}
-                  />
-                  <Row
-                    label="Fecha"
-                    value={formatDate(permitDoc.permit.scheduledDate)}
-                  />
-                  <Row
-                    label="Aviso"
-                    value={permitDoc.permit.workNotice.code}
-                  />
-                  <Row
-                    label="Descripción"
-                    value={permitDoc.permit.description?.trim() || "—"}
-                  />
-                </div>
-
-                <h3 className="mt-5 mb-2 text-[15px] font-semibold text-[var(--color-nachipa-title)]">
-                  Personal
-                </h3>
-                {permitDoc.people.length === 0 ? (
-                  <p className="m-0 text-[var(--color-nachipa-secondary)]">
-                    Sin personal asignado.
-                  </p>
-                ) : (
-                  <ul className="m-0 list-none space-y-1 p-0">
-                    {permitDoc.people.map((p) => (
-                      <li key={p.rut}>
-                        {displayName(p.fullName)} · {p.rut}
-                        {p.position ? ` · ${p.position}` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                <h3 className="mt-5 mb-2 text-[15px] font-semibold text-[var(--color-nachipa-title)]">
-                  Checklist
-                </h3>
-                {permitDoc.checklist.length === 0 ? (
-                  <p className="m-0 text-[var(--color-nachipa-secondary)]">
-                    Sin respuestas de checklist.
-                  </p>
-                ) : (
-                  <ul className="m-0 list-none space-y-1 p-0">
-                    {permitDoc.checklist.map((c) => (
-                      <li key={`${c.order}-${c.text}`}>
-                        {c.order}. {c.text} — {answerLabel(c.answer)}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                <h3 className="mt-5 mb-2 text-[15px] font-semibold text-[var(--color-nachipa-title)]">
-                  Firmas
-                  {permitDoc.signatures.length > 0
-                    ? ` · ${permitDoc.signatures.length} registradas`
-                    : ""}
-                </h3>
-                {(() => {
-                  const lag = signaturesLagBehindStatus(
-                    permitDoc.permit.status,
-                    permitDoc.signatures,
-                  );
-                  const expectedPast = new Set(
-                    expectedSignatureKindsForStatus(permitDoc.permit.status),
-                  );
-                  return (
-                    <>
-                      <p className="m-0 mb-2 text-[12px] text-[var(--color-nachipa-secondary)]">
-                        Se registran al aprobar, autorizar a bordo, pedir cierre
-                        o cerrar el trabajo. No hay pad de firma: queda quien
-                        hizo la acción, con fecha.
+                {/* Cabecera formal: logo mandante + título del documento. */}
+                <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--color-tremor-border)] pb-4">
+                  <div className="flex min-w-0 flex-1 flex-col gap-2">
+                    <Logo size="sidebar" />
+                    <div className="min-w-0">
+                      <p className="m-0 text-[15px] font-semibold text-[var(--color-nachipa-title)]">
+                        {displayName(permitDoc.issuer.name)}
                       </p>
-                      {lag ? (
-                        <p className="m-0 mb-3 rounded-[var(--radius-md)] border border-[var(--color-status-warning-border,#fed7aa)] bg-[var(--color-status-warning-bg,#ffedd5)] px-3 py-2 text-[12px] text-[var(--color-nachipa-title)]">
-                          Este permiso avanzó antes de registrar firmas. Los
-                          hitos ya pasados quedan como pendientes; las próximas
-                          acciones (pedir cierre, cerrar, etc.) sí firman.
+                      {permitDoc.issuer.rut ? (
+                        <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
+                          RUT {permitDoc.issuer.rut}
                         </p>
                       ) : null}
-                      <ul className="m-0 list-none space-y-2 p-0">
-                        {buildSignatureRows(permitDoc.signatures).map((row) => (
-                          <li
-                            key={row.kind}
-                            className="border-t border-[var(--color-tremor-border)] pt-2"
+                      {permitDoc.issuer.giro ? (
+                        <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
+                          {permitDoc.issuer.giro}
+                        </p>
+                      ) : null}
+                      {issuerPlaceLine(permitDoc.issuer) ? (
+                        <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
+                          {issuerPlaceLine(permitDoc.issuer)}
+                        </p>
+                      ) : null}
+                      {issuerContactLine(permitDoc.issuer) ? (
+                        <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
+                          {issuerContactLine(permitDoc.issuer)}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="m-0 text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--color-nachipa-secondary)]">
+                      Permiso de trabajo
+                    </p>
+                    <p className="m-0 mt-1 text-[20px] font-semibold text-[var(--color-nachipa-title)]">
+                      {permitDoc.permit.code}
+                    </p>
+                    <p className="m-0 mt-1 text-[12px] text-[var(--color-nachipa-secondary)]">
+                      {permitDoc.permit.permitType.code} ·{" "}
+                      {permitDoc.permit.permitType.name}
+                    </p>
+                    <p className="m-0 mt-1 text-[12px] font-medium text-[var(--color-nachipa-title)]">
+                      {workPermitStatusLabel(permitDoc.permit.status)}
+                    </p>
+                  </div>
+                </header>
+
+                <section className="mt-4">
+                  <h3 className="mt-0 mb-2 text-[15px] font-semibold text-[var(--color-nachipa-title)]">
+                    Datos del permiso
+                  </h3>
+                  <div className="grid gap-2">
+                    <Row
+                      label="Contratista"
+                      value={`${displayName(permitDoc.permit.organization.name)} · ${permitDoc.permit.organization.rut}`}
+                    />
+                    <Row
+                      label="Nave"
+                      value={displayName(permitDoc.permit.location.name)}
+                    />
+                    <Row
+                      label="Fecha"
+                      value={formatDate(permitDoc.permit.scheduledDate)}
+                    />
+                    <Row
+                      label="Aviso"
+                      value={permitDoc.permit.workNotice.code}
+                    />
+                    <Row
+                      label="Descripción"
+                      value={permitDoc.permit.description?.trim() || "—"}
+                    />
+                  </div>
+                </section>
+
+                <section className="mt-5">
+                  <h3 className="mt-0 mb-2 text-[15px] font-semibold text-[var(--color-nachipa-title)]">
+                    Personal
+                  </h3>
+                  {permitDoc.people.length === 0 ? (
+                    <p className="m-0 text-[var(--color-nachipa-secondary)]">
+                      Sin personal asignado.
+                    </p>
+                  ) : (
+                    <table className="w-full border-collapse text-left text-[13px]">
+                      <thead>
+                        <tr className="border-b border-[var(--color-tremor-border)] text-[12px] text-[var(--color-nachipa-secondary)]">
+                          <th className="py-1.5 pr-3 font-medium">Nombre</th>
+                          <th className="py-1.5 pr-3 font-medium">RUN</th>
+                          <th className="py-1.5 font-medium">Cargo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {permitDoc.people.map((p) => (
+                          <tr
+                            key={p.rut}
+                            className="border-b border-[var(--color-tremor-border)]"
                           >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="font-medium text-[var(--color-nachipa-title)]">
-                                {row.label}
-                              </span>
-                              <StatusChip
-                                tone={row.signed ? "success" : "neutral"}
-                              >
-                                {row.signed ? "Firmada" : "Pendiente"}
-                              </StatusChip>
-                            </div>
-                            {row.signed ? (
-                              <>
-                                <span className="mt-0.5 block text-[var(--color-nachipa-body)]">
-                                  {displayName(row.signed.signerName)} ·{" "}
-                                  {formatDateTime(row.signed.signedAt)}
-                                </span>
-                                {row.signed.note ? (
-                                  <span className="mt-0.5 block text-[12px] text-[var(--color-nachipa-secondary)]">
-                                    {row.signed.note}
-                                  </span>
-                                ) : null}
-                              </>
-                            ) : (
-                              <span className="mt-0.5 block text-[12px] text-[var(--color-nachipa-secondary)]">
-                                {lag && expectedPast.has(row.kind)
-                                  ? "Hito ya pasado · sin registro de firma (previo a firmas)."
-                                  : "Aún no registrada en este permiso."}
-                              </span>
-                            )}
-                          </li>
+                            <td className="py-1.5 pr-3 text-[var(--color-nachipa-title)]">
+                              {displayName(p.fullName)}
+                            </td>
+                            <td className="py-1.5 pr-3 tabular-nums text-[var(--color-nachipa-body)]">
+                              {p.rut}
+                            </td>
+                            <td className="py-1.5 text-[var(--color-nachipa-body)]">
+                              {p.position?.trim()
+                                ? displayName(p.position)
+                                : "—"}
+                            </td>
+                          </tr>
                         ))}
-                      </ul>
-                    </>
-                  );
-                })()}
+                      </tbody>
+                    </table>
+                  )}
+                </section>
+
+                <section className="mt-5">
+                  <h3 className="mt-0 mb-2 text-[15px] font-semibold text-[var(--color-nachipa-title)]">
+                    Checklist
+                  </h3>
+                  {permitDoc.checklist.length === 0 ? (
+                    <p className="m-0 text-[var(--color-nachipa-secondary)]">
+                      Sin respuestas de checklist.
+                    </p>
+                  ) : (
+                    <ul className="m-0 list-none space-y-1 p-0">
+                      {permitDoc.checklist.map((c) => (
+                        <li key={`${c.order}-${c.text}`}>
+                          {c.order}. {c.text} — {answerLabel(c.answer)}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <section className="mt-5">
+                  <h3 className="mt-0 mb-2 text-[15px] font-semibold text-[var(--color-nachipa-title)]">
+                    Firmas
+                    {permitDoc.signatures.length > 0
+                      ? ` · ${permitDoc.signatures.length} registradas`
+                      : ""}
+                  </h3>
+                  {(() => {
+                    const lag = signaturesLagBehindStatus(
+                      permitDoc.permit.status,
+                      permitDoc.signatures,
+                    );
+                    const expectedPast = new Set(
+                      expectedSignatureKindsForStatus(permitDoc.permit.status),
+                    );
+                    return (
+                      <>
+                        <p className="m-0 mb-2 text-[12px] text-[var(--color-nachipa-secondary)] print:hidden">
+                          Prevención y capitán firman con pad + confirmación al
+                          aprobar, autorizar a bordo o cerrar. Pedir cierre solo
+                          registra el acto.
+                        </p>
+                        {lag ? (
+                          <p className="m-0 mb-3 rounded-[var(--radius-md)] border border-[var(--color-status-warning-border,#fed7aa)] bg-[var(--color-status-warning-bg,#ffedd5)] px-3 py-2 text-[12px] text-[var(--color-nachipa-title)] print:hidden">
+                            Este permiso avanzó sin firmas manuscritas. Sin
+                            Aprobación Prevención y Autorización a bordo
+                            firmadas no se puede pedir cierre ni cerrar el
+                            trabajo. Hay que rehacer el ciclo desde «En
+                            revisión» (o pedir backfill).
+                          </p>
+                        ) : null}
+                        <ul className="m-0 list-none space-y-3 p-0">
+                          {buildSignatureRows(permitDoc.signatures).map(
+                            (row) => (
+                              <li
+                                key={row.kind}
+                                className="border-t border-[var(--color-tremor-border)] pt-3"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="font-medium text-[var(--color-nachipa-title)]">
+                                    {row.label}
+                                  </span>
+                                  <span className="print:hidden">
+                                    <StatusChip
+                                      tone={row.signed ? "success" : "neutral"}
+                                    >
+                                      {row.signed ? "Firmada" : "Pendiente"}
+                                    </StatusChip>
+                                  </span>
+                                  <span className="hidden text-[12px] text-[var(--color-nachipa-secondary)] print:inline">
+                                    {row.signed ? "Firmada" : "Pendiente"}
+                                  </span>
+                                </div>
+                                {row.signed ? (
+                                  <>
+                                    <span className="mt-0.5 block text-[var(--color-nachipa-body)]">
+                                      {displayName(row.signed.signerName)} ·{" "}
+                                      {formatDateTime(row.signed.signedAt)}
+                                    </span>
+                                    {row.signed.note ? (
+                                      <span className="mt-0.5 block text-[12px] text-[var(--color-nachipa-secondary)]">
+                                        {row.signed.note}
+                                      </span>
+                                    ) : null}
+                                    {row.signed.signatureImage ? (
+                                      <img
+                                        src={row.signed.signatureImage}
+                                        alt={`Firma de ${row.signed.signerName}`}
+                                        className="mt-2 h-16 max-w-[240px] border border-[var(--color-tremor-border)] bg-white object-contain"
+                                      />
+                                    ) : null}
+                                  </>
+                                ) : (
+                                  <span className="mt-0.5 block text-[12px] text-[var(--color-nachipa-secondary)]">
+                                    {lag && expectedPast.has(row.kind)
+                                      ? "Hito ya pasado · sin registro de firma (previo a firmas)."
+                                      : "Aún no registrada en este permiso."}
+                                  </span>
+                                )}
+                              </li>
+                            ),
+                          )}
+                        </ul>
+                      </>
+                    );
+                  })()}
+                </section>
               </div>
             </div>
           )
@@ -1212,6 +1298,22 @@ export function WorkPermitDetailPage() {
         />
       ) : null}
 
+      <WorkPermitSignModal
+        open={Boolean(signKind)}
+        kind={signKind}
+        permitCode={permit?.code}
+        defaultSignerName={
+          user
+            ? `${user.firstName} ${user.lastName}`.trim() || user.email
+            : ""
+        }
+        submitting={acting && Boolean(signKind)}
+        onClose={() => {
+          if (!acting) setSignKind(null);
+        }}
+        onConfirm={(payload) => void confirmSign(payload)}
+      />
+
       <Modal
         open={Boolean(noteModal)}
         onClose={() => {
@@ -1220,9 +1322,7 @@ export function WorkPermitDetailPage() {
         title={
           noteModal === "reject-receipt"
             ? "No autorizar recepción"
-            : noteModal === "reject-close"
-              ? "Marcar sin cierre"
-              : "Devolver permiso al contratista"
+            : "Devolver permiso al contratista"
         }
         subtitle={permit ? permit.code : undefined}
         footer={
@@ -1246,9 +1346,7 @@ export function WorkPermitDetailPage() {
                 ? "Guardando…"
                 : noteModal === "reject-receipt"
                   ? "No autorizar"
-                  : noteModal === "reject-close"
-                    ? "Confirmar sin cierre"
-                    : "Devolver"}
+                  : "Devolver"}
             </Button>
           </div>
         }
@@ -1256,15 +1354,11 @@ export function WorkPermitDetailPage() {
         <p className="m-0 mb-3 text-[13px] text-[var(--color-nachipa-secondary)]">
           {noteModal === "reject-receipt"
             ? "El permiso vuelve a «En revisión» con tu motivo."
-            : noteModal === "reject-close"
-              ? "El permiso queda en «Sin cierre» con tu motivo."
-              : "El permiso vuelve a «Por completar» con tu observación."}
+            : "El permiso vuelve a «Por completar» con tu observación."}
         </p>
         <TextField
           label={
-            noteModal === "reject-receipt" || noteModal === "reject-close"
-              ? "Motivo"
-              : "Observaciones"
+            noteModal === "reject-receipt" ? "Motivo" : "Observaciones"
           }
           value={reviewNote}
           onChange={(e) => setReviewNote(e.target.value)}
@@ -1283,4 +1377,16 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-[var(--color-nachipa-title)]">{value}</span>
     </div>
   );
+}
+
+/** Comuna y ciudad de la mandante para la cabecera del documento. */
+function issuerPlaceLine(issuer: WorkPermitDocumentIssuer): string | null {
+  const parts = [issuer.commune?.trim(), issuer.city?.trim()].filter(Boolean);
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
+/** Teléfono y correo de la mandante para la cabecera del documento. */
+function issuerContactLine(issuer: WorkPermitDocumentIssuer): string | null {
+  const parts = [issuer.phone?.trim(), issuer.email?.trim()].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
 }

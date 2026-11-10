@@ -86,18 +86,43 @@ export type MeSuccess = {
 export type ApiErrorBody = {
   code: string;
   message: string;
+  /** Zod flatten / issues cuando code = validation_error. */
+  details?: unknown;
 };
 
-/** Error HTTP tipado para que la UI muestre `message` / `code`. */
+/** Error HTTP tipado para que la UI muestre `message` / `code` / `details`. */
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly code: string,
     message: string,
+    public readonly details?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/**
+ * Mensaje de toast a partir del ApiError.
+ * Si viene lista de issues de validación, las une (ej. «RUN inválido»).
+ */
+export function formatApiErrorMessage(err: ApiError): string {
+  const details = err.details;
+  if (details && typeof details === "object" && details !== null) {
+    const issues = (details as { issues?: Array<{ message?: string }> }).issues;
+    if (Array.isArray(issues) && issues.length > 0) {
+      const msgs = [
+        ...new Set(
+          issues
+            .map((i) => (typeof i.message === "string" ? i.message : ""))
+            .filter(Boolean),
+        ),
+      ];
+      if (msgs.length > 0) return msgs.join(" · ");
+    }
+  }
+  return err.message || "Error desconocido";
 }
 
 /** Parsea JSON de error o arma uno genérico si el body no sirve. */
@@ -107,6 +132,7 @@ function toApiError(res: Response, body: unknown): ApiError {
     res.status,
     err?.code ?? "request_failed",
     err?.message ?? `HTTP ${res.status}`,
+    err?.details,
   );
 }
 

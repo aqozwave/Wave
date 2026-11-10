@@ -29,6 +29,7 @@ import {
   type PutWorkPermitPeopleBody,
   type WorkPermitChecklistStage,
   type WorkPermitRequirementsCheckQuery,
+  type WorkPermitDigitalSignatureBody,
   type WorkPermitReviewNoteBody,
 } from "./workPermits.schemas.js";
 import {
@@ -236,13 +237,18 @@ export async function submitWorkPermitHandler(
   res.status(200).json(submitWorkPermitResponseSchema.parse(result));
 }
 
-/** POST /work-permits/:id/approve — Prevención aprueba. */
+/** POST /work-permits/:id/approve — Prevención aprueba (+ firma digital). */
 export async function approveWorkPermitHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
   if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
-  const result = await approveWorkPermit(req.user, req.params.id as string);
+  const body = req.body as WorkPermitDigitalSignatureBody;
+  const result = await approveWorkPermit(
+    req.user,
+    req.params.id as string,
+    body,
+  );
   auditWrite(req, {
     action: "UPDATE",
     resource: "workPermit",
@@ -274,13 +280,18 @@ export async function returnWorkPermitHandler(
   res.status(200).json(returnWorkPermitResponseSchema.parse(result));
 }
 
-/** POST /work-permits/:id/receive — capitán recibe a bordo. */
+/** POST /work-permits/:id/receive — capitán recibe a bordo (+ firma). */
 export async function receiveWorkPermitHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
   if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
-  const result = await receiveWorkPermit(req.user, req.params.id as string);
+  const body = req.body as WorkPermitDigitalSignatureBody;
+  const result = await receiveWorkPermit(
+    req.user,
+    req.params.id as string,
+    body,
+  );
   auditWrite(req, {
     action: "UPDATE",
     resource: "workPermit",
@@ -331,13 +342,18 @@ export async function requestCloseWorkPermitHandler(
   res.status(200).json(requestCloseWorkPermitResponseSchema.parse(result));
 }
 
-/** POST /work-permits/:id/close — capitán cierra el trabajo. */
+/** POST /work-permits/:id/close — capitán cierra el trabajo (+ firma). */
 export async function closeWorkPermitHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
   if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
-  const result = await closeWorkPermit(req.user, req.params.id as string);
+  const body = req.body as WorkPermitDigitalSignatureBody;
+  const result = await closeWorkPermit(
+    req.user,
+    req.params.id as string,
+    body,
+  );
   auditWrite(req, {
     action: "UPDATE",
     resource: "workPermit",
@@ -347,13 +363,14 @@ export async function closeWorkPermitHandler(
   res.status(200).json(closeWorkPermitResponseSchema.parse(result));
 }
 
-/** POST /work-permits/:id/reject-close — capitán marca sin cierre. */
+/** POST /work-permits/:id/reject-close — capitán marca sin cierre (+ firma). */
 export async function rejectCloseWorkPermitHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
   if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
-  const body = req.body as WorkPermitReviewNoteBody;
+  const body = req.body as WorkPermitReviewNoteBody &
+    WorkPermitDigitalSignatureBody;
   const result = await rejectCloseWorkPermit(
     req.user,
     req.params.id as string,

@@ -110,7 +110,74 @@ function decodeBase64Content(contentBase64: string): Buffer {
 }
 
 /**
- * Checklist P5: tipos del pack `company` de la empresa + doc vigente.
+ * Tipos empresa cargables en la HAB: pack company +
+ * exigencias document/company de tipos de permiso activos (ej. OMI en ALT).
+ */
+async function resolveCompanyUploadableDocTypes(businessId: string): Promise<
+  Array<{
+    type: DocumentType;
+    source: "pack" | "permit_requirement" | "both";
+  }>
+> {
+  const [packTypes, reqRows] = await Promise.all([
+    prisma.documentType.findMany({
+      where: {
+        businessId,
+        deletedAt: null,
+        state: true,
+        accreditationPack: "company",
+      },
+      orderBy: [{ code: "asc" }],
+    }),
+    prisma.permitTypeRequirement.findMany({
+      where: {
+        active: true,
+        kind: "document",
+        scope: "company",
+        documentTypeId: { not: null },
+        permitType: { businessId, deletedAt: null, active: true },
+        documentType: { deletedAt: null, state: true },
+      },
+      select: { documentType: true },
+    }),
+  ]);
+
+  const byId = new Map<
+    string,
+    { type: DocumentType; pack: boolean; requirement: boolean }
+  >();
+  for (const t of packTypes) {
+    byId.set(t.id, { type: t, pack: true, requirement: false });
+  }
+  for (const row of reqRows) {
+    if (!row.documentType) continue;
+    const existing = byId.get(row.documentType.id);
+    if (existing) {
+      existing.requirement = true;
+    } else {
+      byId.set(row.documentType.id, {
+        type: row.documentType,
+        pack: false,
+        requirement: true,
+      });
+    }
+  }
+
+  return [...byId.values()]
+    .map((row) => ({
+      type: row.type,
+      source:
+        row.pack && row.requirement
+          ? ("both" as const)
+          : row.pack
+            ? ("pack" as const)
+            : ("permit_requirement" as const),
+    }))
+    .sort((a, b) => a.type.code.localeCompare(b.type.code));
+}
+
+/**
+ * Checklist P5: pack company + exigencias document/company de tipos de permiso.
  * Doc vigente = último no deleted/replaced para ese tipo en esta HAB.
  */
 export async function listAccreditationDocuments(
@@ -124,21 +191,16 @@ export async function listAccreditationDocuments(
       name: string;
       requiresExpiry: boolean;
     };
+    source: "pack" | "permit_requirement" | "both";
     document: ContractorOrgDocumentResponse | null;
   }>;
   total: number;
 }> {
   const hab = await loadAccreditationForActor(actor, accreditationId);
 
-  const types = await prisma.documentType.findMany({
-    where: {
-      businessId: hab.organization.businessId,
-      deletedAt: null,
-      state: true,
-      accreditationPack: "company",
-    },
-    orderBy: [{ code: "asc" }],
-  });
+  const uploadable = await resolveCompanyUploadableDocTypes(
+    hab.organization.businessId,
+  );
 
   const docs = await prisma.contractorOrgDocument.findMany({
     where: {
@@ -158,7 +220,8 @@ export async function listAccreditationDocuments(
     }
   }
 
-  const items = types.map((t) => {
+  const items = uploadable.map((slot) => {
+    const t = slot.type;
     const doc = latestByType.get(t.id) ?? null;
     return {
       documentType: {
@@ -167,6 +230,7 @@ export async function listAccreditationDocuments(
         name: t.name,
         requiresExpiry: t.requiresExpiry,
       },
+      source: slot.source,
       document: doc ? toDocResponse(doc) : null,
     };
   });
@@ -212,7 +276,10 @@ async function assertHabAllowsCompanyUpload(
   return { reopenForReview: true };
 }
 
-/** Sube un doc del pack company a la HAB (reemplaza el anterior del mismo tipo). */
+/**
+ * Sube un doc company a la HAB (pack o exigencia de tipo de permiso).
+ * Reemplaza el anterior del mismo tipo.
+ */
 export async function createAccreditationDocument(
   actor: Actor,
   accreditationId: string,
@@ -220,20 +287,16 @@ export async function createAccreditationDocument(
 ): Promise<ContractorOrgDocumentResponse> {
   const hab = await loadAccreditationForActor(actor, accreditationId);
 
-  const docType = await prisma.documentType.findFirst({
-    where: {
-      id: body.documentTypeId,
-      businessId: hab.organization.businessId,
-      deletedAt: null,
-      state: true,
-      accreditationPack: "company",
-    },
-  });
+  const uploadable = await resolveCompanyUploadableDocTypes(
+    hab.organization.businessId,
+  );
+  const allowed = uploadable.find((s) => s.type.id === body.documentTypeId);
+  const docType = allowed?.type ?? null;
   if (!docType) {
     throw new AppError(
       400,
       "document_type_not_found",
-      "Tipo no válido o fuera del pack de empresa",
+      "Tipo no válido: no está en el pack empresa ni en exigencias de tipos de permiso",
     );
   }
 
@@ -565,40 +628,63 @@ async function loadPersonInHab(
 }
 
 /**
- * Tipos que una persona puede subir en la HAB: pack person +
- * exigencias document/person de tipos de permiso activos (ej. BUC).
- * No mezcla exigencias en el pack base: solo amplía el checklist de carga.
+ * Tipos que una persona puede subir en la HAB.
+ * - Pack person: siempre (habilitación).
+ * - Exigencias document/person (faena): solo si esa persona ya está asignada
+ *   a un PT abierto de la org cuyo tipo las pide. No se cargan a todo el personal.
  */
-async function resolvePersonUploadableDocTypes(businessId: string): Promise<
+async function resolvePersonUploadableDocTypes(
+  businessId: string,
+  opts: { organizationId: string; personId: string },
+): Promise<
   Array<{
     type: DocumentType;
     source: "pack" | "permit_requirement" | "both";
   }>
 > {
-  const [packTypes, reqRows] = await Promise.all([
-    prisma.documentType.findMany({
-      where: {
+  const packTypes = await prisma.documentType.findMany({
+    where: {
+      businessId,
+      deletedAt: null,
+      state: true,
+      accreditationPack: "person",
+    },
+    orderBy: [{ code: "asc" }],
+  });
+
+  /** PT abiertos de la org donde esta persona está asignada. */
+  const openStatuses = [
+    "to_complete",
+    "to_approve",
+    "to_receive",
+    "active",
+    "to_verify",
+    "no_closure",
+  ] as const;
+
+  const reqRows = await prisma.permitTypeRequirement.findMany({
+    where: {
+      active: true,
+      kind: "document",
+      scope: "person",
+      documentTypeId: { not: null },
+      documentType: { deletedAt: null, state: true },
+      permitType: {
         businessId,
         deletedAt: null,
-        state: true,
-        accreditationPack: "person",
-      },
-      orderBy: [{ code: "asc" }],
-    }),
-    prisma.permitTypeRequirement.findMany({
-      where: {
         active: true,
-        kind: "document",
-        scope: "person",
-        documentTypeId: { not: null },
-        permitType: { businessId, deletedAt: null, active: true },
-        documentType: { deletedAt: null, state: true },
+        workPermits: {
+          some: {
+            deletedAt: null,
+            organizationId: opts.organizationId,
+            status: { in: [...openStatuses] },
+            people: { some: { personId: opts.personId } },
+          },
+        },
       },
-      select: {
-        documentType: true,
-      },
-    }),
-  ]);
+    },
+    select: { documentType: true },
+  });
 
   const byId = new Map<
     string,
@@ -634,7 +720,10 @@ async function resolvePersonUploadableDocTypes(businessId: string): Promise<
     .sort((a, b) => a.type.code.localeCompare(b.type.code));
 }
 
-/** Checklist pack person (+ exigencias por persona de tipos de permiso). */
+/**
+ * Checklist pack person (+ exigencias de faena solo si la persona está
+ * asignada a un PT abierto que las pide).
+ */
 export async function listAccreditationPersonDocuments(
   actor: Actor,
   accreditationId: string,
@@ -661,6 +750,7 @@ export async function listAccreditationPersonDocuments(
 
   const uploadable = await resolvePersonUploadableDocTypes(
     hab.organization.businessId,
+    { organizationId: hab.organizationId, personId: person.id },
   );
 
   const docs = await prisma.contractorPersonDocument.findMany({
@@ -750,9 +840,10 @@ export async function createAccreditationPersonDocument(
     personId,
   );
 
-  /** Pack person o exigencia document/person de un tipo de permiso activo. */
+  /** Pack person, o exigencia de faena si ya está asignada a un PT que la pide. */
   const uploadable = await resolvePersonUploadableDocTypes(
     hab.organization.businessId,
+    { organizationId: hab.organizationId, personId: person.id },
   );
   const allowed = uploadable.find((row) => row.type.id === body.documentTypeId);
   const docType = allowed?.type ?? null;
@@ -760,7 +851,7 @@ export async function createAccreditationPersonDocument(
     throw new AppError(
       400,
       "document_type_not_found",
-      "Tipo no válido: debe ser pack persona o exigencia por persona de un tipo de permiso",
+      "Tipo no válido: pack persona, o exigencia de faena de un permiso al que esta persona está asignada",
     );
   }
 

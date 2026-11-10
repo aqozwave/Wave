@@ -29,7 +29,9 @@ body:json {
 }
 
 docs {
-  Alta de persona en el personal de la org. RUN único por org (ajustá si 409).
+  Alta de persona en el personal de la org.
+  409 duplicate_person_rut si el RUN ya está en la org;
+  409 rut_is_system_user / rut_is_crew_member si coincide con User o CrewMember del tenant.
 }
 
 script:pre-request {

@@ -5,7 +5,14 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { Building2, ClipboardCheck, Pencil, Plus } from "lucide-react";
+import {
+  Building2,
+  ChevronDown,
+  ClipboardCheck,
+  Pencil,
+  Plus,
+  Users,
+} from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router";
 import { Button } from "../../components/Button/Button";
 import {
@@ -25,6 +32,7 @@ import { Toggle } from "../../components/Toggle/Toggle";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import { useToast } from "../../components/Toast/ToastProvider";
+import { WorkPermitProgressCell } from "../../components/WorkPermitProgressCell/WorkPermitProgressCell";
 import { downloadXls } from "../../lib/exportXls";
 import {
   createAccreditationRequest,
@@ -46,7 +54,14 @@ import {
   type ContractorRole,
   type ContractorUser,
 } from "../../lib/api/contractors";
-import { userHasPermission } from "../../lib/api/auth";
+import { formatApiErrorMessage, userHasPermission } from "../../lib/api/auth";
+import {
+  listWorkPermitsRequest,
+  workPermitStatusLabel,
+  type WorkPermit,
+  type WorkPermitStatus,
+} from "../../lib/api/workPermits";
+import { isRutValid, normalizeRut } from "../../lib/rut";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
 /** Capitaliza nombre en minúsculas. */
@@ -183,13 +198,35 @@ function statusTone(
   }
 }
 
-/** Tabs P9c (+ Personal cableado; Permisos placeholder). */
+/** Tabs P9c (Datos · Usuarios · HAB · Personal · Permisos). */
 type TabId =
   | "datos"
   | "usuarios"
   | "habilitaciones"
   | "personal"
   | "permisos";
+
+/** Tono chip de estado de PT. */
+function permitStatusTone(
+  status: WorkPermitStatus,
+): "success" | "warning" | "danger" | "info" | "neutral" {
+  switch (status) {
+    case "active":
+      return "success";
+    case "to_approve":
+      return "info";
+    case "to_receive":
+    case "to_verify":
+    case "to_complete":
+      return "warning";
+    case "no_closure":
+      return "danger";
+    case "closed":
+      return "neutral";
+    default:
+      return "neutral";
+  }
+}
 
 /** Form alta/edición de persona. */
 type PersonForm = {
@@ -228,13 +265,30 @@ const selectClass =
 const outlineBtnClass =
   "inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60";
 
-/** Formulario de invitación (P9b). */
+/** Formulario de invitación (P9b · Figma Modal · Invitar usuario). */
 type InviteForm = {
+  /** Nombre completo; se parte en first/last al enviar. */
+  fullName: string;
   email: string;
+  /** Requerido por API (Figma no lo muestra; lo pedimos debajo). */
+  run: string;
+  /** Toggle «Enviar invitación por correo». */
+  sendByEmail: boolean;
+};
+
+/** Rol fijo del invitado externo (Figma P9b). */
+const CONTRACTOR_INVITE_ROLE_LABEL = "Contratista · administra su empresa";
+
+/** Parte «Nombre Apellido…» en firstName / lastName para el POST. */
+function splitFullName(fullName: string): {
   firstName: string;
   lastName: string;
-  run: string;
-};
+} {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: "", lastName: "" };
+  if (parts.length === 1) return { firstName: parts[0], lastName: parts[0] };
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+}
 
 /**
  * Ficha de organización contratista (P2 · P9 / P9c / P9b).
@@ -259,13 +313,16 @@ export function ContractorDetailPage() {
     canManage && userHasPermission(user, "contractors", "deactivate");
   const canReadHab = userHasPermission(user, "accreditations", "read");
   const canCreateHab = userHasPermission(user, "accreditations", "create");
+  const canReadPermits = userHasPermission(user, "work_permits", "read");
 
   const [org, setOrg] = useState<ContractorOrganization | null>(null);
   const [habs, setHabs] = useState<ContractorAccreditation[]>([]);
   const [orgUsers, setOrgUsers] = useState<ContractorUser[]>([]);
   const [people, setPeople] = useState<ContractorPerson[]>([]);
+  const [permits, setPermits] = useState<WorkPermit[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TabId>("datos");
+  const [permitSearch, setPermitSearch] = useState("");
 
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState<EditForm | null>(null);
@@ -273,10 +330,10 @@ export function ContractorDetailPage() {
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState<InviteForm>({
+    fullName: "",
     email: "",
-    firstName: "",
-    lastName: "",
     run: "",
+    sendByEmail: true,
   });
   const [inviting, setInviting] = useState(false);
 
@@ -294,6 +351,10 @@ export function ContractorDetailPage() {
     active: true,
   });
   const [personSaving, setPersonSaving] = useState(false);
+  /** Error inline del RUN en el modal persona. */
+  const [personRutError, setPersonRutError] = useState<string | undefined>(
+    undefined,
+  );
   const [pendingDeactivatePerson, setPendingDeactivatePerson] =
     useState<ContractorPerson | null>(null);
 
@@ -354,6 +415,27 @@ export function ContractorDetailPage() {
     pageCount: habPageCount,
     total: habTotal,
   } = useClientTablePagination(filteredHabs);
+
+  /** PT de esta org (filtro local por código / tipo / nave). */
+  const filteredPermits = useMemo(() => {
+    const q = permitSearch.trim().toLowerCase();
+    if (!q) return permits;
+    return permits.filter((p) => {
+      const hay =
+        `${p.code} ${p.permitType.code} ${p.permitType.name} ${p.location.name} ${p.workNotice.code}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [permits, permitSearch]);
+
+  const {
+    pageItems: permitPageItems,
+    page: permitPage,
+    setPage: setPermitPage,
+    pageSize: permitPageSize,
+    setPageSize: setPermitPageSize,
+    pageCount: permitPageCount,
+    total: permitTotal,
+  } = useClientTablePagination(filteredPermits);
 
   /** Exporta XLS del listado filtrado de usuarios. */
   function onExportUsers() {
@@ -472,6 +554,14 @@ export function ContractorDetailPage() {
         100,
       );
       setPeople(peopleList.items);
+      if (canReadPermits) {
+        const permitList = await listWorkPermitsRequest(accessToken, 1, 100, {
+          organizationId: id,
+        });
+        setPermits(permitList.items);
+      } else {
+        setPermits([]);
+      }
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo cargar la organización",
@@ -481,7 +571,7 @@ export function ContractorDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, id, canRead, canReadHab, showToast]);
+  }, [accessToken, id, canRead, canReadHab, canReadPermits, showToast]);
 
   useEffect(() => {
     void load();
@@ -552,9 +642,14 @@ export function ContractorDetailPage() {
     }
   }
 
-  /** Abre modal invitar usuario (P9b). */
+  /** Abre modal invitar usuario (P9b · Figma). */
   function openInvite() {
-    setInviteForm({ email: "", firstName: "", lastName: "", run: "" });
+    setInviteForm({
+      fullName: "",
+      email: "",
+      run: "",
+      sendByEmail: true,
+    });
     setInviteOpen(true);
   }
 
@@ -562,21 +657,26 @@ export function ContractorDetailPage() {
   async function onInvite(e: FormEvent) {
     e.preventDefault();
     if (!accessToken || !org || inviting) return;
+    if (!inviteForm.sendByEmail) {
+      showToast("Activá el envío por correo para invitar.", "danger");
+      return;
+    }
+    const { firstName, lastName } = splitFullName(inviteForm.fullName);
     if (
       !inviteForm.email.trim() ||
-      !inviteForm.firstName.trim() ||
-      !inviteForm.lastName.trim() ||
+      !firstName ||
+      !lastName ||
       !inviteForm.run.trim()
     ) {
-      showToast("Completá email, nombre, apellido y RUN.", "danger");
+      showToast("Completá nombre, correo y RUN.", "danger");
       return;
     }
     setInviting(true);
     try {
       await inviteContractorUserRequest(accessToken, org.id, {
         email: inviteForm.email.trim().toLowerCase(),
-        firstName: inviteForm.firstName.trim(),
-        lastName: inviteForm.lastName.trim(),
+        firstName,
+        lastName,
         run: inviteForm.run.trim(),
       });
       showToast("Invitación enviada.", "success");
@@ -604,6 +704,7 @@ export function ContractorDetailPage() {
       emergencyContact: "",
       active: true,
     });
+    setPersonRutError(undefined);
     setPersonOpen(true);
   }
 
@@ -619,6 +720,7 @@ export function ContractorDetailPage() {
       emergencyContact: row.emergencyContact ?? "",
       active: row.active,
     });
+    setPersonRutError(undefined);
     setPersonOpen(true);
   }
 
@@ -630,11 +732,23 @@ export function ContractorDetailPage() {
       showToast("Nombre y RUN son requeridos.", "danger");
       return;
     }
+    if (!isRutValid(personForm.rut)) {
+      setPersonRutError(
+        "RUN inválido. Usá formato 12.345.678-9 (con dígito verificador).",
+      );
+      showToast(
+        "RUN inválido. Incluí el dígito verificador (ej. 16.831.696-K).",
+        "danger",
+      );
+      return;
+    }
+    setPersonRutError(undefined);
     setPersonSaving(true);
     try {
+      const rut = normalizeRut(personForm.rut);
       if (personEditing) {
         await updateContractorPersonRequest(accessToken, org.id, personEditing.id, {
-          rut: personForm.rut.trim(),
+          rut,
           fullName: personForm.fullName.trim(),
           position: personForm.position.trim() || null,
           email: personForm.email.trim() || null,
@@ -645,7 +759,7 @@ export function ContractorDetailPage() {
         showToast("Persona actualizada.", "success");
       } else {
         await createContractorPersonRequest(accessToken, org.id, {
-          rut: personForm.rut.trim(),
+          rut,
           fullName: personForm.fullName.trim(),
           position: personForm.position.trim() || null,
           email: personForm.email.trim() || null,
@@ -658,10 +772,12 @@ export function ContractorDetailPage() {
       setPersonOpen(false);
       await load();
     } catch (err) {
-      showToast(
-        err instanceof ApiError ? err.message : "No se pudo guardar.",
-        "danger",
-      );
+      const msg =
+        err instanceof ApiError
+          ? formatApiErrorMessage(err)
+          : "No se pudo guardar.";
+      if (/run|rut/i.test(msg)) setPersonRutError(msg);
+      showToast(msg, "danger");
     } finally {
       setPersonSaving(false);
     }
@@ -752,7 +868,7 @@ export function ContractorDetailPage() {
     { id: "usuarios", label: "Usuarios", count: orgUsers.length },
     { id: "habilitaciones", label: "Habilitación", count: habs.length },
     { id: "personal", label: "Personal", count: people.length },
-    { id: "permisos", label: "Permisos de trabajo" },
+    { id: "permisos", label: "Permisos de trabajo", count: permits.length },
   ];
 
   return (
@@ -861,7 +977,7 @@ export function ContractorDetailPage() {
                 className="!w-auto"
                 onClick={openCreatePerson}
               >
-                Agregar persona
+                Agregar personal
               </Button>
             ) : null}
           </div>
@@ -1120,7 +1236,7 @@ export function ContractorDetailPage() {
             {people.length === 0 ? (
               <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
                 Todavía no hay personal.
-                {canCreatePeople ? " Usá «Agregar persona»." : ""}
+                {canCreatePeople ? " Usá «Agregar personal»." : ""}
               </p>
             ) : (
               <div className="overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white">
@@ -1316,9 +1432,124 @@ export function ContractorDetailPage() {
         ) : null}
 
         {tab === "permisos" ? (
-          <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
-            Permisos de trabajo: UI pendiente (sin API en este paso).
-          </p>
+          !canReadPermits ? (
+            <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+              No tenés permiso para ver permisos de trabajo.
+            </p>
+          ) : (
+            <DataTableCard
+              toolbar={
+                <div className="flex w-full flex-wrap items-center gap-2">
+                  <div className="min-w-[160px] flex-1">
+                    <DataTableSearch
+                      value={permitSearch}
+                      onChange={(v) => {
+                        setPermitSearch(v);
+                        setPermitPage(1);
+                      }}
+                      placeholder="Buscar por código, tipo o nave…"
+                    />
+                  </div>
+                  <Link
+                    to="/prevencion/permisos"
+                    className={`${outlineBtnClass} !h-8 !text-[12px]`}
+                  >
+                    Ir a bandeja
+                  </Link>
+                </div>
+              }
+              footer={
+                <TablePagination
+                  totalLabel={`${permitTotal} ${
+                    permitTotal === 1 ? "permiso" : "permisos"
+                  }`}
+                  page={permitPage}
+                  pageCount={permitPageCount}
+                  pageSize={permitPageSize}
+                  onPageChange={setPermitPage}
+                  onPageSizeChange={setPermitPageSize}
+                />
+              }
+            >
+              {permits.length === 0 ? (
+                <p className="m-0 px-1 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
+                  Todavía no hay permisos para esta organización. Creá uno
+                  desde{" "}
+                  <Link
+                    to="/prevencion/avisos"
+                    className="font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                  >
+                    Avisos de trabajo
+                  </Link>
+                  .
+                </p>
+              ) : permitPageItems.length === 0 ? (
+                <p className="m-0 px-1 py-6 text-[13px] text-[var(--color-nachipa-secondary)]">
+                  Ningún permiso coincide con la búsqueda.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] border-collapse text-left text-[13px]">
+                    <thead>
+                      <tr>
+                        <TableHeaderCell rounded="left">Código</TableHeaderCell>
+                        <TableHeaderCell>Tipo</TableHeaderCell>
+                        <TableHeaderCell>Nave</TableHeaderCell>
+                        <TableHeaderCell>Fecha</TableHeaderCell>
+                        <TableHeaderCell>Estado</TableHeaderCell>
+                        <TableHeaderCell>Avance</TableHeaderCell>
+                        <TableHeaderCell rounded="right" align="right">
+                          Acciones
+                        </TableHeaderCell>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {permitPageItems.map((p) => (
+                        <tr
+                          key={p.id}
+                          className="border-t border-[var(--color-tremor-border)]"
+                        >
+                          <td className="px-3 py-2.5 font-semibold tabular-nums text-[var(--color-nachipa-title)]">
+                            <Link
+                              to={`/prevencion/permisos/${p.id}`}
+                              className="text-[var(--color-nachipa-primary)] hover:underline"
+                            >
+                              {p.code}
+                            </Link>
+                          </td>
+                          <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                            {p.permitType.code}
+                          </td>
+                          <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                            {displayName(p.location.name)}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
+                            {formatDate(p.scheduledDate)}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <StatusChip tone={permitStatusTone(p.status)}>
+                              {workPermitStatusLabel(p.status)}
+                            </StatusChip>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <WorkPermitProgressCell status={p.status} />
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <Link
+                              to={`/prevencion/permisos/${p.id}`}
+                              className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                            >
+                              Ver
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </DataTableCard>
+          )
         ) : null}
       </div>
 
@@ -1429,16 +1660,17 @@ export function ContractorDetailPage() {
         ) : null}
       </Modal>
 
+      {/* P9b · Invitar usuario (Figma 455:43996). */}
       <Modal
         open={inviteOpen}
         onClose={() => {
           if (!inviting) setInviteOpen(false);
         }}
-        icon={Building2}
         title="Invitar usuario"
-        subtitle="Recibe un correo para definir su clave (mismo flujo que Acceso de tripulante)."
+        subtitle={org ? displayName(org.name) : undefined}
+        maxWidthClass="w-full max-w-[560px] sm:w-[560px]"
         footer={
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-3">
             <button
               type="button"
               disabled={inviting}
@@ -1452,64 +1684,116 @@ export function ContractorDetailPage() {
               form="contractor-invite-user"
               size="medium"
               className="!w-auto"
-              disabled={inviting}
+              disabled={inviting || !inviteForm.sendByEmail}
             >
-              {inviting ? "Enviando…" : "Invitar"}
+              {inviting ? "Enviando…" : "Enviar invitación"}
             </Button>
           </div>
         }
       >
         <form
           id="contractor-invite-user"
-          className="flex flex-col gap-3"
+          className="flex flex-col gap-4"
           onSubmit={(e) => void onInvite(e)}
         >
-          <TextField
-            label="Email"
-            type="email"
-            value={inviteForm.email}
-            onChange={(e) =>
-              setInviteForm((f) => ({ ...f, email: e.target.value }))
-            }
-            required
-          />
-          <TextField
-            label="Nombre"
-            value={inviteForm.firstName}
-            onChange={(e) =>
-              setInviteForm((f) => ({ ...f, firstName: e.target.value }))
-            }
-            required
-          />
-          <TextField
-            label="Apellido"
-            value={inviteForm.lastName}
-            onChange={(e) =>
-              setInviteForm((f) => ({ ...f, lastName: e.target.value }))
-            }
-            required
-          />
+          {/* Fila Nombre (160) + Correo (flex). */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-3">
+            <div className="w-full shrink-0 sm:w-[160px]">
+              <TextField
+                label="Nombre"
+                value={inviteForm.fullName}
+                onChange={(e) =>
+                  setInviteForm((f) => ({ ...f, fullName: e.target.value }))
+                }
+                placeholder="Camila Rojas"
+                required
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <TextField
+                label="Correo"
+                type="email"
+                value={inviteForm.email}
+                onChange={(e) =>
+                  setInviteForm((f) => ({ ...f, email: e.target.value }))
+                }
+                placeholder="camila.rojas@navalsur.cl"
+                required
+              />
+            </div>
+          </div>
+
+          {/*
+            Fila Rol + Vence. Figma pone Rol en 160px y el texto se solapa;
+            acá Rol toma el ancho flexible y Vence queda fijo a 160px.
+          */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-3">
+            <div className="min-w-0 flex-1">
+              <TextField
+                label="Rol"
+                value={CONTRACTOR_INVITE_ROLE_LABEL}
+                readOnly
+                title={CONTRACTOR_INVITE_ROLE_LABEL}
+                trailing={
+                  <ChevronDown className="size-4" strokeWidth={1.5} aria-hidden />
+                }
+              />
+            </div>
+            <div className="w-full shrink-0 sm:w-[160px]">
+              <TextField label="Vence la invitación" value="72 horas" readOnly />
+            </div>
+          </div>
+
+          {/* RUN: lo exige la API; Figma P9b no lo dibuja. */}
           <TextField
             label="RUN"
             value={inviteForm.run}
             onChange={(e) =>
               setInviteForm((f) => ({ ...f, run: e.target.value }))
             }
+            placeholder="12.345.678-9"
             required
           />
+
+          <div className="flex items-center gap-3 rounded-[14px] border border-[var(--color-tremor-border)] bg-white px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="m-0 text-[13px] font-semibold text-[var(--color-nachipa-title)]">
+                Enviar invitación por correo
+              </p>
+              <p className="m-0 mt-0.5 text-[12px] text-[var(--color-nachipa-secondary)]">
+                Link de un solo uso; si vence, se puede reenviar
+              </p>
+            </div>
+            <Toggle
+              checked={inviteForm.sendByEmail}
+              onChange={(next) =>
+                setInviteForm((f) => ({ ...f, sendByEmail: next }))
+              }
+              aria-label="Enviar invitación por correo"
+            />
+          </div>
+
+          <div className="rounded-lg bg-[var(--color-status-info-bg,#e0f2fe)] px-3 py-2.5">
+            <p className="m-0 text-[12px] leading-normal text-[var(--color-status-info-fg,#0284c7)]">
+              El usuario solo verá los datos de esta organización (dataScope
+              external).
+            </p>
+          </div>
         </form>
       </Modal>
 
+      {/* Agregar / editar persona — layout Figma (icono Users + stack vertical). */}
       <Modal
         open={personOpen}
         onClose={() => {
           if (!personSaving) setPersonOpen(false);
         }}
-        icon={Building2}
-        title={personEditing ? "Editar persona" : "Agregar persona"}
-        subtitle="Personal externo de la organización contratista."
+        icon={Users}
+        title={personEditing ? "Editar personal" : "Agregar personal"}
+        subtitle="Datos del trabajador externo de tu organización."
+        maxWidthClass="w-full max-w-[560px] sm:w-[560px]"
         footer={
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-3">
             <button
               type="button"
               disabled={personSaving}
@@ -1532,23 +1816,27 @@ export function ContractorDetailPage() {
       >
         <form
           id="contractor-person-form"
-          className="flex flex-col gap-3"
+          className="flex flex-col gap-4"
           onSubmit={(e) => void onSavePerson(e)}
         >
-          <TextField
-            label="RUN"
-            value={personForm.rut}
-            onChange={(e) =>
-              setPersonForm((f) => ({ ...f, rut: e.target.value }))
-            }
-            required
-          />
           <TextField
             label="Nombre completo"
             value={personForm.fullName}
             onChange={(e) =>
               setPersonForm((f) => ({ ...f, fullName: e.target.value }))
             }
+            placeholder="Camila Torres Vega"
+            required
+          />
+          <TextField
+            label="RUN"
+            value={personForm.rut}
+            onChange={(e) => {
+              setPersonRutError(undefined);
+              setPersonForm((f) => ({ ...f, rut: e.target.value }));
+            }}
+            placeholder="17.220.841-6"
+            error={personRutError}
             required
           />
           <TextField
@@ -1557,6 +1845,7 @@ export function ContractorDetailPage() {
             onChange={(e) =>
               setPersonForm((f) => ({ ...f, position: e.target.value }))
             }
+            placeholder="Ayudante de soldador"
           />
           <TextField
             label="Email"
@@ -1565,6 +1854,7 @@ export function ContractorDetailPage() {
             onChange={(e) =>
               setPersonForm((f) => ({ ...f, email: e.target.value }))
             }
+            placeholder="camila.torres@navalsur.cl"
           />
           <TextField
             label="Teléfono"
@@ -1572,6 +1862,7 @@ export function ContractorDetailPage() {
             onChange={(e) =>
               setPersonForm((f) => ({ ...f, phone: e.target.value }))
             }
+            placeholder="+56 9 1234 5678"
           />
           <TextField
             label="Contacto de emergencia"
@@ -1582,6 +1873,7 @@ export function ContractorDetailPage() {
                 emergencyContact: e.target.value,
               }))
             }
+            placeholder="Nombre y teléfono"
           />
           {personEditing ? (
             <div className="flex items-center justify-between rounded-[10px] bg-[var(--color-table-head-bg,#f8f9fb)] px-3.5 py-3">

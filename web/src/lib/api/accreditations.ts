@@ -212,9 +212,10 @@ export type ContractorOrgDocument = {
   updatedAt: string;
 };
 
-/** Fila checklist: tipo + doc vigente. */
+/** Fila checklist: tipo + doc vigente (+ origen pack / exigencia PT). */
 export type AccreditationDocumentChecklistItem = {
   documentType: AccreditationPackDocumentType;
+  source: "pack" | "permit_requirement" | "both";
   document: ContractorOrgDocument | null;
 };
 

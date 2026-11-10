@@ -22,6 +22,8 @@ import {
   type ContractorPortalPerson,
   type ContractorPortalPersonDocChecklistItem,
 } from "../../lib/api/contractors";
+import { formatApiErrorMessage } from "../../lib/api/auth";
+import { isRutValid, normalizeRut } from "../../lib/rut";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
 /** Capitaliza nombre. */
@@ -152,6 +154,8 @@ export function ContractorPortalPeoplePage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ContractorPortalPerson | null>(null);
   const [form, setForm] = useState<PersonForm>(emptyForm);
+  /** Error inline del RUN (validación local o API). */
+  const [rutError, setRutError] = useState<string | undefined>(undefined);
   const [pendingUpload, setPendingUpload] = useState<{
     personId: string;
     documentTypeId: string;
@@ -248,6 +252,7 @@ export function ContractorPortalPeoplePage() {
   function openCreate() {
     setEditing(null);
     setForm(emptyForm());
+    setRutError(undefined);
     setModalOpen(true);
   }
 
@@ -262,6 +267,7 @@ export function ContractorPortalPeoplePage() {
       phone: row.phone ?? "",
       emergencyContact: row.emergencyContact ?? "",
     });
+    setRutError(undefined);
     setModalOpen(true);
   }
 
@@ -273,10 +279,19 @@ export function ContractorPortalPeoplePage() {
       showToast("Nombre y RUN son obligatorios.", "warning");
       return;
     }
+    if (!isRutValid(form.rut)) {
+      setRutError("RUN inválido. Usá formato 12.345.678-9 (con dígito verificador).");
+      showToast(
+        "RUN inválido. Incluí el dígito verificador (ej. 16.831.696-K).",
+        "danger",
+      );
+      return;
+    }
+    setRutError(undefined);
     setActing(true);
     try {
       const payload = {
-        rut: form.rut.trim(),
+        rut: normalizeRut(form.rut),
         fullName: form.fullName.trim(),
         position: form.position.trim() || null,
         email: form.email.trim() || null,
@@ -297,10 +312,14 @@ export function ContractorPortalPeoplePage() {
       setModalOpen(false);
       await load();
     } catch (err) {
-      showToast(
-        err instanceof ApiError ? err.message : "No se pudo guardar.",
-        "danger",
-      );
+      const msg =
+        err instanceof ApiError
+          ? formatApiErrorMessage(err)
+          : "No se pudo guardar.";
+      if (/run|rut/i.test(msg)) {
+        setRutError(msg);
+      }
+      showToast(msg, "danger");
     } finally {
       setActing(false);
     }
@@ -415,7 +434,7 @@ export function ContractorPortalPeoplePage() {
               className="!w-auto"
               onClick={openCreate}
             >
-              + Agregar persona
+              + Agregar personal
             </Button>
           }
         />
@@ -467,7 +486,7 @@ export function ContractorPortalPeoplePage() {
               className="!mt-4 !w-auto"
               onClick={openCreate}
             >
-              + Agregar persona
+              + Agregar personal
             </Button>
           </div>
         ) : (
@@ -515,16 +534,18 @@ export function ContractorPortalPeoplePage() {
         )}
       </div>
 
+      {/* E5m · Agregar / editar persona (Figma: stack vertical + Users). */}
       <Modal
         open={modalOpen}
         onClose={() => {
           if (!acting) setModalOpen(false);
         }}
         icon={Users}
-        title={editing ? "Editar persona" : "Agregar persona"}
+        title={editing ? "Editar personal" : "Agregar personal"}
         subtitle="Datos del trabajador externo de tu organización."
+        maxWidthClass="w-full max-w-[560px] sm:w-[560px]"
         footer={
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-3">
             <button
               type="button"
               disabled={acting}
@@ -547,7 +568,7 @@ export function ContractorPortalPeoplePage() {
       >
         <form
           id="portal-person-form"
-          className="flex flex-col gap-3"
+          className="flex flex-col gap-4"
           onSubmit={(e) => void onSavePerson(e)}
         >
           <TextField
@@ -556,12 +577,18 @@ export function ContractorPortalPeoplePage() {
             onChange={(e) =>
               setForm((f) => ({ ...f, fullName: e.target.value }))
             }
+            placeholder="Camila Torres Vega"
             required
           />
           <TextField
             label="RUN"
             value={form.rut}
-            onChange={(e) => setForm((f) => ({ ...f, rut: e.target.value }))}
+            onChange={(e) => {
+              setRutError(undefined);
+              setForm((f) => ({ ...f, rut: e.target.value }));
+            }}
+            placeholder="17.220.841-6"
+            error={rutError}
             required
           />
           <TextField
@@ -570,17 +597,20 @@ export function ContractorPortalPeoplePage() {
             onChange={(e) =>
               setForm((f) => ({ ...f, position: e.target.value }))
             }
+            placeholder="Ayudante de soldador"
           />
           <TextField
             label="Email"
             type="email"
             value={form.email}
             onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            placeholder="camila.torres@navalsur.cl"
           />
           <TextField
             label="Teléfono"
             value={form.phone}
             onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            placeholder="+56 9 1234 5678"
           />
           <TextField
             label="Contacto de emergencia"
@@ -588,6 +618,7 @@ export function ContractorPortalPeoplePage() {
             onChange={(e) =>
               setForm((f) => ({ ...f, emergencyContact: e.target.value }))
             }
+            placeholder="Nombre y teléfono"
           />
         </form>
       </Modal>
@@ -805,8 +836,9 @@ function PersonRows({
               </p>
             ) : personDocs.length === 0 ? (
               <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
-                No hay pack persona ni exigencias por persona, o todavía no hay
-                una HAB abierta.
+                No hay pack persona, o todavía no hay una HAB abierta. Las
+                exigencias de faena aparecen cuando esta persona esté asignada a
+                un permiso.
               </p>
             ) : (
               <ul className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2">

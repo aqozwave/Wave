@@ -14,6 +14,7 @@ import type {
   PutWorkPermitChecklistBody,
   PutWorkPermitPeopleBody,
   WorkPermitChecklistStage,
+  WorkPermitDigitalSignatureBody,
   WorkPermitDocumentResponse,
   WorkPermitRequirementsCheckQuery,
   WorkPermitResponse,
@@ -100,23 +101,104 @@ function assertStaffNotContractor(actor: Actor): void {
   }
 }
 
+/** Opciones de upsert: registro automático o firma digital (pad). */
+type UpsertSignatureOpts = {
+  note?: string | null;
+  /** Si viene, exige pad + aceptación y congela ese nombre. */
+  digital?: WorkPermitDigitalSignatureBody;
+};
+
+/** Exigencia de firma previa antes de avanzar/cerrar. */
+type RequiredSignature = {
+  kind: WorkPermitSignatureKind;
+  label: string;
+  /** true = debe tener trazo PNG + acceptedAt (Prevención/capitán). */
+  digital: boolean;
+};
+
+/**
+ * Bloquea la transición si faltan firmas previas del ciclo.
+ * Sin firmas no se pide cierre ni se cierra el trabajo.
+ */
+async function assertPriorSignatures(
+  workPermitId: string,
+  required: RequiredSignature[],
+): Promise<void> {
+  const rows = await prisma.workPermitSignature.findMany({
+    where: {
+      workPermitId,
+      kind: { in: required.map((r) => r.kind) },
+    },
+  });
+  const byKind = new Map(rows.map((r) => [r.kind, r]));
+  const missing: string[] = [];
+
+  for (const req of required) {
+    const row = byKind.get(req.kind);
+    if (!row) {
+      missing.push(req.label);
+      continue;
+    }
+    if (req.digital && (!row.signatureImage || !row.acceptedAt)) {
+      missing.push(`${req.label} (sin firma manuscrita)`);
+    }
+  }
+
+  if (missing.length > 0) {
+    throw new AppError(
+      409,
+      "work_permit_signatures_required",
+      `Faltan firmas para continuar: ${missing.join(", ")}. No se puede pedir cierre ni cerrar el trabajo sin las firmas previas.`,
+    );
+  }
+}
+
+/** Firmas digitales previas a pedir/cerrar (Prevención + capitán a bordo). */
+const SIGNATURES_BEFORE_CLOSE: RequiredSignature[] = [
+  {
+    kind: "prevention_approve",
+    label: "Aprobación Prevención",
+    digital: true,
+  },
+  {
+    kind: "captain_receive",
+    label: "Autorización a bordo",
+    digital: true,
+  },
+];
+
+/** Además, al cerrar debe existir el pedido de cierre. */
+const SIGNATURES_BEFORE_CAPTAIN_CLOSE: RequiredSignature[] = [
+  ...SIGNATURES_BEFORE_CLOSE,
+  {
+    kind: "contractor_request_close",
+    label: "Solicitud de cierre",
+    digital: false,
+  },
+];
+
 /**
  * Upsert firma de un hito del PT (documento P6).
- * Congela el nombre del firmante al momento del acto.
+ * Con digital: guarda trazo PNG + acceptedAt; sin digital: solo actor/fecha.
  */
 async function upsertWorkPermitSignature(
   workPermitId: string,
   kind: WorkPermitSignatureKind,
   actorId: string,
-  note?: string | null,
+  opts?: UpsertSignatureOpts,
 ): Promise<void> {
   const user = await prisma.user.findFirst({
     where: { id: actorId, deletedAt: null },
     select: { firstName: true, lastName: true, email: true },
   });
-  const signerName = user
+  const fallbackName = user
     ? `${user.firstName} ${user.lastName}`.trim() || user.email
     : "Usuario";
+  const signerName = opts?.digital?.signerName.trim() || fallbackName;
+  const signatureImage = opts?.digital?.signatureImage ?? null;
+  const acceptedAt = opts?.digital ? new Date() : null;
+  const note = opts?.note?.trim() || null;
+  const now = new Date();
 
   await prisma.workPermitSignature.upsert({
     where: {
@@ -127,14 +209,18 @@ async function upsertWorkPermitSignature(
       kind,
       signedById: actorId,
       signerName,
-      note: note?.trim() || null,
-      signedAt: new Date(),
+      signatureImage,
+      acceptedAt,
+      note,
+      signedAt: now,
     },
     update: {
       signedById: actorId,
       signerName,
-      note: note?.trim() || null,
-      signedAt: new Date(),
+      signatureImage,
+      acceptedAt,
+      note,
+      signedAt: now,
     },
   });
 }
@@ -432,52 +518,15 @@ export async function checkWorkPermitRequirements(
     orderBy: [{ moment: "asc" }, { kind: "asc" }, { key: "asc" }],
   });
 
-  /** Docs validados de la HAB más reciente (si existe). */
-  const validatedByType = new Map<
-    string,
-    { status: string; expiresAt: Date | null }
-  >();
   /** Pack empresa completo (aunque la HAB esté approved a mano). */
   let packComplete = false;
   let packOk = 0;
   let packTotal = 0;
   if (hab) {
-    const [docs, pack] = await Promise.all([
-      prisma.contractorOrgDocument.findMany({
-        where: {
-          accreditationId: hab.id,
-          deletedAt: null,
-          status: { not: "replaced" },
-        },
-        orderBy: { createdAt: "desc" },
-        select: {
-          documentTypeId: true,
-          status: true,
-          expiresAt: true,
-        },
-      }),
-      evaluateCompanyPack(org.businessId, hab.id),
-    ]);
+    const pack = await evaluateCompanyPack(org.businessId, hab.id);
     packComplete = pack.complete;
     packOk = pack.ok;
     packTotal = pack.total;
-    for (const doc of docs) {
-      if (!validatedByType.has(doc.documentTypeId)) {
-        validatedByType.set(doc.documentTypeId, {
-          status: doc.status,
-          expiresAt: doc.expiresAt,
-        });
-      }
-    }
-  }
-
-  const now = Date.now();
-  /** Doc empresa vigente = validated y sin vencimiento pasado. */
-  function isCompanyDocOk(documentTypeId: string): boolean {
-    const row = validatedByType.get(documentTypeId);
-    if (!row || row.status !== "validated") return false;
-    if (row.expiresAt && row.expiresAt.getTime() < now) return false;
-    return true;
   }
 
   const items: RequirementCheckItem[] = requirements.map((req) => {
@@ -535,6 +584,7 @@ export async function checkWorkPermitRequirements(
       };
     }
 
+    /** Pack empresa (matriz HAB): sí bloquea crear si incompleto. */
     if (req.accreditationScope === "company") {
       if (packTotal === 0) {
         return {
@@ -557,21 +607,17 @@ export async function checkWorkPermitRequirements(
       };
     }
 
+    /**
+     * Doc empresa puntual (ej. procedimiento) o mal tipado como company:
+     * es exigencia del trabajo, no del pack HAB. No bloquea crear el PT;
+     * el contratista lo completa en el permiso y Prevención valida.
+     */
     if (req.documentTypeId) {
-      if (isCompanyDocOk(req.documentTypeId)) {
-        const code = req.documentType?.code ?? "";
-        return {
-          ...base,
-          status: "ok" as const,
-          detail: code ? `${code} validado` : "Validado",
-        };
-      }
       return {
         ...base,
-        status: "missing" as const,
-        detail: req.documentType
-          ? `${req.documentType.code} pendiente o vencido`
-          : "Documento pendiente",
+        status: "later" as const,
+        detail:
+          "Exigencia del trabajo: lo completa el contratista en el permiso",
       };
     }
 
@@ -634,15 +680,22 @@ export async function checkWorkPermitRequirements(
     notApplicable: items.filter((i) => i.status === "not_applicable").length,
   };
 
+  /**
+   * Solo bloquea create el pack HAB (o ítem sintético), no exigencias
+   * puntuales del tipo de trabajo (esas van «Después» / al completar).
+   */
   const blockingMissing = items.some(
     (i) =>
       i.status === "missing" &&
       i.mandatory &&
       i.scope === "company" &&
-      i.moment === "before",
+      i.moment === "before" &&
+      (i.key === "company_pack_baseline" ||
+        i.key.includes("docs_company") ||
+        i.label.toLowerCase().includes("pack")),
   );
   const habOk = Boolean(hab && hab.status === "approved");
-  /** No operar: HAB approved + pack completo + exigencias company/before. */
+  /** Crear PT: HAB aprobada + pack empresa al día. */
   const canCreate = habOk && packComplete && !blockingMissing;
 
   return {
@@ -1149,11 +1202,12 @@ export async function submitWorkPermit(
 
 /**
  * POST /work-permits/:id/approve — Prevención aprueba.
- * to_approve → to_receive (+ firma prevention_approve).
+ * to_approve → to_receive (+ firma digital prevention_approve).
  */
 export async function approveWorkPermit(
   actor: Actor,
   id: string,
+  body: WorkPermitDigitalSignatureBody,
 ): Promise<WorkPermitResponse> {
   assertStaffNotContractor(actor);
 
@@ -1180,7 +1234,9 @@ export async function approveWorkPermit(
     data: { status: "to_receive", reviewNote: null },
     include: permitInclude,
   });
-  await upsertWorkPermitSignature(id, "prevention_approve", actor.id);
+  await upsertWorkPermitSignature(id, "prevention_approve", actor.id, {
+    digital: body,
+  });
   return toWorkPermitResponse(updated);
 }
 
@@ -1226,11 +1282,12 @@ export async function returnWorkPermit(
 
 /**
  * POST /work-permits/:id/receive — capitán recibe a bordo.
- * to_receive → active (Autorizado a bordo). Sin checklist/firma en este paso.
+ * to_receive → active (+ firma digital captain_receive).
  */
 export async function receiveWorkPermit(
   actor: Actor,
   id: string,
+  body: WorkPermitDigitalSignatureBody,
 ): Promise<WorkPermitResponse> {
   if (actor.organizationId) {
     throw new AppError(
@@ -1258,12 +1315,22 @@ export async function receiveWorkPermit(
     );
   }
 
+  await assertPriorSignatures(id, [
+    {
+      kind: "prevention_approve",
+      label: "Aprobación Prevención",
+      digital: true,
+    },
+  ]);
+
   const updated = await prisma.workPermit.update({
     where: { id },
     data: { status: "active", reviewNote: null },
     include: permitInclude,
   });
-  await upsertWorkPermitSignature(id, "captain_receive", actor.id);
+  await upsertWorkPermitSignature(id, "captain_receive", actor.id, {
+    digital: body,
+  });
   return toWorkPermitResponse(updated);
 }
 
@@ -1339,6 +1406,8 @@ export async function requestCloseWorkPermit(
     );
   }
 
+  await assertPriorSignatures(id, SIGNATURES_BEFORE_CLOSE);
+
   const updated = await prisma.workPermit.update({
     where: { id },
     data: { status: "to_verify", reviewNote: null },
@@ -1350,11 +1419,12 @@ export async function requestCloseWorkPermit(
 
 /**
  * POST /work-permits/:id/close — capitán verifica y cierra.
- * to_verify → closed.
+ * to_verify → closed (+ firma digital).
  */
 export async function closeWorkPermit(
   actor: Actor,
   id: string,
+  body: WorkPermitDigitalSignatureBody,
 ): Promise<WorkPermitResponse> {
   if (actor.organizationId) {
     throw new AppError(
@@ -1382,23 +1452,30 @@ export async function closeWorkPermit(
     );
   }
 
+  await assertPriorSignatures(id, SIGNATURES_BEFORE_CAPTAIN_CLOSE);
+
   const updated = await prisma.workPermit.update({
     where: { id },
     data: { status: "closed", reviewNote: null },
     include: permitInclude,
   });
-  await upsertWorkPermitSignature(id, "captain_close", actor.id);
+  await upsertWorkPermitSignature(id, "captain_close", actor.id, {
+    digital: body,
+  });
   return toWorkPermitResponse(updated);
 }
 
+/** Body sin cierre = nota + firma digital. */
+type RejectCloseBody = WorkPermitReviewNoteBody & WorkPermitDigitalSignatureBody;
+
 /**
  * POST /work-permits/:id/reject-close — capitán deja el PT sin cierre.
- * to_verify → no_closure con motivo.
+ * to_verify → no_closure con motivo + firma digital.
  */
 export async function rejectCloseWorkPermit(
   actor: Actor,
   id: string,
-  body: WorkPermitReviewNoteBody,
+  body: RejectCloseBody,
 ): Promise<WorkPermitResponse> {
   if (actor.organizationId) {
     throw new AppError(
@@ -1426,6 +1503,8 @@ export async function rejectCloseWorkPermit(
     );
   }
 
+  await assertPriorSignatures(id, SIGNATURES_BEFORE_CAPTAIN_CLOSE);
+
   const updated = await prisma.workPermit.update({
     where: { id },
     data: {
@@ -1434,12 +1513,14 @@ export async function rejectCloseWorkPermit(
     },
     include: permitInclude,
   });
-  await upsertWorkPermitSignature(
-    id,
-    "captain_no_closure",
-    actor.id,
-    body.reviewNote,
-  );
+  await upsertWorkPermitSignature(id, "captain_no_closure", actor.id, {
+    note: body.reviewNote,
+    digital: {
+      signerName: body.signerName,
+      accepted: body.accepted,
+      signatureImage: body.signatureImage,
+    },
+  });
   return toWorkPermitResponse(updated);
 }
 
@@ -1461,7 +1542,20 @@ export async function getWorkPermitDocument(
   assertPermitAccess(actor, existing);
   await assertBusinessModuleEnabled(existing.businessId, "work_permits");
 
-  const [people, checklist, signatures] = await Promise.all([
+  const [issuer, people, checklist, signatures] = await Promise.all([
+    prisma.business.findFirst({
+      where: { id: existing.businessId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        rut: true,
+        giro: true,
+        commune: true,
+        city: true,
+        phone: true,
+        email: true,
+      },
+    }),
     prisma.workPermitPerson.findMany({
       where: { workPermitId: id },
       include: {
@@ -1489,6 +1583,14 @@ export async function getWorkPermitDocument(
     }),
   ]);
 
+  if (!issuer) {
+    throw new AppError(
+      404,
+      "business_not_found",
+      "Empresa mandante del permiso no encontrada",
+    );
+  }
+
   const kindLabel: Record<WorkPermitSignatureKind, string> = {
     prevention_approve: "Aprobación Prevención",
     captain_receive: "Autorización a bordo",
@@ -1498,6 +1600,16 @@ export async function getWorkPermitDocument(
   };
 
   return {
+    issuer: {
+      id: issuer.id,
+      name: issuer.name,
+      rut: issuer.rut,
+      giro: issuer.giro,
+      commune: issuer.commune,
+      city: issuer.city,
+      phone: issuer.phone,
+      email: issuer.email,
+    },
     permit: toWorkPermitResponse(existing),
     people: people
       .filter((r) => !r.person.deletedAt)
@@ -1520,6 +1632,8 @@ export async function getWorkPermitDocument(
       signerName: s.signerName,
       signedAt: s.signedAt.toISOString(),
       note: s.note,
+      signatureImage: s.signatureImage,
+      acceptedAt: s.acceptedAt ? s.acceptedAt.toISOString() : null,
     })),
   };
 }
@@ -1773,11 +1887,8 @@ export async function listWorkPermitAssignablePeople(
       missingRequirementCodes: gaps.missingCodes,
       pendingRequirementLabels: gaps.pendingLabels,
       absentRequirementLabels: gaps.absentLabels,
-      canAssign:
-        packComplete &&
-        gaps.missingLabels.length === 0 &&
-        packTypesCount > 0 &&
-        Boolean(hab),
+      // Asignar exige solo pack; las exigencias de faena se piden al enviar a aprobación.
+      canAssign: packComplete && packTypesCount > 0 && Boolean(hab),
     });
   }
 
@@ -1786,7 +1897,7 @@ export async function listWorkPermitAssignablePeople(
 
 /**
  * PUT /work-permits/:id/people — reemplaza el set (contratista o Prevención).
- * Personas activas de la org + pack persona completo (docs validados vigentes).
+ * Exige pack persona completo. Las exigencias de faena del tipo se validan al submit.
  */
 export async function putWorkPermitPeople(
   actor: Actor,
@@ -1816,12 +1927,6 @@ export async function putWorkPermitPeople(
     await assertPeoplePersonPackComplete(
       existing.businessId,
       existing.organizationId,
-      people,
-    );
-    await assertPeoplePermitPersonRequirements(
-      existing.businessId,
-      existing.organizationId,
-      existing.permitTypeId,
       people,
     );
   }

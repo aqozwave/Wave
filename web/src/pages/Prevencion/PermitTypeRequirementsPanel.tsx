@@ -140,6 +140,16 @@ function kindLabel(k: PermitRequirementKind): string {
   return "Checklist";
 }
 
+/**
+ * Etiqueta de scope (a quién aplica la exigencia).
+ * permit = instancia del PT, no el pack HAB de empresa ni el de cada trabajador.
+ */
+function scopeLabel(s: PermitRequirementScope): string {
+  if (s === "company") return "Empresa";
+  if (s === "person") return "Persona";
+  return "Permiso";
+}
+
 const selectClass =
   "h-[42px] w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-brand-sky)_25%,transparent)]";
 
@@ -403,6 +413,9 @@ export function PermitTypeRequirementsPanel({
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <StatusChip tone="info">{kindLabel(req.kind)}</StatusChip>
+                  <StatusChip tone="neutral">
+                    {scopeLabel(req.scope)}
+                  </StatusChip>
                   <StatusChip tone="neutral">
                     {momentLabel(req.moment)}
                   </StatusChip>

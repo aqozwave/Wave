@@ -314,15 +314,23 @@ export async function submitWorkPermitRequest(
   return body as WorkPermit;
 }
 
-/** POST /api/v1/work-permits/:id/approve — Prevención aprueba. */
+/** Payload de firma digital (pad + aceptación). */
+export type WorkPermitDigitalSignaturePayload = {
+  signerName: string;
+  accepted: true;
+  signatureImage: string;
+};
+
+/** POST /api/v1/work-permits/:id/approve — Prevención aprueba (+ firma). */
 export async function approveWorkPermitRequest(
   accessToken: string,
   id: string,
+  signature: WorkPermitDigitalSignaturePayload,
 ): Promise<WorkPermit> {
   const res = await fetch(`/api/v1/work-permits/${id}/approve`, {
     method: "POST",
     headers: authHeaders(accessToken),
-    body: JSON.stringify({}),
+    body: JSON.stringify(signature),
   });
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw toApiError(res, body);
@@ -345,15 +353,16 @@ export async function returnWorkPermitRequest(
   return body as WorkPermit;
 }
 
-/** POST /api/v1/work-permits/:id/receive — capitán recibe a bordo. */
+/** POST /api/v1/work-permits/:id/receive — capitán recibe a bordo (+ firma). */
 export async function receiveWorkPermitRequest(
   accessToken: string,
   id: string,
+  signature: WorkPermitDigitalSignaturePayload,
 ): Promise<WorkPermit> {
   const res = await fetch(`/api/v1/work-permits/${id}/receive`, {
     method: "POST",
     headers: authHeaders(accessToken),
-    body: JSON.stringify({}),
+    body: JSON.stringify(signature),
   });
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw toApiError(res, body);
@@ -391,31 +400,33 @@ export async function requestCloseWorkPermitRequest(
   return body as WorkPermit;
 }
 
-/** POST /api/v1/work-permits/:id/close — capitán cierra (P6b). */
+/** POST /api/v1/work-permits/:id/close — capitán cierra (P6b + firma). */
 export async function closeWorkPermitRequest(
   accessToken: string,
   id: string,
+  signature: WorkPermitDigitalSignaturePayload,
 ): Promise<WorkPermit> {
   const res = await fetch(`/api/v1/work-permits/${id}/close`, {
     method: "POST",
     headers: authHeaders(accessToken),
-    body: JSON.stringify({}),
+    body: JSON.stringify(signature),
   });
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw toApiError(res, body);
   return body as WorkPermit;
 }
 
-/** POST /api/v1/work-permits/:id/reject-close — capitán sin cierre (P6b). */
+/** POST /api/v1/work-permits/:id/reject-close — capitán sin cierre (+ firma). */
 export async function rejectCloseWorkPermitRequest(
   accessToken: string,
   id: string,
   reviewNote: string,
+  signature: WorkPermitDigitalSignaturePayload,
 ): Promise<WorkPermit> {
   const res = await fetch(`/api/v1/work-permits/${id}/reject-close`, {
     method: "POST",
     headers: authHeaders(accessToken),
-    body: JSON.stringify({ reviewNote }),
+    body: JSON.stringify({ reviewNote, ...signature }),
   });
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw toApiError(res, body);
@@ -429,6 +440,10 @@ export type WorkPermitDocumentSignature = {
   signerName: string;
   signedAt: string;
   note: string | null;
+  /** Trazo PNG (data URL) si hubo pad. */
+  signatureImage: string | null;
+  /** ISO de aceptación; null si solo registro automático. */
+  acceptedAt: string | null;
 };
 
 /**
@@ -446,8 +461,21 @@ export const WORK_PERMIT_SIGNATURE_SLOTS: ReadonlyArray<{
   { kind: "captain_no_closure", label: "Sin cierre" },
 ];
 
+/** Empresa mandante (tenant) en la cabecera del documento imprimible. */
+export type WorkPermitDocumentIssuer = {
+  id: string;
+  name: string;
+  rut: string | null;
+  giro: string | null;
+  commune: string | null;
+  city: string | null;
+  phone: string | null;
+  email: string | null;
+};
+
 /** GET /api/v1/work-permits/:id/document — ficha + firmas. */
 export type WorkPermitDocument = {
+  issuer: WorkPermitDocumentIssuer;
   permit: WorkPermit;
   people: Array<{
     fullName: string;

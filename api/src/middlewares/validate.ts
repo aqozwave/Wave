@@ -18,8 +18,21 @@ export function validate(schema: RequestSchema) {
     });
 
     if (!parsed.success) {
+      // Mensaje legible: «RUN inválido» en vez del genérico «Datos inválidos».
+      const issues = parsed.error.issues.map((issue) => ({
+        path: issue.path
+          .filter((p) => p !== "body" && p !== "query" && p !== "params")
+          .join("."),
+        message: issue.message,
+      }));
+      const summary =
+        [...new Set(issues.map((i) => i.message))].join(" · ") ||
+        "Datos inválidos";
       next(
-        new AppError(400, "validation_error", "Datos inválidos", parsed.error.flatten()),
+        new AppError(400, "validation_error", summary, {
+          issues,
+          ...parsed.error.flatten(),
+        }),
       );
       return;
     }

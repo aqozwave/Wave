@@ -38,13 +38,21 @@ export const contractorOrgDocumentResponseSchema = z
   })
   .openapi("ContractorOrgDocument");
 
+/** Origen del slot empresa: pack HAB, exigencia de tipo de permiso, o ambos. */
+export const companyDocumentSlotSourceSchema = z.enum([
+  "pack",
+  "permit_requirement",
+  "both",
+]);
+
 /**
- * Fila del checklist P5: tipo del pack company + documento vigente (si hay).
+ * Fila del checklist P5: pack company + exigencias document/company de tipos.
  * document=null → aún no cargado.
  */
 export const accreditationDocumentChecklistItemSchema = z
   .object({
     documentType: documentTypeSummarySchema,
+    source: companyDocumentSlotSourceSchema,
     document: contractorOrgDocumentResponseSchema.nullable(),
   })
   .openapi("AccreditationDocumentChecklistItem");

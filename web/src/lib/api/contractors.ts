@@ -80,13 +80,14 @@ export type ContractorWriteBody = {
   active?: boolean;
 };
 
-/** Parsea error estándar Wave. */
+/** Parsea error estándar Wave (incluye details de validación). */
 function toApiError(res: Response, body: unknown): ApiError {
   const err = body as ApiErrorBody | null;
   return new ApiError(
     res.status,
     err?.code ?? "request_failed",
     err?.message ?? `HTTP ${res.status}`,
+    err?.details,
   );
 }
 
@@ -486,7 +487,7 @@ export type ContractorPortalAccreditation = {
   updatedAt: string;
 };
 
-/** Ítem checklist pack company en portal. */
+/** Ítem checklist pack company (+ exigencias de tipos) en portal. */
 export type ContractorPortalDocChecklistItem = {
   documentType: {
     id: string;
@@ -494,6 +495,7 @@ export type ContractorPortalDocChecklistItem = {
     name: string;
     requiresExpiry: boolean;
   };
+  source: "pack" | "permit_requirement" | "both";
   document: {
     id: string;
     originalName: string;

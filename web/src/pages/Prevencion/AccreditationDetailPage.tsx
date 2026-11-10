@@ -824,18 +824,25 @@ export function AccreditationDetailPage() {
         {tab === "documentos" ? (
           <div className="flex flex-col gap-3">
             <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
-              Pack de empresa ({docItems.length} tipos). Disco local, mismo
-              patrón que docs de tripulante.
+              Pack de empresa + exigencias de tipos de permiso (
+              {docItems.length} tipos). Disco local, mismo patrón que docs de
+              tripulante.
             </p>
             {docItems.length === 0 ? (
               <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
-                No hay tipos con pack «company» en esta empresa. Configuralos
-                en Packs de habilitación.
+                No hay tipos de pack «company» ni exigencias document/company
+                en tipos de permiso. Configuralos en Packs o en el tipo.
               </p>
             ) : (
               <ul className="m-0 list-none divide-y divide-[var(--color-tremor-border)] rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white p-0">
                 {docItems.map((item) => {
                   const doc = item.document;
+                  const sourceHint =
+                    item.source === "permit_requirement"
+                      ? "Exigencia de tipo de permiso"
+                      : item.source === "both"
+                        ? "Pack + exigencia"
+                        : null;
                   return (
                     <li
                       key={item.documentType.id}
@@ -846,6 +853,7 @@ export function AccreditationDetailPage() {
                           {item.documentType.name}
                           <span className="ml-2 text-[12px] font-normal text-[var(--color-nachipa-secondary)]">
                             {item.documentType.code}
+                            {sourceHint ? ` · ${sourceHint}` : null}
                           </span>
                         </span>
                         {doc ? (
