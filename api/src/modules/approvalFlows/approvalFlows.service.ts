@@ -6,6 +6,7 @@ import {
   flowHasFinalCloseStage,
   isFinalCloseStage,
   isPreventionApprovalStage,
+  isPreventionDocumentValidationStage,
   isStartOrRequestStage,
   MIN_APPROVAL_FLOW_STAGES,
   resolveFlowStageCoverage,
@@ -31,10 +32,10 @@ const DEFAULT_START_STAGE = {
   mandatory: true,
 };
 
-/** Etapa mínima de Prevención (aprobación) si falta al copiar. */
+/** Etapa mínima de validación de documentos (Prevencionista). */
 const DEFAULT_PREVENTION_STAGE = {
   key: "approve",
-  label: "Valida los datos y aprueba el permiso",
+  label: "Valida los documentos y aprueba el permiso",
   actor: "prevention" as const,
   moment: "before" as const,
   requiresSignature: true,
@@ -90,7 +91,7 @@ function assertMinimumFlowStages(
   const missing: string[] = [];
   if (!coverage.hasStart) missing.push("inicio/solicitud");
   if (!coverage.hasPreventionApproval) {
-    missing.push("aprobación de Prevención");
+    missing.push("validación de documentos (Prevencionista)");
   }
   if (!coverage.hasClose) missing.push("cierre del trabajo");
   if (stages.length < MIN_APPROVAL_FLOW_STAGES) {
@@ -580,15 +581,19 @@ async function sortAndRenumberStagesByKind(flowId: string): Promise<void> {
     );
   }
 
-  /** 0 = inicio · 1 = intermedio · 2 = cierre. */
+  /**
+   * 0 = inicio · 1 = Prevención (docs) · 2 = otro intermedio · 3 = cierre.
+   * El Prevencionista queda siempre en la franja de validación.
+   */
   function rank(s: {
     key: string;
     actor: string;
     moment: string;
   }): number {
     if (isStartOrRequestStage(s)) return 0;
-    if (isFinalCloseStage(s)) return 2;
-    return 1;
+    if (isFinalCloseStage(s)) return 3;
+    if (isPreventionApprovalStage(s)) return 1;
+    return 2;
   }
 
   const sorted = [...stages].sort((a, b) => {
@@ -676,9 +681,15 @@ export async function addApprovalFlowStage(
     );
   }
 
+  /**
+   * Validación de documentos: el actor de etapa es siempre Prevencionista
+   * (aunque el cliente mande otro).
+   */
+  const stageActor =
+    body.placement === "validation" ? "prevention" : body.actor;
   const draftNew = {
     key: body.key,
-    actor: body.actor,
+    actor: stageActor,
     moment: body.moment,
   };
   /** Simula el set completo para rechazar 2º cierre / 2º inicio antes de escribir. */
@@ -691,7 +702,7 @@ export async function addApprovalFlowStage(
         position: flow.stages.length + 1,
         key: body.key,
         label: body.label,
-        actor: body.actor,
+        actor: stageActor,
         moment: body.moment,
         requiresSignature: body.requiresSignature,
         mandatory: body.mandatory,
@@ -729,12 +740,30 @@ export async function updateApprovalFlowStage(
     throw new AppError(404, "stage_not_found", "Etapa no encontrada");
   }
 
+  /**
+   * No se puede sacar al Prevencionista de la validación de documentos
+   * si es la única etapa de ese tipo.
+   */
+  const nextActor = body.actor ?? stage.actor;
+  if (
+    isPreventionDocumentValidationStage(stage) &&
+    nextActor !== "prevention" &&
+    flow.stages.filter((s) => isPreventionDocumentValidationStage(s))
+      .length <= 1
+  ) {
+    throw new AppError(
+      400,
+      "approval_flow_incomplete",
+      "La validación de documentos debe quedar a cargo del Prevencionista",
+    );
+  }
+
   /** Simula el resultado para no romper inicio / Prevención / cierre. */
   const nextStages = flow.stages.map((s) =>
     s.id === stageId
       ? {
           key: s.key,
-          actor: body.actor ?? s.actor,
+          actor: nextActor,
           moment: body.moment ?? s.moment,
         }
       : { key: s.key, actor: s.actor, moment: s.moment },

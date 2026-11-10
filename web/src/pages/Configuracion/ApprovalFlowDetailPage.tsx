@@ -167,11 +167,29 @@ function isPreventionApprovalStage(stage: {
   return true;
 }
 
+/** Validación de documentos / aprobación por Prevencionista. */
+function isPreventionDocumentValidationStage(stage: {
+  key: string;
+  actor: ApprovalFlowStageActor;
+  moment: ApprovalFlowStageMoment;
+}): boolean {
+  if (!isPreventionApprovalStage(stage)) return false;
+  const k = stage.key.toLowerCase();
+  return (
+    k === "approve" ||
+    k.includes("approve") ||
+    k.includes("aprob") ||
+    k.includes("valid") ||
+    k === "create_permit" ||
+    k.includes("create_permit")
+  );
+}
+
 /** Rol de orden en el flujo (select al agregar). */
-type StagePlacement = "start" | "middle" | "end";
+type StagePlacement = "start" | "validation" | "middle" | "end";
 
 /**
- * Tipo de etapa para tabla / form (misma lógica que Inicio · Intermedio · Cierre).
+ * Tipo de etapa para tabla / form.
  */
 function stagePlacementOf(stage: {
   key: string;
@@ -180,6 +198,8 @@ function stagePlacementOf(stage: {
 }): StagePlacement {
   if (isFinalCloseStage(stage)) return "end";
   if (isStartOrRequestStage(stage)) return "start";
+  if (isPreventionDocumentValidationStage(stage)) return "validation";
+  if (isPreventionApprovalStage(stage)) return "validation";
   return "middle";
 }
 
@@ -192,6 +212,8 @@ function stageTypeLabel(stage: {
   switch (stagePlacementOf(stage)) {
     case "start":
       return "Inicio / solicitud";
+    case "validation":
+      return "Validación docs (Prevención)";
     case "end":
       return "Cierre / fin";
     default:
@@ -211,8 +233,8 @@ type StageForm = {
 };
 
 /**
- * Plantilla según Inicio / Intermedio / Cierre.
- * Clave libre si ya está usada.
+ * Plantilla según tipo de etapa.
+ * Validación docs siempre con actor Prevencionista.
  */
 function stageFormForPlacement(
   placement: StagePlacement,
@@ -233,6 +255,17 @@ function stageFormForPlacement(
       mandatory: true,
     };
   }
+  if (placement === "validation") {
+    return {
+      placement,
+      key: uniqueKey("approve", "validacion_documentos"),
+      label: "Valida los documentos y aprueba el permiso",
+      actor: "prevention",
+      moment: "before",
+      requiresSignature: true,
+      mandatory: true,
+    };
+  }
   if (placement === "end") {
     return {
       placement,
@@ -246,11 +279,11 @@ function stageFormForPlacement(
   }
   return {
     placement,
-    key: uniqueKey("approve", `etapa_${stages.length + 1}`),
-    label: "Valida los datos y aprueba el permiso",
-    actor: "prevention",
+    key: uniqueKey(`etapa_${stages.length + 1}`, `intermedio_${stages.length + 1}`),
+    label: `Etapa ${stages.length + 1} (completar)`,
+    actor: "contractor",
     moment: "before",
-    requiresSignature: true,
+    requiresSignature: false,
     mandatory: true,
   };
 }
@@ -260,10 +293,12 @@ function suggestNewStageForm(
   stages: ReadonlyArray<ApprovalFlowStage>,
 ): StageForm {
   const hasStart = stages.some((s) => isStartOrRequestStage(s));
-  const hasPrevention = stages.some((s) => isPreventionApprovalStage(s));
+  const hasPreventionDocs = stages.some((s) =>
+    isPreventionDocumentValidationStage(s),
+  );
   const hasClose = stages.some((s) => isFinalCloseStage(s));
   if (!hasStart) return stageFormForPlacement("start", stages);
-  if (!hasPrevention) return stageFormForPlacement("middle", stages);
+  if (!hasPreventionDocs) return stageFormForPlacement("validation", stages);
   if (!hasClose) return stageFormForPlacement("end", stages);
   return stageFormForPlacement("middle", stages);
 }
@@ -482,7 +517,9 @@ export function ApprovalFlowDetailPage() {
     ? flow.stages.filter((s) => isStartOrRequestStage(s)).length
     : 0;
   const preventionCount = flow
-    ? flow.stages.filter((s) => isPreventionApprovalStage(s)).length
+    ? flow.stages.filter((s) =>
+        isPreventionDocumentValidationStage(s),
+      ).length
     : 0;
   const finalCloseCount = flow
     ? flow.stages.filter((s) => isFinalCloseStage(s)).length
@@ -510,7 +547,7 @@ export function ApprovalFlowDetailPage() {
     let nextPrev = preventionCount;
     let nextClose = finalCloseCount;
     if (isStartOrRequestStage(stage)) nextStart -= 1;
-    if (isPreventionApprovalStage(stage)) nextPrev -= 1;
+    if (isPreventionDocumentValidationStage(stage)) nextPrev -= 1;
     if (isFinalCloseStage(stage)) nextClose -= 1;
     return nextStart >= 1 && nextPrev >= 1 && nextClose >= 1;
   }
@@ -523,8 +560,11 @@ export function ApprovalFlowDetailPage() {
     if (isStartOrRequestStage(stage) && startCount <= 1) {
       return "Inicio requerido";
     }
-    if (isPreventionApprovalStage(stage) && preventionCount <= 1) {
-      return "Prevención requerida";
+    if (
+      isPreventionDocumentValidationStage(stage) &&
+      preventionCount <= 1
+    ) {
+      return "Validación Prevención";
     }
     if (flow && flow.stages.length <= MIN_FLOW_STAGES) {
       return "Mín. 3 etapas";
@@ -648,10 +688,10 @@ export function ApprovalFlowDetailPage() {
             className="m-0 rounded-[var(--radius-md)] border border-[var(--color-status-danger,#b42318)]/30 bg-[var(--color-status-danger-bg,#fef2f2)] px-3 py-2 text-[13px] text-[var(--color-status-danger-fg,#b42318)]"
             role="alert"
           >
-            Todo flujo necesita al menos 3 etapas: inicio/solicitud, aprobación
-            de Prevención y cierre
+            Todo flujo necesita inicio, validación de documentos (Prevencionista)
+            y cierre
             {startCount < 1 ? " · falta inicio" : ""}
-            {preventionCount < 1 ? " · falta Prevención" : ""}
+            {preventionCount < 1 ? " · falta validación Prevención" : ""}
             {finalCloseCount < 1 ? " · falta cierre" : ""}
             {flow.stages.length < MIN_FLOW_STAGES
               ? ` · hoy ${flow.stages.length}`
@@ -799,6 +839,9 @@ export function ApprovalFlowDetailPage() {
                     Inicio / solicitud
                     {startCount >= 1 ? " (ya existe)" : ""}
                   </option>
+                  <option value="validation">
+                    Validación documentos (Prevención)
+                  </option>
                   <option value="middle">Intermedio</option>
                   <option value="end" disabled={finalCloseCount >= 1}>
                     Cierre / fin
@@ -806,7 +849,8 @@ export function ApprovalFlowDetailPage() {
                   </option>
                 </FieldSelect>
                 <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
-                  Solo un inicio y un cierre. Intermedio va antes del cierre.
+                  La validación de documentos es siempre del Prevencionista.
+                  Orden: inicio → Prevención → intermedios → cierre.
                 </span>
               </label>
               <TextField
@@ -839,7 +883,12 @@ export function ApprovalFlowDetailPage() {
               Quién *
             </span>
             <FieldSelect
-              value={stageForm.actor}
+              value={
+                stageForm.placement === "validation"
+                  ? "prevention"
+                  : stageForm.actor
+              }
+              disabled={stageForm.placement === "validation"}
               onChange={(e) =>
                 setStageForm((f) => ({
                   ...f,

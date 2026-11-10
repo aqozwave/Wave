@@ -119,8 +119,8 @@ export function isStartOrRequestStage(stage: {
 }
 
 /**
- * Trabajo de Prevención que no es el cierre
- * (generar permiso, aprobar, etc.).
+ * Prevencionista en el flujo (no cierre): genera permiso, valida docs, etc.
+ * Regla producto: al menos una etapa así en todo flujo.
  */
 export function isPreventionApprovalStage(stage: {
   key: string;
@@ -130,6 +130,27 @@ export function isPreventionApprovalStage(stage: {
   if (stage.actor !== "prevention") return false;
   if (isFinalCloseStage(stage)) return false;
   return true;
+}
+
+/**
+ * Validación de documentos / aprobación por Prevención
+ * (approve, validar…; no basta un intermedio de otra área).
+ */
+export function isPreventionDocumentValidationStage(stage: {
+  key: string;
+  actor: string;
+  moment?: string | null;
+}): boolean {
+  if (!isPreventionApprovalStage(stage)) return false;
+  const k = stage.key.toLowerCase();
+  return (
+    k === "approve" ||
+    k.includes("approve") ||
+    k.includes("aprob") ||
+    k.includes("valid") ||
+    k === "create_permit" ||
+    k.includes("create_permit")
+  );
 }
 
 /** Mínimo de etapas por flujo (inicio + Prevención + cierre). */
@@ -157,19 +178,23 @@ export function resolveFlowStageCoverage(
   const hasPreventionApproval = stages.some((s) =>
     isPreventionApprovalStage(s),
   );
+  /** Debe haber validación/aprobación de docs por Prevencionista. */
+  const hasPreventionDocumentValidation = stages.some((s) =>
+    isPreventionDocumentValidationStage(s),
+  );
   const closeCount = stages.filter((s) => isFinalCloseStage(s)).length;
   const hasStart = startCount >= 1;
   const hasClose = closeCount >= 1;
   return {
     hasStart,
-    hasPreventionApproval,
+    hasPreventionApproval: hasPreventionDocumentValidation,
     hasClose,
     startCount,
     closeCount,
     ok:
       stages.length >= MIN_APPROVAL_FLOW_STAGES &&
       hasStart &&
-      hasPreventionApproval &&
+      hasPreventionDocumentValidation &&
       hasClose &&
       startCount === 1 &&
       closeCount === 1,

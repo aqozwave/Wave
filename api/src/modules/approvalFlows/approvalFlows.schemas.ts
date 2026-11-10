@@ -191,11 +191,12 @@ const stageKeySchema = z
   });
 
 /**
- * Dónde insertar la etapa nueva en el orden del flujo.
- * start = al inicio · middle = antes del cierre · end = al final.
+ * Tipo / orden de la etapa en el flujo.
+ * start · validation (Prevención docs) · middle · end (cierre).
  */
 export const approvalFlowStagePlacementSchema = z.enum([
   "start",
+  "validation",
   "middle",
   "end",
 ]);

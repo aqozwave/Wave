@@ -75,8 +75,12 @@ export type UpdateApprovalFlowBody = {
 };
 
 /** Body alta etapa. */
-/** Dónde insertar la etapa en el orden del flujo. */
-export type ApprovalFlowStagePlacement = "start" | "middle" | "end";
+/** Tipo de etapa en el orden del flujo. */
+export type ApprovalFlowStagePlacement =
+  | "start"
+  | "validation"
+  | "middle"
+  | "end";
 
 export type CreateApprovalFlowStageBody = {
   key: string;

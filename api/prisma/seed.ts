@@ -56,7 +56,7 @@ const EST_STAGES: ReadonlyArray<{
   {
     position: 4,
     key: "approve",
-    label: "Valida los datos y aprueba el permiso",
+    label: "Valida los documentos y aprueba el permiso",
     actor: ApprovalFlowStageActor.prevention,
     moment: ApprovalFlowStageMoment.before,
     requiresSignature: true,
