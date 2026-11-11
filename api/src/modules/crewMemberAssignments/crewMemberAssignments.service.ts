@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { assertDataScopeAccess } from "../../lib/dataScope.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
@@ -9,22 +10,29 @@ import type {
   CrewMemberTravesiaResponse,
 } from "./crewMemberAssignments.schemas.js";
 
-/** Actor mínimo tenant. */
-type Actor = Pick<AuthUser, "internalRol" | "businessId">;
+/** Actor con tenant + dataScope. */
+type Actor = Pick<
+  AuthUser,
+  | "internalRol"
+  | "businessId"
+  | "locationId"
+  | "areaId"
+  | "organizationId"
+  | "dataScope"
+>;
 
-/** 404 genérico si no ve la empresa. */
-function assertCrewTenantAccess(actor: Actor, businessId: string): void {
-  if (actor.internalRol === "superadmin") return;
-  if (!actor.businessId || actor.businessId !== businessId) {
-    throw new AppError(
-      404,
-      "crew_member_not_found",
-      "Tripulante no encontrado",
-    );
-  }
+/** 404/403 si no ve al tripulante. */
+function assertCrewTenantAccess(
+  actor: Actor,
+  row: { businessId: string; locationId: string; areaId: string | null },
+): void {
+  assertDataScopeAccess(actor, row, {
+    code: "crew_member_not_found",
+    message: "Tripulante no encontrado",
+  });
 }
 
-/** Tripulante activo + tenant. */
+/** Tripulante activo + tenant + dataScope. */
 async function loadCrewForActor(actor: Actor, crewMemberId: string) {
   const crew = await prisma.crewMember.findFirst({
     where: { id: crewMemberId, deletedAt: null },
@@ -36,7 +44,7 @@ async function loadCrewForActor(actor: Actor, crewMemberId: string) {
       "Tripulante no encontrado",
     );
   }
-  assertCrewTenantAccess(actor, crew.businessId);
+  assertCrewTenantAccess(actor, crew);
   return crew;
 }
 

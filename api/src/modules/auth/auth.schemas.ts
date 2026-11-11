@@ -39,6 +39,8 @@ export const authUserSchema = z
     locationId: z.uuid().nullable(),
     /** Nombre de la nave/lugar para el Panel C1. */
     locationName: z.string().nullable(),
+    /** Área del usuario (solicitante / dataScope area). */
+    areaId: z.uuid().nullable(),
     /**
      * Org contratista si es usuario externo (P2 · P9b / portal E*).
      * Null = usuario del tenant (interno).

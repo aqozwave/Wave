@@ -1,5 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { Prisma, type CrewMember, type RoleDataScope } from "@prisma/client";
+import {
+  applyDataScopeToWhere,
+  assertDataScopeAccess,
+} from "../../lib/dataScope.js";
 import { AppError } from "../../lib/errors.js";
 import { hashPassword } from "../../lib/password.js";
 import { prisma } from "../../lib/prisma.js";
@@ -25,8 +29,20 @@ import type {
   UpdateCrewMemberBody,
 } from "./crewMembers.schemas.js";
 
-/** Actor mínimo para reglas de tenant (+ id/roleId para docs y createdBy). */
-type Actor = Pick<AuthUser, "id" | "internalRol" | "businessId" | "roleId">;
+/**
+ * Actor para tenant + dataScope (nave/área) e id/roleId para docs.
+ */
+type Actor = Pick<
+  AuthUser,
+  | "id"
+  | "internalRol"
+  | "businessId"
+  | "locationId"
+  | "areaId"
+  | "organizationId"
+  | "dataScope"
+  | "roleId"
+>;
 
 /** Claves de rol permitidas en Acceso (capitán / tripulante de nave). */
 const ACCESS_ROLE_KEYS = ["user", "colaborador"] as const;
@@ -81,7 +97,11 @@ async function toCrewMemberResponseWithCompliance(
   return toCrewMemberResponse(row, compliance.get(row.id) ?? null);
 }
 
-/** Filtro de listado: superadmin ve todas; admin/user solo su empresa. */
+/**
+ * Filtro de listado según dataScope.
+ * location → solo su nave (ignora query.locationId de otra nave).
+ * Superadmin: opcional businessId / locationId de query.
+ */
 function listWhere(
   actor: Actor,
   query: ListCrewMembersQuery,
@@ -101,40 +121,37 @@ function listWhere(
     ];
   }
 
-  if (query.locationId) {
-    base.locationId = query.locationId;
-  }
-
-  if (actor.internalRol === "superadmin") {
-    if (query.businessId) {
-      return { ...base, businessId: query.businessId };
-    }
+  if (actor.internalRol === "superadmin" || actor.dataScope === "all") {
+    if (query.businessId) base.businessId = query.businessId;
+    if (query.locationId) base.locationId = query.locationId;
     return base;
   }
 
-  if (!actor.businessId) {
-    throw new AppError(
-      403,
-      "forbidden",
-      "Tu usuario no tiene una empresa asignada",
-    );
+  /** Alcance location/area: no dejar filtrar otra nave por query. */
+  const scoped = applyDataScopeToWhere(actor, base, {
+    locationField: "locationId",
+    areaField: "areaId",
+  });
+
+  if (
+    (actor.dataScope === "business" || actor.dataScope == null) &&
+    query.locationId
+  ) {
+    scoped.locationId = query.locationId;
   }
 
-  return { ...base, businessId: actor.businessId };
+  return scoped;
 }
 
-/** 404 genérico si el actor no puede ver esa empresa. */
-function assertCrewTenantAccess(actor: Actor, businessId: string): void {
-  if (actor.internalRol === "superadmin") {
-    return;
-  }
-  if (!actor.businessId || actor.businessId !== businessId) {
-    throw new AppError(
-      404,
-      "crew_member_not_found",
-      "Tripulante no encontrado",
-    );
-  }
+/** 404/403 si el actor no puede ver ese tripulante (empresa + nave/área). */
+function assertCrewTenantAccess(
+  actor: Actor,
+  row: { businessId: string; locationId: string; areaId: string | null },
+): void {
+  assertDataScopeAccess(actor, row, {
+    code: "crew_member_not_found",
+    message: "Tripulante no encontrado",
+  });
 }
 
 /**
@@ -394,8 +411,35 @@ export async function getCrewMemberById(
       "Tripulante no encontrado",
     );
   }
-  assertCrewTenantAccess(actor, row.businessId);
+  assertCrewTenantAccess(actor, row);
   return toCrewMemberResponseWithCompliance(row);
+}
+
+/**
+ * dataScope location: fuerza la nave del actor (no crear/mover a otra).
+ */
+function resolveScopedLocationId(
+  actor: Actor,
+  requestedLocationId: string,
+): string {
+  if (actor.dataScope === "location") {
+    if (!actor.locationId) {
+      throw new AppError(
+        403,
+        "forbidden",
+        "Tu usuario no tiene una nave asignada",
+      );
+    }
+    if (requestedLocationId !== actor.locationId) {
+      throw new AppError(
+        403,
+        "forbidden",
+        "No puedes asignar tripulantes a otra nave",
+      );
+    }
+    return actor.locationId;
+  }
+  return requestedLocationId;
 }
 
 /** Alta de tripulante con validación de FKs. */
@@ -404,6 +448,7 @@ export async function createCrewMember(
   body: CreateCrewMemberBody,
 ): Promise<CrewMemberResponse> {
   const businessId = resolveCreateBusinessId(actor, body);
+  const locationId = resolveScopedLocationId(actor, body.locationId);
   const areaId = body.areaId ?? null;
   const rankId = body.rankId ?? null;
   const academicDegreeId = body.academicDegreeId ?? null;
@@ -412,7 +457,7 @@ export async function createCrewMember(
 
   await assertCrewFks({
     businessId,
-    locationId: body.locationId,
+    locationId,
     areaId,
     rankId,
     academicDegreeId,
@@ -434,7 +479,7 @@ export async function createCrewMember(
         observation: body.observation ?? null,
         boardingBookValidUntil: new Date(body.boardingBookValidUntil),
         businessId,
-        locationId: body.locationId,
+        locationId,
         areaId,
         rankId,
         academicDegreeId,
@@ -492,7 +537,7 @@ export async function updateCrewMember(
       "Tripulante no encontrado",
     );
   }
-  assertCrewTenantAccess(actor, existing.businessId);
+  assertCrewTenantAccess(actor, existing);
 
   if (body.businessId !== undefined && actor.internalRol !== "superadmin") {
     if (body.businessId !== actor.businessId) {
@@ -505,7 +550,10 @@ export async function updateCrewMember(
   }
 
   const nextBusinessId = body.businessId ?? existing.businessId;
-  const nextLocationId = body.locationId ?? existing.locationId;
+  const nextLocationId = resolveScopedLocationId(
+    actor,
+    body.locationId ?? existing.locationId,
+  );
   const nextAreaId =
     body.areaId !== undefined ? body.areaId : existing.areaId;
   const nextRankId =
@@ -704,7 +752,7 @@ export async function deleteCrewMemberById(
       "Tripulante no encontrado",
     );
   }
-  assertCrewTenantAccess(actor, existing.businessId);
+  assertCrewTenantAccess(actor, existing);
 
   const linkedUserId = existing.userId;
 
@@ -845,7 +893,7 @@ async function loadCrewForAccess(
       "Tripulante no encontrado",
     );
   }
-  assertCrewTenantAccess(actor, crew.businessId);
+  assertCrewTenantAccess(actor, crew);
   return crew;
 }
 

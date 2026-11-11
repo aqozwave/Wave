@@ -67,6 +67,7 @@ export async function authenticate(
       businessId: user.businessId,
       locationId: user.locationId,
       locationName: null,
+      areaId: user.areaId,
       organizationId: user.organizationId,
       organization: null,
       dataScope,

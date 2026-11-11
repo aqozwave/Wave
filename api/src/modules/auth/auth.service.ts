@@ -185,6 +185,7 @@ async function toAuthUser(user: User): Promise<AuthUser> {
     businessId: user.businessId,
     locationId: user.locationId,
     locationName,
+    areaId: user.areaId,
     organizationId: user.organizationId,
     organization,
     dataScope,

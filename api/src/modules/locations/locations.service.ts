@@ -1,4 +1,8 @@
 import { Prisma } from "@prisma/client";
+import {
+  applyDataScopeToWhere,
+  assertDataScopeAccess,
+} from "../../lib/dataScope.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
@@ -13,13 +17,27 @@ import type {
   VesselPositionResponse,
 } from "./locations.schemas.js";
 
-/** Actor mínimo para reglas de tenant. */
-type Actor = Pick<AuthUser, "internalRol" | "businessId">;
+/** Actor con tenant + dataScope (nave). */
+type Actor = Pick<
+  AuthUser,
+  | "internalRol"
+  | "businessId"
+  | "locationId"
+  | "areaId"
+  | "organizationId"
+  | "dataScope"
+>;
 
 /** Actor con nave asignada (reporte desde el PC a bordo). */
 type PositionActor = Pick<
   AuthUser,
-  "id" | "internalRol" | "businessId" | "locationId"
+  | "id"
+  | "internalRol"
+  | "businessId"
+  | "locationId"
+  | "areaId"
+  | "organizationId"
+  | "dataScope"
 >;
 
 /** Serializa fila Prisma → contrato Zod. */
@@ -61,7 +79,7 @@ function toLocationResponse(row: {
 
 /**
  * Filtro de listado: superadmin ve todas (o filtra por businessId);
- * admin/user solo las de su empresa.
+ * dataScope location → solo su nave (id); resto → empresa.
  */
 function listWhere(
   actor: Actor,
@@ -69,22 +87,15 @@ function listWhere(
 ): Prisma.LocationWhereInput {
   const base: Prisma.LocationWhereInput = { deletedAt: null };
 
-  if (actor.internalRol === "superadmin") {
+  if (actor.internalRol === "superadmin" || actor.dataScope === "all") {
     if (query.businessId) {
       return { ...base, businessId: query.businessId };
     }
     return base;
   }
 
-  if (!actor.businessId) {
-    throw new AppError(
-      403,
-      "forbidden",
-      "Tu usuario no tiene una empresa asignada",
-    );
-  }
-
-  return { ...base, businessId: actor.businessId };
+  /** locationField `id`: la fila ES la ubicación. */
+  return applyDataScopeToWhere(actor, base, { locationField: "id" });
 }
 
 /**
@@ -118,20 +129,18 @@ function resolveCreateBusinessId(
 }
 
 /**
- * 404 genérico si el actor no puede ver esa empresa
- * (no filtrar existencia a otra empresa).
+ * 404/403 si el actor no puede ver esa ubicación
+ * (empresa + nave según dataScope).
  */
 function assertLocationTenantAccess(
   actor: Actor,
-  locationBusinessId: string,
+  row: { id: string; businessId: string },
 ): void {
-  if (actor.internalRol === "superadmin") {
-    return;
-  }
-
-  if (!actor.businessId || actor.businessId !== locationBusinessId) {
-    throw new AppError(404, "location_not_found", "Ubicación no encontrada");
-  }
+  assertDataScopeAccess(
+    actor,
+    { businessId: row.businessId, locationId: row.id },
+    { code: "location_not_found", message: "Ubicación no encontrada" },
+  );
 }
 
 /**
@@ -230,7 +239,7 @@ export async function getLocationById(
     throw new AppError(404, "location_not_found", "Ubicación no encontrada");
   }
 
-  assertLocationTenantAccess(actor, row.businessId);
+  assertLocationTenantAccess(actor, row);
   return toLocationResponse(row);
 }
 
@@ -250,7 +259,7 @@ export async function updateLocation(
     throw new AppError(404, "location_not_found", "Ubicación no encontrada");
   }
 
-  assertLocationTenantAccess(actor, existing.businessId);
+  assertLocationTenantAccess(actor, existing);
 
   let nextBusinessId = existing.businessId;
   if (payload.businessId !== undefined) {
@@ -328,7 +337,7 @@ export async function deleteLocationById(
     throw new AppError(404, "location_not_found", "Ubicación no encontrada");
   }
 
-  assertLocationTenantAccess(actor, location.businessId);
+  assertLocationTenantAccess(actor, location);
 
   const activeUsers = await prisma.user.count({
     where: {
@@ -408,7 +417,7 @@ export async function reportMyVesselPosition(
   if (!location) {
     throw new AppError(404, "location_not_found", "Ubicación no encontrada");
   }
-  assertLocationTenantAccess(actor, location.businessId);
+  assertLocationTenantAccess(actor, location);
 
   const created = await prisma.vesselPosition.create({
     data: {
@@ -459,7 +468,7 @@ export async function getLocationVesselPosition(
   if (!location) {
     throw new AppError(404, "location_not_found", "Ubicación no encontrada");
   }
-  assertLocationTenantAccess(actor, location.businessId);
+  assertLocationTenantAccess(actor, location);
 
   const latest = await prisma.vesselPosition.findFirst({
     where: { locationId: location.id },

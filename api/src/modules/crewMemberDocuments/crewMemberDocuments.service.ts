@@ -1,4 +1,5 @@
 import type { CrewMemberDocument, DocumentType } from "@prisma/client";
+import { assertDataScopeAccess } from "../../lib/dataScope.js";
 import {
   assertCanUploadDocumentType,
   assertDocumentTypeAppliesToCrew,
@@ -21,8 +22,18 @@ import type {
   CrewMemberDocumentResponse,
 } from "./crewMemberDocuments.schemas.js";
 
-/** Actor mínimo tenant + rol para uploadBy/viewBy. */
-type Actor = Pick<AuthUser, "id" | "internalRol" | "businessId" | "roleId">;
+/** Actor con tenant + dataScope + rol para uploadBy/viewBy. */
+type Actor = Pick<
+  AuthUser,
+  | "id"
+  | "internalRol"
+  | "businessId"
+  | "locationId"
+  | "areaId"
+  | "organizationId"
+  | "dataScope"
+  | "roleId"
+>;
 
 /** Fila con tipo incluido. */
 type DocWithType = CrewMemberDocument & { documentType: DocumentType };
@@ -52,19 +63,18 @@ function toDocumentResponse(row: DocWithType): CrewMemberDocumentResponse {
   };
 }
 
-/** 404 genérico si el actor no ve la empresa del tripulante. */
-function assertCrewTenantAccess(actor: Actor, businessId: string): void {
-  if (actor.internalRol === "superadmin") return;
-  if (!actor.businessId || actor.businessId !== businessId) {
-    throw new AppError(
-      404,
-      "crew_member_not_found",
-      "Tripulante no encontrado",
-    );
-  }
+/** 404/403 si el actor no ve al tripulante (empresa + nave/área). */
+function assertCrewTenantAccess(
+  actor: Actor,
+  row: { businessId: string; locationId: string; areaId: string | null },
+): void {
+  assertDataScopeAccess(actor, row, {
+    code: "crew_member_not_found",
+    message: "Tripulante no encontrado",
+  });
 }
 
-/** Carga tripulante activo y valida tenant. */
+/** Carga tripulante activo y valida tenant + dataScope. */
 async function loadCrewForActor(actor: Actor, crewMemberId: string) {
   const crew = await prisma.crewMember.findFirst({
     where: { id: crewMemberId, deletedAt: null },
@@ -76,7 +86,7 @@ async function loadCrewForActor(actor: Actor, crewMemberId: string) {
       "Tripulante no encontrado",
     );
   }
-  assertCrewTenantAccess(actor, crew.businessId);
+  assertCrewTenantAccess(actor, crew);
   return crew;
 }
 

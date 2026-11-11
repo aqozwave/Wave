@@ -1,5 +1,9 @@
 import { Prisma, type WorkPermitSignatureKind } from "@prisma/client";
 import { assertBusinessModuleEnabled } from "../../lib/businessModules.js";
+import {
+  applyDataScopeToWhere,
+  assertDataScopeAccess,
+} from "../../lib/dataScope.js";
 import { AppError } from "../../lib/errors.js";
 import {
   PERMISSION_ACTION,
@@ -31,7 +35,7 @@ import {
   type WorkPermitFlowPolicy,
 } from "./workPermitFlowPolicy.js";
 
-/** Actor con id, tenant, org y alcance de nave (capitán). */
+/** Actor con id, tenant, org y alcance de nave/área. */
 type Actor = Pick<
   AuthUser,
   | "id"
@@ -40,6 +44,7 @@ type Actor = Pick<
   | "businessId"
   | "organizationId"
   | "locationId"
+  | "areaId"
   | "dataScope"
 >;
 
@@ -531,31 +536,24 @@ async function upsertWorkPermitSignature(
 
 /**
  * Acceso a un PT: superadmin OK; contratista solo su org;
- * alcance location → solo su nave; resto staff → su businessId.
+ * dataScope location/area → nave/área; resto staff → empresa.
  */
 function assertPermitAccess(
   actor: Actor,
   row: { businessId: string; organizationId: string; locationId: string },
 ): void {
-  if (actor.internalRol === "superadmin") return;
-  if (actor.organizationId) {
-    if (actor.organizationId !== row.organizationId) {
-      throw new AppError(404, "work_permit_not_found", "Permiso no encontrado");
-    }
-    return;
-  }
-  if (!actor.businessId || actor.businessId !== row.businessId) {
-    throw new AppError(404, "work_permit_not_found", "Permiso no encontrado");
-  }
-  // Capitán / colaborador: solo permisos de su nave.
-  if (actor.dataScope === "location") {
-    if (!actor.locationId || actor.locationId !== row.locationId) {
-      throw new AppError(403, "forbidden", "Este permiso no es de tu nave");
-    }
-  }
+  assertDataScopeAccess(
+    actor,
+    {
+      businessId: row.businessId,
+      organizationId: row.organizationId,
+      locationId: row.locationId,
+    },
+    { code: "work_permit_not_found", message: "Permiso no encontrado" },
+  );
 }
 
-/** Where listado (contratista acotado a su org). */
+/** Where listado (contratista / dataScope / filtros). */
 function listWhere(
   actor: Actor,
   query: ListWorkPermitsQuery,
@@ -579,43 +577,19 @@ function listWhere(
     ];
   }
 
-  // Portal contratista: solo su organización.
-  if (actor.organizationId) {
-    return { ...base, organizationId: actor.organizationId };
+  if (query.organizationId && !actor.organizationId) {
+    base.organizationId = query.organizationId;
   }
 
-  if (query.organizationId) base.organizationId = query.organizationId;
-
-  if (actor.internalRol === "superadmin") {
+  if (actor.internalRol === "superadmin" || actor.dataScope === "all") {
     if (query.businessId) return { ...base, businessId: query.businessId };
     return base;
   }
 
-  if (!actor.businessId) {
-    throw new AppError(
-      403,
-      "forbidden",
-      "Tu usuario no tiene una empresa asignada",
-    );
-  }
-
-  // Capitán: solo PTs de su location.
-  if (actor.dataScope === "location") {
-    if (!actor.locationId) {
-      throw new AppError(
-        403,
-        "forbidden",
-        "Tu usuario no tiene una nave asignada",
-      );
-    }
-    return {
-      ...base,
-      businessId: actor.businessId,
-      locationId: actor.locationId,
-    };
-  }
-
-  return { ...base, businessId: actor.businessId };
+  return applyDataScopeToWhere(actor, base, {
+    locationField: "locationId",
+    organizationField: "organizationId",
+  });
 }
 
 /** Genera PT-NNNN. */
@@ -1854,7 +1828,7 @@ export async function requestCloseWorkPermit(
     throw new AppError(
       409,
       "invalid_work_permit_transition",
-      `Solo se pide cierre desde «Autorizado a bordo» (ahora: ${existing.status})`,
+      `Solo se pide cierre desde trabajo autorizado / a bordo (ahora: ${existing.status})`,
     );
   }
 
@@ -1917,7 +1891,9 @@ export async function closeWorkPermit(
       "invalid_work_permit_transition",
       policy.hasRequestCloseStage
         ? `Solo se cierra desde «Verificar trabajo» (ahora: ${existing.status})`
-        : `Prevención cierra desde «Autorizado a bordo» (ahora: ${existing.status})`,
+        : policy.hasReceiveStage
+          ? `Prevención cierra desde «Autorizado a bordo» (ahora: ${existing.status})`
+          : `Prevención cierra desde «Trabajo autorizado» (ahora: ${existing.status})`,
     );
   }
 

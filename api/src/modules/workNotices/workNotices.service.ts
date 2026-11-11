@@ -1,5 +1,9 @@
 import { Prisma } from "@prisma/client";
 import { assertBusinessModuleEnabled } from "../../lib/businessModules.js";
+import {
+  applyDataScopeToWhere,
+  assertDataScopeAccess,
+} from "../../lib/dataScope.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
@@ -9,8 +13,17 @@ import type {
   WorkNoticeResponse,
 } from "./workNotices.schemas.js";
 
-/** Actor con id (createdBy) y tenant. */
-type Actor = Pick<AuthUser, "id" | "internalRol" | "businessId">;
+/** Actor con id, tenant y dataScope (nave/área). */
+type Actor = Pick<
+  AuthUser,
+  | "id"
+  | "internalRol"
+  | "businessId"
+  | "locationId"
+  | "areaId"
+  | "organizationId"
+  | "dataScope"
+>;
 
 /** Include de relaciones para serializar el aviso. */
 const noticeInclude = {
@@ -127,15 +140,30 @@ function toWorkNoticeResponse(row: NoticeRow): WorkNoticeResponse {
   };
 }
 
-/** 404 si el actor no puede ver esa empresa. */
-function assertNoticeTenantAccess(actor: Actor, businessId: string): void {
-  if (actor.internalRol === "superadmin") return;
-  if (!actor.businessId || actor.businessId !== businessId) {
-    throw new AppError(404, "work_notice_not_found", "Aviso no encontrado");
-  }
+/**
+ * 404/403 si el actor no puede ver el aviso
+ * (empresa + nave/área según dataScope).
+ */
+function assertNoticeTenantAccess(
+  actor: Actor,
+  row: {
+    businessId: string;
+    locationId?: string | null;
+    requestingAreaId?: string | null;
+  },
+): void {
+  assertDataScopeAccess(
+    actor,
+    {
+      businessId: row.businessId,
+      locationId: row.locationId,
+      areaId: row.requestingAreaId,
+    },
+    { code: "work_notice_not_found", message: "Aviso no encontrado" },
+  );
 }
 
-/** Where de listado con tenant + filtros. */
+/** Where de listado con tenant + dataScope + filtros. */
 function listWhere(
   actor: Actor,
   query: ListWorkNoticesQuery,
@@ -162,19 +190,15 @@ function listWhere(
     ];
   }
 
-  if (actor.internalRol === "superadmin") {
+  if (actor.internalRol === "superadmin" || actor.dataScope === "all") {
     if (query.businessId) return { ...base, businessId: query.businessId };
     return base;
   }
 
-  if (!actor.businessId) {
-    throw new AppError(
-      403,
-      "forbidden",
-      "Tu usuario no tiene una empresa asignada",
-    );
-  }
-  return { ...base, businessId: actor.businessId };
+  return applyDataScopeToWhere(actor, base, {
+    locationField: "locationId",
+    areaField: "requestingAreaId",
+  });
 }
 
 /**
@@ -252,7 +276,7 @@ export async function getWorkNoticeById(
   if (!row || row.organization.deletedAt) {
     throw new AppError(404, "work_notice_not_found", "Aviso no encontrado");
   }
-  assertNoticeTenantAccess(actor, row.businessId);
+  assertNoticeTenantAccess(actor, row);
   return toWorkNoticeResponse(row);
 }
 
@@ -288,7 +312,18 @@ export async function createWorkNotice(
       "Organización contratista no encontrada o inactiva",
     );
   }
-  assertNoticeTenantAccess(actor, org.businessId);
+  // Solo empresa aquí; nave se valida al cargar location.
+  if (
+    actor.internalRol !== "superadmin" &&
+    actor.dataScope !== "all" &&
+    (!actor.businessId || actor.businessId !== org.businessId)
+  ) {
+    throw new AppError(
+      400,
+      "contractor_not_found",
+      "Organización contratista no encontrada o inactiva",
+    );
+  }
   await assertBusinessModuleEnabled(org.businessId, "work_permits");
 
   const requestingArea = await prisma.area.findFirst({
@@ -338,6 +373,11 @@ export async function createWorkNotice(
       "Nave/lugar no encontrado o inactivo",
     );
   }
+  assertNoticeTenantAccess(actor, {
+    businessId: org.businessId,
+    locationId: location.id,
+    requestingAreaId: requestingArea.id,
+  });
 
   const tentativeDate = parseTentativeDate(body.tentativeDate);
   const contactEmail = normalizeEmail(body.contactEmail);
@@ -393,7 +433,7 @@ export async function deleteWorkNoticeById(
   if (!row || row.organization.deletedAt) {
     throw new AppError(404, "work_notice_not_found", "Aviso no encontrado");
   }
-  assertNoticeTenantAccess(actor, row.businessId);
+  assertNoticeTenantAccess(actor, row);
   await assertBusinessModuleEnabled(row.businessId, "work_permits");
 
   const now = new Date();

@@ -1,4 +1,8 @@
 import { Prisma, type User } from "@prisma/client";
+import {
+  applyDataScopeToWhere,
+  assertDataScopeAccess,
+} from "../../lib/dataScope.js";
 import { AppError } from "../../lib/errors.js";
 import { sniffUserPhotoMime } from "../../lib/fileSniff.js";
 import {
@@ -25,8 +29,17 @@ import type {
   UserAdminResponse,
 } from "./users.schemas.js";
 
-/** Actor mínimo para reglas de tenant y permisos de gestión. */
-type Actor = Pick<AuthUser, "id" | "internalRol" | "businessId">;
+/** Actor con tenant + dataScope (nave/área/self). */
+type Actor = Pick<
+  AuthUser,
+  | "id"
+  | "internalRol"
+  | "businessId"
+  | "locationId"
+  | "areaId"
+  | "organizationId"
+  | "dataScope"
+>;
 
 /** Include de relaciones usadas en el contrato admin. */
 const userAdminInclude = {
@@ -129,27 +142,23 @@ function listWhere(
     ];
   }
 
-  if (actor.internalRol === "superadmin") {
+  if (actor.internalRol === "superadmin" || actor.dataScope === "all") {
     if (query.businessId) {
       return { ...base, businessId: query.businessId };
     }
     return base;
   }
 
-  if (!actor.businessId) {
-    throw new AppError(
-      403,
-      "forbidden",
-      "Tu usuario no tiene una empresa asignada",
-    );
-  }
-
-  return { ...base, businessId: actor.businessId };
+  return applyDataScopeToWhere(actor, base, {
+    locationField: "locationId",
+    areaField: "areaId",
+    selfField: "id",
+  });
 }
 
 /**
- * 404 genérico si el actor no puede ver ese usuario
- * (no filtrar existencia a otra empresa).
+ * 404/403 si el actor no puede ver ese usuario
+ * (empresa + nave/área/self; no filtrar existencia cross-tenant).
  */
 function assertUserTenantAccess(actor: Actor, target: User): void {
   // Invitados del portal: no existen para este módulo (404 genérico).
@@ -157,13 +166,16 @@ function assertUserTenantAccess(actor: Actor, target: User): void {
     throw new AppError(404, "user_not_found", "Usuario no encontrado");
   }
 
-  if (actor.internalRol === "superadmin") {
-    return;
-  }
-
-  if (!actor.businessId || target.businessId !== actor.businessId) {
-    throw new AppError(404, "user_not_found", "Usuario no encontrado");
-  }
+  assertDataScopeAccess(
+    actor,
+    {
+      businessId: target.businessId ?? "",
+      locationId: target.locationId,
+      areaId: target.areaId,
+      userId: target.id,
+    },
+    { code: "user_not_found", message: "Usuario no encontrado" },
+  );
 }
 
 /** Admin no gestiona cuentas superadmin. */
