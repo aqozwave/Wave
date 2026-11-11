@@ -303,11 +303,19 @@ export const listCrewMemberHistoryResponseSchema = z
   })
   .openapi("ListCrewMemberHistoryResponse");
 
-/** kind de entrada manual de bitácora. */
+/** kind de entrada manual de bitácora (alta por UI). */
 export const crewLogEntryKindSchema = z.enum([
   "observation",
   "sanction",
   "boarding",
+]);
+
+/** kind en respuestas (incluye training generado por sesión grupal). */
+export const crewLogEntryKindResponseSchema = z.enum([
+  "observation",
+  "sanction",
+  "boarding",
+  "training",
 ]);
 
 /**
@@ -356,7 +364,7 @@ export const crewMemberLogEntryResponseSchema = z
   .object({
     id: z.uuid(),
     crewMemberId: z.uuid(),
-    kind: crewLogEntryKindSchema,
+    kind: crewLogEntryKindResponseSchema,
     note: z.string(),
     occurredAt: z.string().datetime(),
     documentId: z.uuid().nullable(),

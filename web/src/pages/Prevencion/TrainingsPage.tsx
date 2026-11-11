@@ -6,7 +6,9 @@ import {
   type FormEvent,
 } from "react";
 import { GraduationCap, MoreVertical, Plus } from "lucide-react";
+import { Link } from "react-router";
 import { Button } from "../../components/Button/Button";
+import { userHasPermission } from "../../lib/api/auth";
 import {
   DataTableCard,
   DataTableSearch,
@@ -354,17 +356,27 @@ export function TrainingsPage() {
           title="Capacitaciones"
           description="Catálogo de capacitaciones del módulo Prevención (distinto de cursos OMI)."
           actions={
-            canManage ? (
-              <Button
-                type="button"
-                size="medium"
-                className="!w-auto"
-                onClick={openCreate}
-              >
-                <Plus className="size-4" strokeWidth={1.5} aria-hidden />
-                Nueva capacitación
-              </Button>
-            ) : null
+            <div className="flex flex-wrap items-center gap-2">
+              {userHasPermission(user, "trainings", "read") ? (
+                <Link
+                  to="/prevencion/capacitaciones/sesiones"
+                  className="inline-flex h-9 items-center rounded-[var(--radius-md)] bg-[var(--color-nachipa-tab)] px-3.5 text-[13px] font-medium text-[var(--color-nachipa-body)] hover:brightness-95"
+                >
+                  Sesiones
+                </Link>
+              ) : null}
+              {canManage ? (
+                <Button
+                  type="button"
+                  size="medium"
+                  className="!w-auto"
+                  onClick={openCreate}
+                >
+                  <Plus className="size-4" strokeWidth={1.5} aria-hidden />
+                  Nueva capacitación
+                </Button>
+              ) : null}
+            </div>
           }
         />
 

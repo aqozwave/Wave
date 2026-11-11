@@ -34,6 +34,7 @@ import { workNoticesRouter } from "./modules/workNotices/workNotices.routes.js";
 import { workPermitsRouter } from "./modules/workPermits/workPermits.routes.js";
 import { portsRouter } from "./modules/ports/ports.routes.js";
 import { trainingsRouter } from "./modules/trainings/trainings.routes.js";
+import { trainingSessionsRouter } from "./modules/trainingSessions/trainingSessions.routes.js";
 import { ranksRouter } from "./modules/ranks/ranks.routes.js";
 import { rolesRouter } from "./modules/roles/roles.routes.js";
 import { systemAnnouncementsRouter } from "./modules/systemAnnouncements/systemAnnouncements.routes.js";
@@ -157,6 +158,7 @@ export function createApp() {
   app.use("/api/v1/permit-types", permitTypesRouter);
   app.use("/api/v1/approval-flows", approvalFlowsRouter);
   app.use("/api/v1/trainings", trainingsRouter);
+  app.use("/api/v1/training-sessions", trainingSessionsRouter);
   app.use("/api/v1/contractors", contractorsRouter);
   app.use("/api/v1/accreditations", accreditationsRouter);
   app.use("/api/v1/work-notices", workNoticesRouter);

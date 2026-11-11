@@ -176,6 +176,12 @@ const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
     canShow: (u) => userHasPermission(u, "trainings", "read"),
   },
   {
+    label: "Sesiones capacitación",
+    to: "/prevencion/capacitaciones/sesiones",
+    icon: Users,
+    canShow: (u) => userHasPermission(u, "trainings", "read"),
+  },
+  {
     label: "Packs de habilitación",
     to: "/prevencion/packs",
     icon: Package,

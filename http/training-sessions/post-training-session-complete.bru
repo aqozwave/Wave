@@ -1,0 +1,36 @@
+meta {
+  name: Post training session complete
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/v1/training-sessions/{{trainingSessionId}}/complete
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Cierra la sesión: renueva capacitación por asistente, copia acta a Documentos y bitácora.
+  Requiere acta subida y training.documentTypeId configurado.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("trainingSessionId");
+  if (!token || !id) throw new Error("Definí accessToken y trainingSessionId");
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq completed
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

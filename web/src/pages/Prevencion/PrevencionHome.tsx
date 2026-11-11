@@ -63,6 +63,13 @@ const HUB_GROUPS: HubGroup[] = [
         to: "/prevencion/permisos",
         canShow: (u) => userHasPermission(u, "work_permits", "read"),
       },
+      {
+        label: "Sesiones de capacitación",
+        legend: "Dictar grupal o individual, subir acta y registrar en fichas.",
+        icon: GraduationCap,
+        to: "/prevencion/capacitaciones/sesiones",
+        canShow: (u) => userHasPermission(u, "trainings", "read"),
+      },
     ],
   },
   {

@@ -156,6 +156,21 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     canShow: (u) => userHasPermission(u, "trainings", "read"),
   },
   {
+    id: "prevencion-capacitaciones-sesiones",
+    label: "Sesiones de capacitación",
+    group: "Prevención",
+    to: "/prevencion/capacitaciones/sesiones",
+    keywords: [
+      "sesión",
+      "grupal",
+      "individual",
+      "acta",
+      "dictar",
+      "capacitación",
+    ],
+    canShow: (u) => userHasPermission(u, "trainings", "read"),
+  },
+  {
     id: "prevencion-packs",
     label: "Packs de habilitación",
     group: "Prevención",

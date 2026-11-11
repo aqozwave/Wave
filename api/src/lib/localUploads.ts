@@ -350,3 +350,58 @@ export async function unlinkContractorPersonDocumentFile(
     // ya borrado
   }
 }
+
+/**
+ * Ruta relativa del acta de una sesión de capacitación.
+ * /uploads/{businessId}/training-sessions/{sessionId}/{rand}.ext
+ */
+export function buildTrainingSessionFileRelativePath(input: {
+  businessId: string;
+  sessionId: string;
+  mimeType: string;
+}): string {
+  const rand = crypto.randomBytes(8).toString("hex");
+  const ext = extensionForMime(input.mimeType);
+  return `${RELATIVE_PREFIX}/${input.businessId}/training-sessions/${input.sessionId}/${rand}${ext}`;
+}
+
+/** True si la ruta es de acta de sesión bajo /uploads/. */
+export function isTrainingSessionFileRelativePath(
+  relativePath: string,
+): boolean {
+  return (
+    relativePath.startsWith(`${RELATIVE_PREFIX}/`) &&
+    relativePath.includes("/training-sessions/")
+  );
+}
+
+/** Escribe el PDF/acta de la sesión en disco. */
+export async function writeTrainingSessionFile(input: {
+  businessId: string;
+  sessionId: string;
+  mimeType: string;
+  buffer: Buffer;
+}): Promise<{ relativePath: string; fullPath: string; size: number }> {
+  const relativePath = buildTrainingSessionFileRelativePath(input);
+  const fullPath = resolveUploadFullPath(relativePath);
+  if (!fullPath) {
+    throw new Error("Ruta de upload inválida");
+  }
+  await fs.mkdir(path.dirname(fullPath), { recursive: true });
+  await fs.writeFile(fullPath, input.buffer);
+  return { relativePath, fullPath, size: input.buffer.length };
+}
+
+/** Borra el acta de sesión si la ruta es válida. */
+export async function unlinkTrainingSessionFile(
+  relativePath: string,
+): Promise<void> {
+  if (!isTrainingSessionFileRelativePath(relativePath)) return;
+  const fullPath = resolveUploadFullPath(relativePath);
+  if (!fullPath) return;
+  try {
+    await fs.unlink(fullPath);
+  } catch {
+    // ya borrado
+  }
+}

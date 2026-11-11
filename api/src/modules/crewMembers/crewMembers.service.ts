@@ -1284,7 +1284,7 @@ function mapCrewAuditEvent(row: {
 
 /** Etiquetas UI por kind de entrada manual. */
 const LOG_ENTRY_LABELS: Record<
-  "observation" | "sanction" | "boarding",
+  "observation" | "sanction" | "boarding" | "training",
   { categoryLabel: string; title: string; statusLabel: string; statusTone: CrewHistoryItem["statusTone"] }
 > = {
   observation: {
@@ -1305,13 +1305,19 @@ const LOG_ENTRY_LABELS: Record<
     statusLabel: "Embarque",
     statusTone: "info",
   },
+  training: {
+    categoryLabel: "Capacitación",
+    title: "Capacitación",
+    statusLabel: "Completada",
+    statusTone: "success",
+  },
 };
 
 /** Serializa fila de log entry → contrato API. */
 function toLogEntryResponse(row: {
   id: string;
   crewMemberId: string;
-  kind: "observation" | "sanction" | "boarding";
+  kind: "observation" | "sanction" | "boarding" | "training";
   note: string;
   occurredAt: Date;
   documentId: string | null;
@@ -1495,12 +1501,15 @@ export async function listCrewMemberHistory(
       entry.document && !entry.document.deletedAt
         ? entry.document.originalName
         : null;
+    // training (sesión grupal) se agrupa con course en filtros de bitácora.
+    const category =
+      entry.kind === "training" ? ("course" as const) : entry.kind;
     return {
       id: entry.id,
       createdAt: entry.occurredAt.toISOString(),
       title: labels.title,
       detail: entry.note,
-      category: entry.kind,
+      category,
       categoryLabel: labels.categoryLabel,
       statusLabel: labels.statusLabel,
       statusTone: labels.statusTone,
