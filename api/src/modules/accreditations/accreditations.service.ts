@@ -2,6 +2,10 @@ import type { AccreditationStatus, Prisma } from "@prisma/client";
 import { assertBusinessModuleEnabled } from "../../lib/businessModules.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
+import {
+  assertInternalStaffActor,
+  isContractorPortalActor,
+} from "../../lib/tenant.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import type {
   AccreditationResponse,
@@ -12,8 +16,11 @@ import type {
   RequestAdditionalDocsBody,
 } from "./accreditations.schemas.js";
 
-/** Actor con id para auditoría de solicitud/revisión. */
-type Actor = Pick<AuthUser, "id" | "internalRol" | "businessId">;
+/** Actor con id para auditoría + portal externo (organizationId). */
+type Actor = Pick<
+  AuthUser,
+  "id" | "internalRol" | "businessId" | "organizationId"
+>;
 
 /** Include de org en lecturas (deletedAt para filtrar soft-delete). */
 const organizationInclude = {
@@ -112,6 +119,11 @@ function listWhere(
     ];
   }
 
+  // Portal externo: solo HABs de su organización.
+  if (actor.organizationId) {
+    return { ...base, organizationId: actor.organizationId };
+  }
+
   if (actor.internalRol === "superadmin") {
     if (query.businessId) {
       return {
@@ -139,11 +151,22 @@ function listWhere(
   };
 }
 
-/** 404 si la HAB no es del tenant del actor. */
+/** 404 si la HAB no es del tenant / org del actor. */
 function assertAccreditationTenantAccess(
   actor: Actor,
   orgBusinessId: string,
+  organizationId?: string,
 ): void {
+  if (isContractorPortalActor(actor)) {
+    if (!organizationId || actor.organizationId !== organizationId) {
+      throw new AppError(
+        404,
+        "accreditation_not_found",
+        "Habilitación no encontrada",
+      );
+    }
+    return;
+  }
   if (actor.internalRol === "superadmin") return;
   if (!actor.businessId || actor.businessId !== orgBusinessId) {
     throw new AppError(
@@ -153,7 +176,6 @@ function assertAccreditationTenantAccess(
     );
   }
 }
-
 /**
  * Genera el próximo código HAB-NNNN (global, 4 dígitos).
  * Escaneo por prefijo HAB-; si no hay, empieza en 1.
@@ -230,7 +252,11 @@ export async function getAccreditationById(
       "Habilitación no encontrada",
     );
   }
-  assertAccreditationTenantAccess(actor, row.organization.businessId);
+  assertAccreditationTenantAccess(
+    actor,
+    row.organization.businessId,
+    row.organizationId,
+  );
   // Pedido adicional ya cubierto → cierra flag (Prevención deja de ver “Esperando”).
   const cleared = await clearAdditionalDocsRequestIfFulfilled(row.id);
   if (!cleared) return toAccreditationResponse(row);
@@ -263,7 +289,7 @@ export async function createAccreditation(
       "Organización contratista no encontrada o inactiva",
     );
   }
-  assertAccreditationTenantAccess(actor, org.businessId);
+  assertAccreditationTenantAccess(actor, org.businessId, org.id);
   await assertBusinessModuleEnabled(org.businessId, "contractors");
 
   /**
@@ -396,7 +422,11 @@ export async function submitAccreditation(
       "Habilitación no encontrada",
     );
   }
-  assertAccreditationTenantAccess(actor, existing.organization.businessId);
+  assertAccreditationTenantAccess(
+    actor,
+    existing.organization.businessId,
+    existing.organizationId,
+  );
   await assertBusinessModuleEnabled(
     existing.organization.businessId,
     "contractors",
@@ -626,6 +656,8 @@ export async function approveAccreditation(
   actor: Actor,
   id: string,
 ): Promise<AccreditationResponse> {
+  // Externo no autoaprueba su HAB.
+  assertInternalStaffActor(actor);
   const existing = await prisma.contractorAccreditation.findFirst({
     where: { id, deletedAt: null },
     include: organizationInclude,
@@ -637,7 +669,11 @@ export async function approveAccreditation(
       "Habilitación no encontrada",
     );
   }
-  assertAccreditationTenantAccess(actor, existing.organization.businessId);
+  assertAccreditationTenantAccess(
+    actor,
+    existing.organization.businessId,
+    existing.organizationId,
+  );
   await assertBusinessModuleEnabled(
     existing.organization.businessId,
     "contractors",
@@ -690,6 +726,7 @@ export async function returnAccreditation(
   id: string,
   body: AccreditationReviewNoteBody,
 ): Promise<AccreditationResponse> {
+  assertInternalStaffActor(actor);
   const existing = await prisma.contractorAccreditation.findFirst({
     where: { id, deletedAt: null },
     include: organizationInclude,
@@ -701,7 +738,11 @@ export async function returnAccreditation(
       "Habilitación no encontrada",
     );
   }
-  assertAccreditationTenantAccess(actor, existing.organization.businessId);
+  assertAccreditationTenantAccess(
+    actor,
+    existing.organization.businessId,
+    existing.organizationId,
+  );
   await assertBusinessModuleEnabled(
     existing.organization.businessId,
     "contractors",
@@ -734,6 +775,7 @@ export async function rejectAccreditation(
   id: string,
   body: AccreditationReviewNoteBody,
 ): Promise<AccreditationResponse> {
+  assertInternalStaffActor(actor);
   const existing = await prisma.contractorAccreditation.findFirst({
     where: { id, deletedAt: null },
     include: organizationInclude,
@@ -745,7 +787,11 @@ export async function rejectAccreditation(
       "Habilitación no encontrada",
     );
   }
-  assertAccreditationTenantAccess(actor, existing.organization.businessId);
+  assertAccreditationTenantAccess(
+    actor,
+    existing.organization.businessId,
+    existing.organizationId,
+  );
   await assertBusinessModuleEnabled(
     existing.organization.businessId,
     "contractors",
@@ -839,6 +885,7 @@ export async function requestAdditionalDocuments(
   id: string,
   body: RequestAdditionalDocsBody,
 ): Promise<AccreditationResponse> {
+  assertInternalStaffActor(actor);
   const existing = await prisma.contractorAccreditation.findFirst({
     where: { id, deletedAt: null },
     include: organizationInclude,
@@ -850,7 +897,11 @@ export async function requestAdditionalDocuments(
       "Habilitación no encontrada",
     );
   }
-  assertAccreditationTenantAccess(actor, existing.organization.businessId);
+  assertAccreditationTenantAccess(
+    actor,
+    existing.organization.businessId,
+    existing.organizationId,
+  );
   await assertBusinessModuleEnabled(
     existing.organization.businessId,
     "contractors",
@@ -899,6 +950,7 @@ export async function clearAdditionalDocumentsRequest(
   actor: Actor,
   id: string,
 ): Promise<AccreditationResponse> {
+  assertInternalStaffActor(actor);
   const existing = await prisma.contractorAccreditation.findFirst({
     where: { id, deletedAt: null },
     include: organizationInclude,
@@ -910,7 +962,11 @@ export async function clearAdditionalDocumentsRequest(
       "Habilitación no encontrada",
     );
   }
-  assertAccreditationTenantAccess(actor, existing.organization.businessId);
+  assertAccreditationTenantAccess(
+    actor,
+    existing.organization.businessId,
+    existing.organizationId,
+  );
   await assertBusinessModuleEnabled(
     existing.organization.businessId,
     "contractors",
@@ -936,6 +992,7 @@ export async function deleteAccreditationById(
   actor: Actor,
   id: string,
 ): Promise<AccreditationResponse> {
+  assertInternalStaffActor(actor);
   const existing = await prisma.contractorAccreditation.findFirst({
     where: { id, deletedAt: null },
     include: organizationInclude,
@@ -947,7 +1004,11 @@ export async function deleteAccreditationById(
       "Habilitación no encontrada",
     );
   }
-  assertAccreditationTenantAccess(actor, existing.organization.businessId);
+  assertAccreditationTenantAccess(
+    actor,
+    existing.organization.businessId,
+    existing.organizationId,
+  );
   await assertBusinessModuleEnabled(
     existing.organization.businessId,
     "contractors",

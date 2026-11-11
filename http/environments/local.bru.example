@@ -3,6 +3,7 @@ meta {
 }
 
 vars {
+  password: 
   baseUrl: http://localhost:3000
   accessToken: 
   refreshToken: 

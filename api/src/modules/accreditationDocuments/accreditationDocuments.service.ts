@@ -17,6 +17,10 @@ import {
   writeContractorPersonDocumentFile,
 } from "../../lib/localUploads.js";
 import { prisma } from "../../lib/prisma.js";
+import {
+  assertInternalStaffActor,
+  isContractorPortalActor,
+} from "../../lib/tenant.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import { clearAdditionalDocsRequestIfFulfilled } from "../accreditations/accreditations.service.js";
 import type {
@@ -26,8 +30,11 @@ import type {
   ValidateAccreditationDocumentBody,
 } from "./accreditationDocuments.schemas.js";
 
-/** Actor mínimo para tenant + auditoría. */
-type Actor = Pick<AuthUser, "id" | "internalRol" | "businessId">;
+/** Actor mínimo para tenant + auditoría + portal externo. */
+type Actor = Pick<
+  AuthUser,
+  "id" | "internalRol" | "businessId" | "organizationId"
+>;
 
 /** Fila con tipo incluido. */
 type DocWithType = ContractorOrgDocument & {
@@ -61,8 +68,22 @@ function toDocResponse(row: DocWithType): ContractorOrgDocumentResponse {
   };
 }
 
-/** 404 genérico si el actor no ve la empresa. */
-function assertTenantAccess(actor: Actor, businessId: string): void {
+/** 404 genérico si el actor no ve la empresa / org. */
+function assertTenantAccess(
+  actor: Actor,
+  businessId: string,
+  organizationId?: string,
+): void {
+  if (isContractorPortalActor(actor)) {
+    if (!organizationId || actor.organizationId !== organizationId) {
+      throw new AppError(
+        404,
+        "accreditation_not_found",
+        "Habilitación no encontrada",
+      );
+    }
+    return;
+  }
   if (actor.internalRol === "superadmin") return;
   if (!actor.businessId || actor.businessId !== businessId) {
     throw new AppError(
@@ -73,7 +94,7 @@ function assertTenantAccess(actor: Actor, businessId: string): void {
   }
 }
 
-/** Carga HAB + org; valida tenant. */
+/** Carga HAB + org; valida tenant (y org si es portal externo). */
 async function loadAccreditationForActor(actor: Actor, accreditationId: string) {
   const row = await prisma.contractorAccreditation.findFirst({
     where: { id: accreditationId, deletedAt: null },
@@ -95,10 +116,9 @@ async function loadAccreditationForActor(actor: Actor, accreditationId: string) 
       "Habilitación no encontrada",
     );
   }
-  assertTenantAccess(actor, row.organization.businessId);
+  assertTenantAccess(actor, row.organization.businessId, row.organizationId);
   return row;
 }
-
 /** Decodifica base64 (raw o data-URL). */
 function decodeBase64Content(contentBase64: string): Buffer {
   const trimmed = contentBase64.trim();
@@ -539,6 +559,8 @@ export async function validateAccreditationDocument(
   documentId: string,
   body: ValidateAccreditationDocumentBody,
 ): Promise<ContractorOrgDocumentResponse> {
+  // Validar docs es acción de Prevención, no del portal externo.
+  assertInternalStaffActor(actor);
   await loadAccreditationForActor(actor, accreditationId);
   const existing = await prisma.contractorOrgDocument.findFirst({
     where: {
@@ -1150,6 +1172,7 @@ export async function validateAccreditationPersonDocument(
   documentId: string,
   body: ValidateAccreditationDocumentBody,
 ): Promise<ContractorPersonDocumentResponse> {
+  assertInternalStaffActor(actor);
   await loadPersonInHab(actor, accreditationId, personId);
   const existing = await prisma.contractorPersonDocument.findFirst({
     where: {

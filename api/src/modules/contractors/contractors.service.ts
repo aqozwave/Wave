@@ -4,11 +4,17 @@ import { assertBusinessModuleEnabled } from "../../lib/businessModules.js";
 import { AppError } from "../../lib/errors.js";
 import { hashPassword } from "../../lib/password.js";
 import {
+  CONTRACTOR_INVITE_ROLE_KEYS,
   SYSTEM_ROLE_DEFS,
   SYSTEM_ROLE_KEY,
   type ContractorInviteRoleKey,
 } from "../../lib/permissions.js";
 import { prisma } from "../../lib/prisma.js";
+import {
+  assertInternalStaffActor,
+  resolveNextBusinessId,
+  resolveRequiredBusinessId,
+} from "../../lib/tenant.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import { requestPasswordReset } from "../auth/auth.service.js";
 import {
@@ -46,8 +52,11 @@ import type {
   UpdateMyContractorOrganizationBody,
 } from "./contractors.schemas.js";
 
-/** Actor mínimo para reglas de tenant (+ id para invitedBy). */
-type Actor = Pick<AuthUser, "id" | "internalRol" | "businessId">;
+/** Actor mínimo para reglas de tenant (+ id para invitedBy / portal externo). */
+type Actor = Pick<
+  AuthUser,
+  "id" | "internalRol" | "businessId" | "organizationId"
+>;
 
 /** HAB más reciente incluida en lecturas de org. */
 type LatestAccreditationRow = {
@@ -160,7 +169,7 @@ const latestAccreditationInclude = {
 
 /**
  * Filtro de listado: superadmin ve todas (o filtra businessId);
- * resto solo las de su empresa.
+ * portal externo → solo su organizationId; staff → su empresa.
  */
 function listWhere(
   actor: Actor,
@@ -189,6 +198,11 @@ function listWhere(
     ];
   }
 
+  // Externo: nunca ve orgs de otros contratistas del mismo tenant.
+  if (actor.organizationId) {
+    return { ...base, id: actor.organizationId };
+  }
+
   if (actor.internalRol === "superadmin") {
     if (query.businessId) {
       return { ...base, businessId: query.businessId };
@@ -207,11 +221,22 @@ function listWhere(
   return { ...base, businessId: actor.businessId };
 }
 
-/** 404 genérico si el actor no puede ver esa empresa. */
+/** 404 genérico si el actor no puede ver esa org (tenant + portal externo). */
 function assertContractorTenantAccess(
   actor: Actor,
   orgBusinessId: string,
+  organizationId?: string,
 ): void {
+  if (actor.organizationId) {
+    if (!organizationId || actor.organizationId !== organizationId) {
+      throw new AppError(
+        404,
+        "contractor_not_found",
+        "Organización contratista no encontrada",
+      );
+    }
+    return;
+  }
   if (actor.internalRol === "superadmin") return;
   if (!actor.businessId || actor.businessId !== orgBusinessId) {
     throw new AppError(
@@ -221,34 +246,15 @@ function assertContractorTenantAccess(
     );
   }
 }
-
 /**
  * Resuelve businessId de creación: admin → su empresa;
  * superadmin → body.businessId obligatorio.
  */
 function resolveCreateBusinessId(
   actor: Actor,
-  body: CreateContractorBody,
+  body: { businessId?: string | null },
 ): string {
-  if (actor.internalRol === "admin") {
-    if (!actor.businessId) {
-      throw new AppError(
-        403,
-        "forbidden",
-        "Tu usuario no tiene una empresa asignada",
-      );
-    }
-    return actor.businessId;
-  }
-
-  if (!body.businessId) {
-    throw new AppError(
-      400,
-      "validation_error",
-      "businessId es requerido para crear una organización contratista",
-    );
-  }
-  return body.businessId;
+  return resolveRequiredBusinessId(actor, body.businessId, "una organización contratista");
 }
 
 /** Nombre de org en minúsculas (mismo criterio que Business.name). */
@@ -304,7 +310,7 @@ export async function getContractorById(
       "Organización contratista no encontrada",
     );
   }
-  assertContractorTenantAccess(actor, row.businessId);
+  assertContractorTenantAccess(actor, row.businessId, row.id);
   return toContractorResponse(row);
 }
 
@@ -313,6 +319,8 @@ export async function createContractor(
   actor: Actor,
   body: CreateContractorBody,
 ): Promise<ContractorOrganizationResponse> {
+  // Portal externo no crea orgs de staff; solo personal interno.
+  assertInternalStaffActor(actor);
   const businessId = resolveCreateBusinessId(actor, body);
   await assertBusinessModuleEnabled(businessId, "contractors");
 
@@ -379,29 +387,25 @@ export async function updateContractor(
       "Organización contratista no encontrada",
     );
   }
-  assertContractorTenantAccess(actor, existing.businessId);
+  assertContractorTenantAccess(actor, existing.businessId, existing.id);
   await assertBusinessModuleEnabled(existing.businessId, "contractors");
 
   let nextBusinessId = existing.businessId;
   if (payload.businessId !== undefined) {
-    if (
-      actor.internalRol === "admin" &&
-      payload.businessId !== actor.businessId
-    ) {
-      throw new AppError(
-        403,
-        "forbidden",
-        "No puedes mover la organización a otra empresa",
-      );
+    nextBusinessId = resolveNextBusinessId(
+      actor,
+      payload.businessId,
+      existing.businessId,
+    );
+    if (nextBusinessId !== existing.businessId) {
+      const business = await prisma.business.findFirst({
+        where: { id: nextBusinessId, deletedAt: null },
+      });
+      if (!business) {
+        throw new AppError(400, "business_not_found", "Empresa no encontrada");
+      }
+      await assertBusinessModuleEnabled(nextBusinessId, "contractors");
     }
-    const business = await prisma.business.findFirst({
-      where: { id: payload.businessId, deletedAt: null },
-    });
-    if (!business) {
-      throw new AppError(400, "business_not_found", "Empresa no encontrada");
-    }
-    await assertBusinessModuleEnabled(payload.businessId, "contractors");
-    nextBusinessId = payload.businessId;
   }
 
   const data: Prisma.ContractorOrganizationUpdateInput = {};
@@ -483,7 +487,7 @@ export async function deleteContractor(
       "Organización contratista no encontrada",
     );
   }
-  assertContractorTenantAccess(actor, existing.businessId);
+  assertContractorTenantAccess(actor, existing.businessId, existing.id);
   await assertBusinessModuleEnabled(existing.businessId, "contractors");
 
   const updated = await prisma.contractorOrganization.update({
@@ -559,7 +563,7 @@ async function loadOrgForUsers(
       "Organización contratista no encontrada",
     );
   }
-  assertContractorTenantAccess(actor, org.businessId);
+  assertContractorTenantAccess(actor, org.businessId, org.id);
   return org;
 }
 
@@ -674,6 +678,8 @@ export async function inviteContractorUser(
   organizationId: string,
   body: InviteContractorUserBody,
 ): Promise<ContractorUserResponse> {
+  // Solo staff invita; el portal externo no gestiona altas.
+  assertInternalStaffActor(actor);
   const org = await loadOrgForUsers(actor, organizationId);
   if (!org.active) {
     throw new AppError(
@@ -701,6 +707,20 @@ export async function inviteContractorUser(
   });
 
   if (existing) {
+    // Nunca convertir staff / superadmin / cuentas internas en contratista.
+    const isAlreadyContractor =
+      Boolean(existing.organizationId) ||
+      (CONTRACTOR_INVITE_ROLE_KEYS as readonly string[]).includes(
+        existing.internalRol,
+      );
+    if (!isAlreadyContractor || existing.internalRol === "superadmin") {
+      throw new AppError(
+        409,
+        "email_not_contractor",
+        "Ese email ya pertenece a un usuario del sistema; no se puede invitar como contratista",
+      );
+    }
+
     // Otro tenant → no se reutiliza.
     if (
       existing.businessId &&
@@ -736,15 +756,12 @@ export async function inviteContractorUser(
       );
     }
 
-    // No pisa RUN de una cuenta ya existente (evita choque con unique).
-    // Asigna el rol pedido (dueño o faena) para el portal.
+    // Re-invita al mismo contratista: rol/vigencia; no pisa nombres ni RUN.
     const updated = await prisma.user.update({
       where: { id: existing.id },
       data: {
         organizationId: org.id,
         businessId: existing.businessId ?? org.businessId,
-        firstName: body.firstName,
-        lastName: body.lastName,
         invitedById: actor.id,
         roleId: role.id,
         internalRol: role.key,
@@ -761,7 +778,6 @@ export async function inviteContractorUser(
 
     return toContractorUserResponse(updated);
   }
-
   // Alta nueva: RUN no puede estar ya en users.
   const runTaken = await prisma.user.findFirst({
     where: { run: body.run, deletedAt: null },

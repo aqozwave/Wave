@@ -910,6 +910,9 @@ export async function requestPasswordReset(
 
   if (user) {
     await issueAndSendPasswordReset(user);
+  } else {
+    // Misma familia de costo que un envío real: evita filtrar existencia por latencia.
+    await getDummyPasswordHash();
   }
 
   return { message: PASSWORD_RESET_REQUEST_MESSAGE };

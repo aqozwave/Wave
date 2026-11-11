@@ -90,20 +90,27 @@ function readCookie(req: Request, name: string): string | undefined {
     if (key !== name) {
       continue;
     }
-    return decodeURIComponent(trimmed.slice(eq + 1));
+    // decodeURIComponent con % inválido no debe tumbar el request → 500.
+    try {
+      return decodeURIComponent(trimmed.slice(eq + 1));
+    } catch {
+      return undefined;
+    }
   }
 
   return undefined;
 }
 
 /**
- * Secure en la cookie: prod por defecto; override con COOKIE_SECURE=true|false.
+ * Secure en la cookie: override con COOKIE_SECURE=true|false.
+ * Si no hay override: Secure salvo development/test (staging/prod/undefined → Secure).
  */
 function cookieSecureEnabled(): boolean {
   const raw = (process.env.COOKIE_SECURE ?? "").trim().toLowerCase();
   if (raw === "1" || raw === "true") return true;
   if (raw === "0" || raw === "false") return false;
-  return process.env.NODE_ENV === "production";
+  const env = (process.env.NODE_ENV ?? "").trim().toLowerCase();
+  return env !== "development" && env !== "test";
 }
 
 /**
@@ -116,14 +123,38 @@ function cookieSameSite(): "Strict" | "Lax" | "None" {
   return "Lax";
 }
 
+/**
+ * Path acotado a auth: el browser solo manda el refresh a /api/v1/auth/*.
+ * Reduce superficie si hay XSS en otra ruta del mismo origen.
+ */
+const REFRESH_COOKIE_PATH = "/api/v1/auth";
+
 /** Armado común de atributos de la cookie refresh (set y clear). */
 function refreshCookieBaseParts(): string[] {
   const sameSite = cookieSameSite();
-  const parts = ["HttpOnly", "Path=/", `SameSite=${sameSite}`];
+  const parts = [
+    "HttpOnly",
+    `Path=${REFRESH_COOKIE_PATH}`,
+    `SameSite=${sameSite}`,
+  ];
   if (cookieSecureEnabled() || sameSite === "None") {
     parts.push("Secure");
   }
   return parts;
+}
+
+/**
+ * Etiqueta segura para bitácora de login fallido.
+ * Si pegaron una clave en el campo email, no la guardamos en texto plano.
+ */
+function safeLoginTargetLabel(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  // Parece email (tiene @ y no es solo basura larga tipo password).
+  if (trimmed.includes("@") && trimmed.length <= 254 && !/\s/.test(trimmed)) {
+    return trimmed.toLowerCase();
+  }
+  return "[redacted]";
 }
 
 /** Cookie HttpOnly del refresh para el cliente web (mismo origen vía proxy). */
@@ -193,7 +224,7 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
       req,
       action: "LOGIN",
       resource: "auth",
-      targetLabel: body.email ?? null,
+      targetLabel: safeLoginTargetLabel(body.email),
       success: false,
       errorMessage: message,
       metadata: { client },

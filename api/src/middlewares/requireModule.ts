@@ -72,6 +72,7 @@ export function requireModule(
 /**
  * Igual que requireModule, pero `key` y `businessId` salen de params de la ruta.
  * Útil para sondas y rutas anidadas `/businesses/:id/modules/:key/…`.
+ * Además exige tenant: solo superadmin sonda otra empresa (evita reconocimiento).
  */
 export function requireModuleFromParams(
   businessIdParam = "id",
@@ -82,10 +83,25 @@ export function requireModuleFromParams(
     _res: Response,
     next: NextFunction,
   ): Promise<void> {
+    if (!req.user) {
+      next(new AppError(401, "unauthorized", "Token requerido"));
+      return;
+    }
+
     const rawBusiness = req.params[businessIdParam];
     const rawKey = req.params[keyParam];
     const businessId = typeof rawBusiness === "string" ? rawBusiness : null;
     const key = typeof rawKey === "string" ? rawKey : "";
+
+    // No filtrar existencia: misma empresa o superadmin; si no, 404 genérico.
+    if (
+      req.user.internalRol !== "superadmin" &&
+      (!req.user.businessId || req.user.businessId !== businessId)
+    ) {
+      next(new AppError(404, "business_not_found", "Empresa no encontrada"));
+      return;
+    }
+
     await enforceModule(req, key, businessId, next);
   };
 }

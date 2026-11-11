@@ -38,12 +38,16 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
 
   console.error(err);
 
-  // BD caída: mensaje accionable en Toast (no el genérico "Error interno").
+  // BD caída: en local el mensaje ayuda a operar; en prod no filtrar infra.
   if (isDatabaseUnreachable(err)) {
+    const isDev =
+      process.env.NODE_ENV === "development" ||
+      process.env.NODE_ENV === "test";
     res.status(503).json({
       code: "database_unreachable",
-      message:
-        "No se pudo conectar a la base de datos. Abrí Docker y corré npm run db:up.",
+      message: isDev
+        ? "No se pudo conectar a la base de datos. Abrí Docker y corré npm run db:up."
+        : "Servicio temporalmente no disponible. Intentá de nuevo más tarde.",
     });
     return;
   }

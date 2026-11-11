@@ -1,12 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
 import jwt from "jsonwebtoken";
 
+/** Algoritmo HMAC fijo (evita confusión de alg en verify). */
+const JWT_ALGORITHMS: jwt.Algorithm[] = ["HS256"];
+
 /** Claims del access JWT: identidad + versión para invalidar sesiones. */
 export type AccessPayload = {
   sub: string;
   username: string;
   internalRol: string;
   businessId: string | null;
+  /** Distingue access de refresh (un refresh no vale como Bearer). */
+  kind: "access";
   /** tokenVersion del User; si no coincide, el token ya no vale. */
   v: number;
 };
@@ -65,11 +70,18 @@ export function hashRefreshToken(plain: string): string {
 }
 
 /** Firma el access token de vida corta (default 15m). */
-export function signAccessToken(payload: AccessPayload): string {
-  return jwt.sign(payload, requireEnv("JWT_SECRET"), {
-    // Default corto: reduce ventana si el token se filtra.
-    expiresIn: process.env.JWT_EXPIRES_IN ?? "15m",
-  } as jwt.SignOptions);
+export function signAccessToken(
+  payload: Omit<AccessPayload, "kind">,
+): string {
+  return jwt.sign(
+    { ...payload, kind: "access" satisfies AccessPayload["kind"] },
+    requireEnv("JWT_SECRET"),
+    {
+      algorithm: "HS256",
+      // Default corto: reduce ventana si el token se filtra.
+      expiresIn: process.env.JWT_EXPIRES_IN ?? "15m",
+    } as jwt.SignOptions,
+  );
 }
 
 /**
@@ -85,6 +97,7 @@ export function signRefreshToken(
     { sub: payload.sub, v: payload.v, kind: "refresh", jti },
     requireEnv("JWT_REFRESH_SECRET"),
     {
+      algorithm: "HS256",
       expiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? "7d",
     } as jwt.SignOptions,
   );
@@ -97,8 +110,16 @@ export function signRefreshToken(
 
 /** Verifica y tipa el access token; lanza si es inválido o expirado. */
 export function verifyAccessToken(token: string): AccessPayload {
-  const decoded = jwt.verify(token, requireEnv("JWT_SECRET"));
-  if (typeof decoded !== "object" || decoded === null || !("sub" in decoded)) {
+  const decoded = jwt.verify(token, requireEnv("JWT_SECRET"), {
+    algorithms: JWT_ALGORITHMS,
+  });
+  if (
+    typeof decoded !== "object" ||
+    decoded === null ||
+    !("sub" in decoded) ||
+    !("kind" in decoded) ||
+    decoded.kind !== "access"
+  ) {
     throw new jwt.JsonWebTokenError("Access token inválido");
   }
   return decoded as AccessPayload;
@@ -109,7 +130,9 @@ export function verifyAccessToken(token: string): AccessPayload {
  * Así un access JWT no sirve para renovar sesión.
  */
 export function verifyRefreshToken(token: string): RefreshPayload {
-  const decoded = jwt.verify(token, requireEnv("JWT_REFRESH_SECRET"));
+  const decoded = jwt.verify(token, requireEnv("JWT_REFRESH_SECRET"), {
+    algorithms: JWT_ALGORITHMS,
+  });
   if (
     typeof decoded !== "object" ||
     decoded === null ||

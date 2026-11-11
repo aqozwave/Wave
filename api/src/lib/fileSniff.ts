@@ -22,8 +22,9 @@ export function sniffImageMime(buffer: Buffer): SniffedImageMime | null {
     return "image/jpeg";
   }
 
-  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  // PNG: firma 8 bytes + chunk IHDR (tipo en offset 12..15).
   if (
+    buffer.length >= 24 &&
     buffer[0] === 0x89 &&
     buffer[1] === 0x50 &&
     buffer[2] === 0x4e &&
@@ -31,7 +32,11 @@ export function sniffImageMime(buffer: Buffer): SniffedImageMime | null {
     buffer[4] === 0x0d &&
     buffer[5] === 0x0a &&
     buffer[6] === 0x1a &&
-    buffer[7] === 0x0a
+    buffer[7] === 0x0a &&
+    buffer[12] === 0x49 &&
+    buffer[13] === 0x48 &&
+    buffer[14] === 0x44 &&
+    buffer[15] === 0x52
   ) {
     return "image/png";
   }
@@ -55,17 +60,26 @@ export function sniffImageMime(buffer: Buffer): SniffedImageMime | null {
 
 /**
  * ¿ZIP OOXML de Word (.docx)?
- * Cabecera PK + rastros de Content_Types y carpeta word/.
+ * Solo local file header PK 03 04 + rutas típicas de Word (no ZIP vacío/raro).
  */
 function looksLikeDocx(buffer: Buffer): boolean {
-  // ZIP local file header: PK 03 04 (también acepta PK 05 06 vacío raro).
-  if (buffer[0] !== 0x50 || buffer[1] !== 0x4b) return false;
-  if (buffer[2] !== 0x03 && buffer[2] !== 0x05 && buffer[2] !== 0x07) {
+  // Exige entrada local real (PK 03 04), no central/empty (05 06 / 07 08).
+  if (
+    buffer[0] !== 0x50 ||
+    buffer[1] !== 0x4b ||
+    buffer[2] !== 0x03 ||
+    buffer[3] !== 0x04
+  ) {
     return false;
   }
-  // Buscamos firmas típicas en los primeros bytes (sin abrir el ZIP).
-  const head = buffer.subarray(0, Math.min(buffer.length, 8_192)).toString("binary");
-  return head.includes("[Content_Types].xml") && head.includes("word/");
+  // Firmas de paquete Word en la cabecera (sin inflar el ZIP completo).
+  const head = buffer
+    .subarray(0, Math.min(buffer.length, 16_384))
+    .toString("binary");
+  return (
+    head.includes("[Content_Types].xml") &&
+    (head.includes("word/document.xml") || head.includes("word/"))
+  );
 }
 
 /**

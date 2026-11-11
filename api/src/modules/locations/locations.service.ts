@@ -5,6 +5,8 @@ import {
 } from "../../lib/dataScope.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
+import { hitRateLimit } from "../../lib/rateLimit.js";
+import { resolveNextBusinessId, resolveRequiredBusinessId } from "../../lib/tenant.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import type {
   CreateLocationBody,
@@ -104,28 +106,9 @@ function listWhere(
  */
 function resolveCreateBusinessId(
   actor: Actor,
-  body: CreateLocationBody,
+  body: { businessId?: string | null },
 ): string {
-  if (actor.internalRol === "admin") {
-    if (!actor.businessId) {
-      throw new AppError(
-        403,
-        "forbidden",
-        "Tu usuario no tiene una empresa asignada",
-      );
-    }
-    return actor.businessId;
-  }
-
-  // superadmin (y cualquier manager no-admin: solo superadmin llega por middleware)
-  if (!body.businessId) {
-    throw new AppError(
-      400,
-      "validation_error",
-      "businessId es requerido para crear una ubicación",
-    );
-  }
-  return body.businessId;
+  return resolveRequiredBusinessId(actor, body.businessId, "una ubicación");
 }
 
 /**
@@ -263,18 +246,12 @@ export async function updateLocation(
 
   let nextBusinessId = existing.businessId;
   if (payload.businessId !== undefined) {
-    if (actor.internalRol === "admin") {
-      // Admin queda anclado a su empresa.
-      if (payload.businessId !== actor.businessId) {
-        throw new AppError(
-          403,
-          "forbidden",
-          "No puedes mover la ubicación a otra empresa",
-        );
-      }
-      nextBusinessId = actor.businessId!;
-    } else {
-      nextBusinessId = payload.businessId;
+    nextBusinessId = resolveNextBusinessId(
+      actor,
+      payload.businessId,
+      existing.businessId,
+    );
+    if (nextBusinessId !== existing.businessId) {
       const business = await prisma.business.findFirst({
         where: { id: nextBusinessId, deletedAt: null },
       });
@@ -410,14 +387,26 @@ export async function reportMyVesselPosition(
     );
   }
 
+  // Tope anti-spam: 30 reportes/min por usuario (PC a bordo no necesita más).
+  hitRateLimit(`vessel-position:user:${actor.id}`, 30);
+
   const location = await prisma.location.findFirst({
     where: { id: actor.locationId, deletedAt: null },
-    select: { id: true, name: true, businessId: true },
+    select: { id: true, name: true, businessId: true, kind: true },
   });
   if (!location) {
     throw new AppError(404, "location_not_found", "Ubicación no encontrada");
   }
   assertLocationTenantAccess(actor, location);
+
+  // Solo naves (o sin clasificar legado); no reportar GPS de oficinas/muelles.
+  if (location.kind != null && location.kind !== "vessel") {
+    throw new AppError(
+      400,
+      "location_not_vessel",
+      "Solo se reporta posición para ubicaciones de tipo nave",
+    );
+  }
 
   const created = await prisma.vesselPosition.create({
     data: {
@@ -505,9 +494,11 @@ export async function listLatestVesselPositions(
   }
 
   const locationIds = locations.map((loc) => loc.id);
+  // Una fila por nave (la más reciente). Sin esto se traía todo el historial.
   const positions = await prisma.vesselPosition.findMany({
     where: { locationId: { in: locationIds } },
     orderBy: { recordedAt: "desc" },
+    distinct: ["locationId"],
     select: {
       locationId: true,
       latitude: true,

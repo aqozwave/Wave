@@ -5,6 +5,7 @@ import {
 } from "../../lib/crewCourseStatus.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
+import { isContractorPortalActor } from "../../lib/tenant.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import { computeCourseCompliancePercents } from "../crewMemberCourses/crewMemberCourses.service.js";
 import {
@@ -13,10 +14,14 @@ import {
 } from "../notificationSettings/notificationSettings.service.js";
 import type { GetDashboardSummaryQuery } from "./dashboard.schemas.js";
 
-/** Actor mínimo tenant + alcance de nave. */
+/** Actor mínimo tenant + alcance de nave (+ portal externo). */
 type Actor = Pick<
   AuthUser,
-  "internalRol" | "businessId" | "locationId" | "dataScope"
+  | "internalRol"
+  | "businessId"
+  | "locationId"
+  | "dataScope"
+  | "organizationId"
 >;
 
 /**
@@ -174,6 +179,15 @@ export async function getDashboardSummary(
     completedTrainingSessionsCount: number;
   }>;
 }> {
+  // Portal contratista: sin PII de tripulantes del panel interno.
+  if (isContractorPortalActor(actor)) {
+    throw new AppError(
+      403,
+      "forbidden",
+      "El panel interno no está disponible para usuarios contratistas",
+    );
+  }
+
   const resolved = resolveDashboardScope(actor);
   const crewWhere: {
     deletedAt: null;
