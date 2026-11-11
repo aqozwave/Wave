@@ -518,6 +518,8 @@ model User {
   workPermitSignatures WorkPermitSignature[] @relation("WorkPermitSignatureSignedBy")
   /// Respuestas de checklist de PT contestadas por este usuario.
   workPermitChecklistAnswers WorkPermitChecklistAnswer[] @relation("WorkPermitChecklistAnsweredBy")
+  /// Posiciones de nave reportadas desde el navegador por este usuario.
+  vesselPositionsReported VesselPosition[]
 
   @@index([email])
   @@index([username])
@@ -807,11 +809,38 @@ model Location {
   workNotices   WorkNotice[]
   /// Permisos de trabajo en esta nave/lugar.
   workPermits   WorkPermit[]
+  /// Lecturas de posición (navegador a bordo / futuro AIS).
+  vesselPositions VesselPosition[]
 
   @@index([businessId])
   @@index([name, businessId])
   @@index([kind])
   @@map("locations")
+}
+
+/**
+ * Posición reportada de una nave/lugar (prueba: geolocalización del PC a bordo).
+ * Historial por locationId; el Panel lee la más reciente.
+ */
+model VesselPosition {
+  id           String   @id @default(uuid()) @db.Uuid
+  locationId   String   @map("location_id") @db.Uuid
+  location     Location @relation(fields: [locationId], references: [id])
+  latitude     Float
+  longitude    Float
+  /// Precisión del navegador en metros (coords.accuracy); null si no vino.
+  accuracyM    Float?   @map("accuracy_m")
+  /// Origen de la lectura (browser = PC a bordo; ais queda para después).
+  source       String   @default("browser")
+  recordedAt   DateTime @default(now()) @map("recorded_at") @db.Timestamptz
+  /// Quién reportó (usuario del PC); null si llega de un job futuro.
+  reportedById String?  @map("reported_by_id") @db.Uuid
+  reportedBy   User?    @relation(fields: [reportedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([locationId, recordedAt])
+  @@index([reportedById])
+  @@map("vessel_positions")
 }
 
 /**

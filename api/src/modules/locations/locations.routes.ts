@@ -6,14 +6,22 @@ import {
   createLocationHandler,
   deleteLocationHandler,
   getLocationHandler,
+  getLocationVesselPositionHandler,
+  getMyVesselPositionHandler,
   listLocationsHandler,
+  listVesselPositionsHandler,
+  reportMyVesselPositionHandler,
   updateLocationHandler,
 } from "./locations.controller.js";
 import {
   createLocationRequestSchema,
   deleteLocationRequestSchema,
+  getLocationPositionRequestSchema,
   getLocationRequestSchema,
+  getMyVesselPositionRequestSchema,
   listLocationsRequestSchema,
+  listVesselPositionsRequestSchema,
+  reportVesselPositionRequestSchema,
   updateLocationRequestSchema,
 } from "./locations.schemas.js";
 
@@ -38,6 +46,36 @@ locationsRouter.post(
   requireTenantManager,
   validate(createLocationRequestSchema),
   createLocationHandler,
+);
+
+// Posición de la nave del usuario (antes de /:id para no capturar "me").
+locationsRouter.get(
+  "/me/position",
+  authenticate,
+  validate(getMyVesselPositionRequestSchema),
+  getMyVesselPositionHandler,
+);
+locationsRouter.post(
+  "/me/position",
+  authenticate,
+  validate(reportVesselPositionRequestSchema),
+  reportMyVesselPositionHandler,
+);
+
+// Flota: última señal por nave (antes de /:id).
+locationsRouter.get(
+  "/positions",
+  authenticate,
+  validate(listVesselPositionsRequestSchema),
+  listVesselPositionsHandler,
+);
+
+// Última posición de una ubicación concreta.
+locationsRouter.get(
+  "/:id/position",
+  authenticate,
+  validate(getLocationPositionRequestSchema),
+  getLocationVesselPositionHandler,
 );
 
 // Detalle por id.

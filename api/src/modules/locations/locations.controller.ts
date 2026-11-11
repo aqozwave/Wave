@@ -8,17 +8,26 @@ import {
   createLocationResponseSchema,
   deleteLocationResponseSchema,
   getLocationResponseSchema,
+  getVesselPositionResponseSchema,
   listLocationsResponseSchema,
+  listVesselPositionsResponseSchema,
+  reportVesselPositionResponseSchema,
   updateLocationResponseSchema,
   type CreateLocationBody,
   type ListLocationsQuery,
+  type ListVesselPositionsQuery,
+  type ReportVesselPositionBody,
   type UpdateLocationBody,
 } from "./locations.schemas.js";
 import {
   createLocation,
   deleteLocationById,
   getLocationById,
+  getLocationVesselPosition,
+  getMyVesselPosition,
+  listLatestVesselPositions,
   listLocations,
+  reportMyVesselPosition,
   updateLocation,
 } from "./locations.service.js";
 
@@ -125,4 +134,71 @@ export async function deleteLocationHandler(
   });
   const out = deleteLocationResponseSchema.parse(deleted);
   res.status(200).json(out);
+}
+
+/**
+ * POST /locations/me/position — guarda lat/lng del navegador en la nave del usuario.
+ */
+export async function reportMyVesselPositionHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+
+  const body = req.body as ReportVesselPositionBody;
+  const created = await reportMyVesselPosition(req.user, body);
+  const out = reportVesselPositionResponseSchema.parse(created);
+  res.status(201).json(out);
+}
+
+/**
+ * GET /locations/me/position — última posición de la nave del usuario.
+ */
+export async function getMyVesselPositionHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+
+  const item = await getMyVesselPosition(req.user);
+  const body = getVesselPositionResponseSchema.parse(item);
+  res.status(200).json(body);
+}
+
+/**
+ * GET /locations/:id/position — última posición de una ubicación (tenant).
+ */
+export async function getLocationVesselPositionHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+
+  const { id } = req.params as { id: string };
+  const item = await getLocationVesselPosition(req.user, id);
+  const body = getVesselPositionResponseSchema.parse(item);
+  res.status(200).json(body);
+}
+
+/**
+ * GET /locations/positions — última señal por nave (mapa flota del admin).
+ */
+export async function listVesselPositionsHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) {
+    throw new AppError(401, "unauthorized", "Token requerido");
+  }
+
+  const query = req.query as unknown as ListVesselPositionsQuery;
+  const result = await listLatestVesselPositions(req.user, query);
+  const body = listVesselPositionsResponseSchema.parse(result);
+  res.status(200).json(body);
 }
