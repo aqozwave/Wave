@@ -167,33 +167,18 @@ export function TrainingSessionsPage() {
     null,
   );
 
-  /** Carga sesiones + capacitaciones + naves (los embarcados van por nave). */
+  /**
+   * Carga sesiones (obligatorio) y, aparte, catálogo + naves para el wizard.
+   * Un 403 de trainings/locations no debe vaciar la tabla ni spamear toasts.
+   */
   const load = useCallback(async () => {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [sessions, cats, locs] = await Promise.all([
-        listTrainingSessionsRequest(accessToken, 1, 100),
-        listTrainingsRequest(accessToken, 1, 100, { active: true }),
-        listLocationsRequest(accessToken, 1, 100),
-      ]);
+      const sessions = await listTrainingSessionsRequest(accessToken, 1, 100);
       setItems(sessions.items);
-      setTrainings(
-        cats.items.filter(
-          (t) => t.active && t.appliesTo.includes("crew"),
-        ),
-      );
-      // Naves activas: kind vessel o sin clasificar (ETL legacy suele dejar null).
-      // Misma regla que Panel / listado de posiciones de flota.
-      setVessels(
-        locs.items.filter(
-          (loc) =>
-            loc.state &&
-            !loc.deletedAt &&
-            (loc.kind === "vessel" || loc.kind == null),
-        ),
-      );
     } catch (err) {
+      setItems([]);
       showToast(
         err instanceof ApiError
           ? err.message
@@ -202,6 +187,33 @@ export function TrainingSessionsPage() {
       );
     } finally {
       setLoading(false);
+    }
+
+    // Catálogo de capacitaciones: solo hace falta para “Nueva sesión”.
+    try {
+      const cats = await listTrainingsRequest(accessToken, 1, 100, {
+        active: true,
+      });
+      setTrainings(
+        cats.items.filter((t) => t.active && t.appliesTo.includes("crew")),
+      );
+    } catch {
+      setTrainings([]);
+    }
+
+    // Naves para el select del wizard.
+    try {
+      const locs = await listLocationsRequest(accessToken, 1, 100);
+      setVessels(
+        locs.items.filter(
+          (loc) =>
+            loc.state &&
+            !loc.deletedAt &&
+            (loc.kind === "vessel" || loc.kind == null),
+        ),
+      );
+    } catch {
+      setVessels([]);
     }
   }, [accessToken, showToast]);
 
