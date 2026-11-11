@@ -65,6 +65,8 @@ function toResponse(row: {
   viewBy: string;
   crewCanView: boolean;
   visibility: string;
+  accreditationPack: "company" | "person" | null;
+  accreditationPackRequired: boolean;
   businessId: string;
   state: boolean;
   deletedAt: Date | null;
@@ -83,6 +85,8 @@ function toResponse(row: {
     viewBy: row.viewBy,
     crewCanView: row.crewCanView,
     visibility: row.visibility,
+    accreditationPack: row.accreditationPack,
+    accreditationPackRequired: row.accreditationPackRequired,
     businessId: row.businessId,
     state: row.state,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
@@ -113,6 +117,9 @@ function listWhere(
 
   if (query.subtype) base.subtype = query.subtype;
   if (query.appliesTo) base.appliesTo = query.appliesTo;
+  if (query.accreditationPack) {
+    base.accreditationPack = query.accreditationPack;
+  }
   if (query.search?.trim()) {
     const q = query.search.trim();
     base.OR = [
@@ -259,6 +266,8 @@ export async function createDocumentType(
         viewBy: body.viewBy ?? "prevention_or_admin",
         crewCanView,
         visibility,
+        accreditationPack: body.accreditationPack ?? null,
+        accreditationPackRequired: body.accreditationPackRequired ?? true,
         businessId,
         state: body.state ?? true,
       },
@@ -332,6 +341,12 @@ export async function updateDocumentType(
     }
   }
   if (payload.visibility !== undefined) data.visibility = payload.visibility;
+  if (payload.accreditationPack !== undefined) {
+    data.accreditationPack = payload.accreditationPack;
+  }
+  if (payload.accreditationPackRequired !== undefined) {
+    data.accreditationPackRequired = payload.accreditationPackRequired;
+  }
   if (payload.state !== undefined) data.state = payload.state;
   if (nextBusinessId !== existing.businessId) {
     data.business = { connect: { id: nextBusinessId } };

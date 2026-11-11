@@ -1,4 +1,8 @@
 import { Prisma, type User } from "@prisma/client";
+import {
+  applyDataScopeToWhere,
+  assertDataScopeAccess,
+} from "../../lib/dataScope.js";
 import { AppError } from "../../lib/errors.js";
 import { sniffUserPhotoMime } from "../../lib/fileSniff.js";
 import {
@@ -9,7 +13,10 @@ import {
   writeUserPhotoFile,
 } from "../../lib/localUploads.js";
 import { hashPassword } from "../../lib/password.js";
-import { SYSTEM_ROLE_KEYS } from "../../lib/permissions.js";
+import {
+  CONTRACTOR_INVITE_ROLE_KEYS,
+  SYSTEM_ROLE_KEYS,
+} from "../../lib/permissions.js";
 import { prisma } from "../../lib/prisma.js";
 import { clearLoginPairsForEmail } from "../../lib/rateLimit.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
@@ -22,8 +29,17 @@ import type {
   UserAdminResponse,
 } from "./users.schemas.js";
 
-/** Actor mínimo para reglas de tenant y permisos de gestión. */
-type Actor = Pick<AuthUser, "id" | "internalRol" | "businessId">;
+/** Actor con tenant + dataScope (nave/área/self). */
+type Actor = Pick<
+  AuthUser,
+  | "id"
+  | "internalRol"
+  | "businessId"
+  | "locationId"
+  | "areaId"
+  | "organizationId"
+  | "dataScope"
+>;
 
 /** Include de relaciones usadas en el contrato admin. */
 const userAdminInclude = {
@@ -74,12 +90,44 @@ function toUserAdminResponse(row: UserAdminRow): UserAdminResponse {
 }
 
 /** Superadmin ve todos; admin solo su empresa. */
+/**
+ * ¿Es cuenta del portal contratista (dueño o faena)?
+ * Esas se gestionan solo desde Contratistas, no desde Usuarios del sistema.
+ */
+function isContractorPortalUser(row: {
+  organizationId: string | null;
+  internalRol: string;
+}): boolean {
+  if (row.organizationId) return true;
+  return (CONTRACTOR_INVITE_ROLE_KEYS as readonly string[]).includes(
+    row.internalRol,
+  );
+}
+
+/** Bloquea asignar roles de portal desde Usuarios del sistema. */
+function assertNotContractorPortalRole(internalRol: string): void {
+  if (
+    (CONTRACTOR_INVITE_ROLE_KEYS as readonly string[]).includes(internalRol)
+  ) {
+    throw new AppError(
+      400,
+      "contractor_role_via_users",
+      "Los roles de contratista se asignan desde Prevención → Contratistas (invitar usuario)",
+    );
+  }
+}
+
 function listWhere(
   actor: Actor,
   query: ListUsersQuery,
 ): Prisma.UserWhereInput {
   const base: Prisma.UserWhereInput = {
     deletedAt: null,
+    // Portal externo: solo en ficha de contratista, nunca en Usuarios.
+    organizationId: null,
+    internalRol: {
+      notIn: [...CONTRACTOR_INVITE_ROLE_KEYS],
+    },
     ...(query.includeInactive ? {} : { state: true }),
   };
 
@@ -94,36 +142,40 @@ function listWhere(
     ];
   }
 
-  if (actor.internalRol === "superadmin") {
+  if (actor.internalRol === "superadmin" || actor.dataScope === "all") {
     if (query.businessId) {
       return { ...base, businessId: query.businessId };
     }
     return base;
   }
 
-  if (!actor.businessId) {
-    throw new AppError(
-      403,
-      "forbidden",
-      "Tu usuario no tiene una empresa asignada",
-    );
-  }
-
-  return { ...base, businessId: actor.businessId };
+  return applyDataScopeToWhere(actor, base, {
+    locationField: "locationId",
+    areaField: "areaId",
+    selfField: "id",
+  });
 }
 
 /**
- * 404 genérico si el actor no puede ver ese usuario
- * (no filtrar existencia a otra empresa).
+ * 404/403 si el actor no puede ver ese usuario
+ * (empresa + nave/área/self; no filtrar existencia cross-tenant).
  */
 function assertUserTenantAccess(actor: Actor, target: User): void {
-  if (actor.internalRol === "superadmin") {
-    return;
-  }
-
-  if (!actor.businessId || target.businessId !== actor.businessId) {
+  // Invitados del portal: no existen para este módulo (404 genérico).
+  if (isContractorPortalUser(target)) {
     throw new AppError(404, "user_not_found", "Usuario no encontrado");
   }
+
+  assertDataScopeAccess(
+    actor,
+    {
+      businessId: target.businessId ?? "",
+      locationId: target.locationId,
+      areaId: target.areaId,
+      userId: target.id,
+    },
+    { code: "user_not_found", message: "Usuario no encontrado" },
+  );
 }
 
 /** Admin no gestiona cuentas superadmin. */
@@ -349,6 +401,7 @@ export async function createUser(
 
   // Solo superadmin puede crear otro superadmin (vía role key).
   const internalRol = await resolveInternalRolFromRole(roleId, "user");
+  assertNotContractorPortalRole(internalRol);
   if (internalRol === "superadmin" && actor.internalRol !== "superadmin") {
     throw new AppError(
       403,
@@ -419,6 +472,30 @@ export async function updateUser(
   assertUserTenantAccess(actor, existing);
   assertCanManageTarget(actor, existing);
 
+  // Nadie se desactiva a sí mismo (el soft-delete ya tenía la misma regla).
+  if (actor.id === id && body.state === false) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "No puedes desactivar tu propia cuenta",
+    );
+  }
+
+  // Tampoco puede cambiarse el propio rol ni el alcance desde admin.
+  if (
+    actor.id === id &&
+    (body.roleId !== undefined ||
+      body.businessId !== undefined ||
+      body.locationId !== undefined ||
+      body.areaId !== undefined)
+  ) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "No puedes cambiar tu propio rol ni alcance",
+    );
+  }
+
   if (actor.internalRol !== "superadmin" && body.businessId !== undefined) {
     if (body.businessId !== actor.businessId) {
       throw new AppError(
@@ -442,6 +519,11 @@ export async function updateUser(
     body.roleId !== undefined ? body.roleId : undefined,
     existing.internalRol,
   );
+
+  // Si cambian el rol, no permitir pasar a portal contratista desde acá.
+  if (body.roleId !== undefined) {
+    assertNotContractorPortalRole(nextInternalRol);
+  }
 
   if (
     nextInternalRol === "superadmin" &&

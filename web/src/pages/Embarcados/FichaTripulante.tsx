@@ -47,9 +47,12 @@ import {
 } from "../../lib/boardingBook";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { isRutValid, normalizeRut } from "../../lib/rut";
+import { CrewAccessPanel } from "./CrewAccessPanel";
+import { CrewBitacoraPanel } from "./CrewBitacoraPanel";
 import { CrewBoardingBookPanel } from "./CrewBoardingBookPanel";
 import { CrewCoursesPanel } from "./CrewCoursesPanel";
 import { CrewDocumentsPanel } from "./CrewDocumentsPanel";
+import { CrewTrainingsPanel } from "./CrewTrainingsPanel";
 import { OfficerAssignmentsPanel } from "./OfficerAssignmentsPanel";
 
 /** Form de edición (Figma D34 · Actualizar embarcado). */
@@ -85,13 +88,14 @@ function dateInputToIso(date: string): string {
 const selectClass =
   "h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-nachipa-primary)]";
 
-/** Tabs de la ficha (Figma D3). */
+/** Tabs de la ficha (Figma D3 + Acceso P7). */
 type FichaTab =
   | "cursos"
   | "capacitaciones"
   | "libreta"
   | "datos"
   | "documentos"
+  | "acceso"
   | "historial";
 
 /** Capitaliza para UI. */
@@ -135,6 +139,7 @@ export function FichaTripulante() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<FichaTab>("cursos");
   const [courseTotal, setCourseTotal] = useState(0);
+  const [trainingTotal, setTrainingTotal] = useState(0);
   const [assignCourseOpen, setAssignCourseOpen] = useState(false);
   const [locations, setLocations] = useState<Location[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
@@ -537,11 +542,15 @@ export function FichaTripulante() {
 
   const tabs: { id: FichaTab; label: string }[] = [
     { id: "cursos", label: `Cursos (${courseTotal})` },
-    { id: "capacitaciones", label: "Capacitaciones" },
+    {
+      id: "capacitaciones",
+      label: `Capacitaciones (${trainingTotal})`,
+    },
     { id: "libreta", label: "Libreta de embarque" },
     { id: "datos", label: "Datos personales" },
     { id: "documentos", label: "Documentos" },
-    { id: "historial", label: "Historial" },
+    { id: "acceso", label: "Acceso" },
+    { id: "historial", label: "Bitácora" },
   ];
 
   return (
@@ -553,7 +562,13 @@ export function FichaTripulante() {
         actions={<UserMenu />}
       />
 
-      <div className="animate-enter flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-y-auto px-8 py-7">
+      <div
+        className={[
+          "animate-enter flex min-h-0 min-w-0 flex-1 flex-col gap-5 px-8 py-7",
+          // Bitácora: sin scroll de página; el timeline scrollea adentro.
+          tab === "historial" ? "overflow-hidden" : "overflow-y-auto",
+        ].join(" ")}
+      >
         {loading ? (
           <p className="text-[13px] text-[var(--color-nachipa-secondary)]">
             Cargando ficha…
@@ -573,7 +588,7 @@ export function FichaTripulante() {
         ) : (
           <>
             {/* Card · Tripulante (header Figma). */}
-            <div className="rounded-2xl border border-[var(--color-tremor-border)] bg-white p-5">
+            <div className="shrink-0 rounded-2xl border border-[var(--color-tremor-border)] bg-white p-5">
               <div className="flex flex-wrap items-start gap-4">
                 <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-[var(--color-status-info-bg)] text-[15px] font-semibold text-[var(--color-status-info-fg)]">
                   {initialsOf(crew)}
@@ -638,7 +653,7 @@ export function FichaTripulante() {
             </div>
 
             {/* Tabs + volver arriba a la derecha. */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap gap-2">
                 {tabs.map((t) => {
                   const active = tab === t.id;
@@ -736,11 +751,28 @@ export function FichaTripulante() {
                 }}
               />
             ) : null}
-            {tab === "capacitaciones" ? (
-              <PlaceholderCard text="Capacitaciones (Prevención) llegan con ese módulo." />
+            {tab === "capacitaciones" && id ? (
+              <CrewTrainingsPanel
+                crewMemberId={id}
+                businessId={crew.businessId}
+                onTotalChange={setTrainingTotal}
+              />
             ) : null}
-            {tab === "historial" ? (
-              <PlaceholderCard text="Bitácora / historial: Figma D31 — pendiente." />
+            {tab === "acceso" && id && crew ? (
+              <CrewAccessPanel
+                crewMemberId={id}
+                crewEmail={crew.email}
+                crewDisplayName={fullName(crew)}
+              />
+            ) : null}
+            {tab === "historial" && id ? (
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <CrewBitacoraPanel
+                  crewMemberId={id}
+                  businessId={crew.businessId}
+                  onOpenDocuments={() => setTab("documentos")}
+                />
+              </div>
             ) : null}
           </>
         )}
@@ -1031,15 +1063,6 @@ function Field({
       <dd className="mt-1 text-[13px] text-[var(--color-nachipa-title)]">
         {value}
       </dd>
-    </div>
-  );
-}
-
-/** Placeholder de tabs sin datos aún. */
-function PlaceholderCard({ text }: { text: string }) {
-  return (
-    <div className="rounded-2xl border border-[var(--color-tremor-border)] bg-white px-5 py-10 text-center text-[13px] text-[var(--color-nachipa-secondary)]">
-      {text}
     </div>
   );
 }

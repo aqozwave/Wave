@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
-import { requirePermission } from "../../middlewares/requirePermission.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
+import {
+  requireAnyPermission,
+  requirePermission,
+} from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createDocumentTypeHandler,
@@ -21,17 +23,24 @@ import {
 
 /**
  * Maestro tipos de documento bajo /api/v1/document-types.
- * Lectura: permiso read. Mutaciones: admin/superadmin + permiso create/update/deactivate.
+ * Lectura: permiso read. Mutaciones: requirePermission (create/update/deactivate); superadmin bypass.
  */
 export const documentTypesRouter = Router();
 
 documentTypesRouter.get(
   "/",
   authenticate,
-  requirePermission(
-    PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES,
-    PERMISSION_ACTION.READ,
-  ),
+  /** Catálogo maestros o pantalla Packs (accreditation_packs). */
+  requireAnyPermission([
+    {
+      resource: PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES,
+      action: PERMISSION_ACTION.READ,
+    },
+    {
+      resource: PERMISSION_RESOURCE.ACCREDITATION_PACKS,
+      action: PERMISSION_ACTION.READ,
+    },
+  ]),
   validate(listDocumentTypesRequestSchema),
   listDocumentTypesHandler,
 );
@@ -39,7 +48,6 @@ documentTypesRouter.get(
 documentTypesRouter.post(
   "/",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES,
     PERMISSION_ACTION.CREATE,
@@ -51,10 +59,16 @@ documentTypesRouter.post(
 documentTypesRouter.get(
   "/:id",
   authenticate,
-  requirePermission(
-    PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES,
-    PERMISSION_ACTION.READ,
-  ),
+  requireAnyPermission([
+    {
+      resource: PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES,
+      action: PERMISSION_ACTION.READ,
+    },
+    {
+      resource: PERMISSION_RESOURCE.ACCREDITATION_PACKS,
+      action: PERMISSION_ACTION.READ,
+    },
+  ]),
   validate(getDocumentTypeRequestSchema),
   getDocumentTypeHandler,
 );
@@ -62,11 +76,17 @@ documentTypesRouter.get(
 documentTypesRouter.patch(
   "/:id",
   authenticate,
-  requireTenantManager,
-  requirePermission(
-    PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES,
-    PERMISSION_ACTION.UPDATE,
-  ),
+  /** Editar tipo en catálogo o membresía de pack. */
+  requireAnyPermission([
+    {
+      resource: PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES,
+      action: PERMISSION_ACTION.UPDATE,
+    },
+    {
+      resource: PERMISSION_RESOURCE.ACCREDITATION_PACKS,
+      action: PERMISSION_ACTION.UPDATE,
+    },
+  ]),
   validate(updateDocumentTypeRequestSchema),
   updateDocumentTypeHandler,
 );
@@ -74,7 +94,6 @@ documentTypesRouter.patch(
 documentTypesRouter.delete(
   "/:id",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES,
     PERMISSION_ACTION.DEACTIVATE,

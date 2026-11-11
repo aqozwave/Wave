@@ -1,0 +1,49 @@
+meta {
+  name: Post work permit submit
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/work-permits/{{workPermitId}}/submit
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+docs {
+  Contratista (o staff con work_permits.update) envía PT to_complete → to_approve.
+  Variable workPermitId.
+  Exige ≥1 persona, pack persona, exigencias document/person del tipo y checklist.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken.");
+  }
+  if (!bru.getEnvVar("workPermitId")) {
+    throw new Error("Sin workPermitId.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq to_approve
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

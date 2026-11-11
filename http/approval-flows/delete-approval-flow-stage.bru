@@ -1,0 +1,31 @@
+meta {
+  name: Delete approval flow stage
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/approval-flows/{{approvalFlowId}}/stages/{{approvalFlowStageId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Quita etapa no fija y renumera. Falla en etapas fixed.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("approvalFlowId") || !bru.getEnvVar("approvalFlowStageId")) {
+    throw new Error("Faltan approvalFlowId o approvalFlowStageId.");
+  }
+}
+
+assert {
+  res.status: eq 200
+}

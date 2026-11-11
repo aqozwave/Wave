@@ -14,6 +14,7 @@ import {
   DataTableOutlineButton,
   DataTableSearch,
 } from "../../components/DataTableCard/DataTableCard";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import { Modal } from "../../components/Modal/Modal";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
 import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
@@ -24,6 +25,7 @@ import {
 import { TextField } from "../../components/TextField/TextField";
 import { Toggle } from "../../components/Toggle/Toggle";
 import { useToast } from "../../components/Toast/ToastProvider";
+import { userHasPermission } from "../../lib/api/auth";
 import {
   listBusinessesRequest,
   type Business,
@@ -76,8 +78,14 @@ export const DegreesPanel = forwardRef<DegreesPanelHandle>(function DegreesPanel
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const isSuperadmin = user?.internalRol === "superadmin";
-  const canManage =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
+  /** Alta de título académico según RBAC. */
+  const canCreate = userHasPermission(user, "maestros.degrees", "create");
+  /** Editar título académico según RBAC. */
+  const canUpdate = userHasPermission(user, "maestros.degrees", "update");
+  /** Desactivar / eliminar título académico según RBAC. */
+  const canDeactivate = userHasPermission(user, "maestros.degrees", "deactivate");
+  /** Alta / editar / desactivar según RBAC (no internalRol). */
+  const canManage = canCreate || canUpdate || canDeactivate;
 
   const [items, setItems] = useState<AcademicDegreeRow[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -88,6 +96,9 @@ export const DegreesPanel = forwardRef<DegreesPanelHandle>(function DegreesPanel
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
+  /** Fila pendiente de confirmar eliminación (modal del sistema). */
+  const [pendingDelete, setPendingDelete] = useState<AcademicDegreeRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const businessNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -169,7 +180,7 @@ export const DegreesPanel = forwardRef<DegreesPanelHandle>(function DegreesPanel
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!accessToken || !canManage) return;
+    if (!accessToken || !(editing ? canUpdate : canCreate)) return;
     if (!form.name.trim()) {
       showToast("El nombre es requerido.", "danger");
       return;
@@ -212,22 +223,28 @@ export const DegreesPanel = forwardRef<DegreesPanelHandle>(function DegreesPanel
     }
   }
 
-  async function onDelete(row: AcademicDegreeRow) {
-    if (!accessToken || !canManage) return;
+  function requestDelete(row: AcademicDegreeRow) {
+    if (!canDeactivate) return;
     setMenuId(null);
-    const ok = window.confirm(
-      `¿Eliminar el título académico «${displayName(row.name)}»? Quedará desactivado.`,
-    );
-    if (!ok) return;
+    setPendingDelete(row);
+  }
+
+  /** Soft-delete confirmado vía modal del sistema. */
+  async function confirmDelete() {
+    if (!accessToken || !canDeactivate || !pendingDelete) return;
+    setDeleting(true);
     try {
-      await deleteAcademicDegreeRequest(accessToken, row.id);
+      await deleteAcademicDegreeRequest(accessToken, pendingDelete.id);
       showToast("Título académico eliminado.", "success");
+      setPendingDelete(null);
       await load();
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo eliminar.",
         "danger",
       );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -365,20 +382,24 @@ export const DegreesPanel = forwardRef<DegreesPanelHandle>(function DegreesPanel
                       </button>
                       {menuId === row.id ? (
                         <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
-                          <button
-                            type="button"
-                            className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                            onClick={() => openEdit(row)}
-                          >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                            onClick={() => void onDelete(row)}
-                          >
-                            Eliminar
-                          </button>
+                          {canUpdate ? (
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                              onClick={() => openEdit(row)}
+                            >
+                              Editar
+                            </button>
+                          ) : null}
+                          {canDeactivate ? (
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
+                              onClick={() => requestDelete(row)}
+                            >
+                              Eliminar
+                            </button>
+                          ) : null}
                         </div>
                       ) : null}
                     </>
@@ -480,6 +501,27 @@ export const DegreesPanel = forwardRef<DegreesPanelHandle>(function DegreesPanel
           </div>
         </form>
       </Modal>
+
+  <ConfirmModal
+    open={pendingDelete !== null}
+    title="Eliminar título académico"
+    message={
+      pendingDelete
+            ? `¿Eliminar el título académico «${displayName(pendingDelete.name)}»?`
+            : "¿Eliminar este título académico?"
+    }
+    detail="Quedará desactivado."
+    confirmLabel="Eliminar"
+    busyLabel="Eliminando…"
+    busy={deleting}
+    onClose={() => {
+      if (!deleting) setPendingDelete(null);
+    }}
+    onConfirm={() => {
+      void confirmDelete();
+    }}
+  />
+
     </>
   );
 });

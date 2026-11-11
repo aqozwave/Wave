@@ -1,0 +1,35 @@
+meta {
+  name: Delete training session
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/training-sessions/{{trainingSessionId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Cancela un borrador (soft). No aplica a sesiones completed.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("trainingSessionId");
+  if (!token || !id) throw new Error("Definí accessToken y trainingSessionId");
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq cancelled
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

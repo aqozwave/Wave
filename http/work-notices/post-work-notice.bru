@@ -1,0 +1,76 @@
+meta {
+  name: Post work notice
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/work-notices
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "organizationId": "{{contractorId}}",
+    "permitTypeId": "{{permitTypeId}}",
+    "locationId": "{{locationId}}",
+    "tentativeDate": "2026-10-28",
+    "estimatedDurationDays": 3,
+    "description": "Pintura del casco en sector de popa",
+    "notifyByEmail": true
+  }
+}
+
+docs {
+  AT2 — área solicitante (User.areaId) envía aviso a Prevención.
+  Sin área en el usuario → 400 area_required (no genera avisos).
+  Variables: contractorId, permitTypeId, locationId (misma empresa).
+  Duración en días es opcional. Sin toggle de HAB.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+  if (!bru.getEnvVar("contractorId")) {
+    throw new Error("Sin contractorId.");
+  }
+  if (!bru.getEnvVar("permitTypeId")) {
+    throw new Error("Sin permitTypeId (GET permit-types).");
+  }
+  if (!bru.getEnvVar("locationId")) {
+    throw new Error("Sin locationId (GET locations).");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if ((res.getStatus() === 201 || res.getStatus() === 200) && body && body.id) {
+    bru.setEnvVar("workNoticeId", body.id);
+    bru.setEnvVar("workNoticeCode", body.code);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.code: isDefined
+  res.body.status: eq pending
+  res.body.requestingAreaId: isDefined
+  res.body.requestingArea.id: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

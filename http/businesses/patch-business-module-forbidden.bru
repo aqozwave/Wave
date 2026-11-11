@@ -1,0 +1,42 @@
+meta {
+  name: Patch business module forbidden
+  type: http
+  seq: 15
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/businesses/{{businessId}}/modules/contractors
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "enabled": true
+  }
+}
+
+docs {
+  No-superadmin → 403 (requireSuperadmin).
+  Usar accessToken de un admin/prevencionista.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+  const businessId = bru.getVar("businessId") || bru.getEnvVar("businessId");
+  if (!businessId) throw new Error("Definí businessId");
+}
+
+assert {
+  res.status: eq 403
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

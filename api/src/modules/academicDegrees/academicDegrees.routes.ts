@@ -1,6 +1,7 @@
 import { Router } from "express";
+import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
+import { requirePermission } from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createAcademicDegreeHandler,
@@ -33,7 +34,10 @@ academicDegreesRouter.get(
 academicDegreesRouter.post(
   "/",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_DEGREES,
+    PERMISSION_ACTION.CREATE,
+  ),
   validate(createAcademicDegreeRequestSchema),
   createAcademicDegreeHandler,
 );
@@ -48,7 +52,10 @@ academicDegreesRouter.get(
 academicDegreesRouter.patch(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_DEGREES,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(updateAcademicDegreeRequestSchema),
   updateAcademicDegreeHandler,
 );
@@ -56,7 +63,10 @@ academicDegreesRouter.patch(
 academicDegreesRouter.delete(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_DEGREES,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
   validate(deleteAcademicDegreeRequestSchema),
   deleteAcademicDegreeHandler,
 );

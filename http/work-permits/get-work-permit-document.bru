@@ -1,0 +1,39 @@
+meta {
+  name: Get work permit document
+  type: http
+  seq: 17
+}
+
+get {
+  url: {{baseUrl}}/api/v1/work-permits/{{workPermitId}}/document
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Ficha imprimible del PT + firmas de hitos (P6c). Sin PDF binario.
+  Variable workPermitId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("workPermitId")) throw new Error("Sin workPermitId.");
+}
+
+assert {
+  res.status: eq 200
+  res.body.permit: isDefined
+  res.body.signatures: isDefined
+  res.body.people: isDefined
+  res.body.checklist: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

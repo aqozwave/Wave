@@ -1,0 +1,51 @@
+meta {
+  name: Patch contractor portal me
+  type: http
+  seq: 27
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/contractors/me
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "specialty": "Soldadura portal",
+    "mutual": "ACHS",
+    "contactName": "Francisco Soto",
+    "contactEmail": "francisco.stht@gmail.com",
+    "contactPhone": "+56912345678",
+    "legalRepresentative": "Francisco Soto",
+    "address": "Puerto Montt",
+    "supervisorName": "Supervisor Demo",
+    "supervisorEmail": "supervisor@example.com",
+    "prevencionistName": "Prevencionista Demo",
+    "prevencionistEmail": "prevencion@example.com",
+    "subcontractors": "Ninguno declarado",
+    "workDescription": "Trabajos de prueba portal Wave"
+  }
+}
+
+docs {
+  E19 guardar antecedentes desde el portal.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+}
+
+assert {
+  res.status: in [200, 403]
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

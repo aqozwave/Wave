@@ -19,6 +19,8 @@ export type CrewMemberDocument = {
   mimeType: string;
   size: number;
   sourceModule: string;
+  /** Vencimiento; null = sin caducidad. */
+  expiresAt: string | null;
   uploadedById: string | null;
   deletedAt: string | null;
   createdAt: string;
@@ -38,6 +40,8 @@ export type CreateCrewMemberDocumentBody = {
   mimeType: string;
   contentBase64: string;
   sourceModule?: "crew" | "prevention" | "assets" | "system";
+  /** Obligatorio si el tipo requiresExpiry. */
+  expiresAt?: string | null;
 };
 
 /** Parsea error estándar Wave. */

@@ -1,0 +1,44 @@
+meta {
+  name: Get approval flow
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/approval-flows/{{approvalFlowId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Detalle P15e/P15f con etapas ordenadas.
+  Requiere approvalFlowId (del list o create).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+  const id = bru.getEnvVar("approvalFlowId");
+  if (!id) {
+    throw new Error("Sin approvalFlowId. Corré Get approval flows antes.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.stages: isDefined
+}
+
+tests {
+  test("tiene etapas", function () {
+    const body = res.getBody();
+    expect(Array.isArray(body.stages)).to.eql(true);
+    expect(body.stages.length).to.be.above(0);
+  });
+}

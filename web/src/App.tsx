@@ -9,16 +9,23 @@ import {
 } from "react-router";
 import { AppShell } from "./components/AppShell/AppShell";
 import { PanelSkeleton } from "./components/PanelSkeleton/PanelSkeleton";
+import { RequireAnyPermission } from "./components/RequirePermission/RequireAnyPermission";
+import { RequirePermission } from "./components/RequirePermission/RequirePermission";
 import { useAuth } from "./lib/auth/AuthContext";
 import { useIdleTimeout } from "./lib/auth/useIdleTimeout";
 import { ConfirmEmail } from "./pages/ConfirmEmail/ConfirmEmail";
 import { ForgotPassword } from "./pages/ForgotPassword/ForgotPassword";
 import { Login } from "./pages/Login/Login";
+import { ApprovalFlowDetailPage } from "./pages/Configuracion/ApprovalFlowDetailPage";
+import { ApprovalFlowsPage } from "./pages/Configuracion/ApprovalFlowsPage";
 import { Catalogos } from "./pages/Catalogos/Catalogos";
 import { CursosHome } from "./pages/Cursos/CursosHome";
 import { CursosTripulacion } from "./pages/Cursos/CursosTripulacion";
 import { Vencimientos } from "./pages/Cursos/Vencimientos";
 import { Empresas } from "./pages/Empresas/Empresas";
+import { ContractorPortalAccreditationPage } from "./pages/Home/ContractorPortalAccreditationPage";
+import { ContractorPortalPeoplePage } from "./pages/Home/ContractorPortalPeoplePage";
+import { ContractorPortalPermitsPage } from "./pages/Home/ContractorPortalPermitsPage";
 import { HomeIndex } from "./pages/Home/HomeIndex";
 import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmation";
 import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
@@ -28,6 +35,19 @@ import { Embarcados } from "./pages/Embarcados/Embarcados";
 import { FichaTripulante } from "./pages/Embarcados/FichaTripulante";
 import { NotificacionesVencimiento } from "./pages/Notificaciones/NotificacionesVencimiento";
 import { OutboxNotificaciones } from "./pages/Notificaciones/OutboxNotificaciones";
+import { AccreditationDetailPage } from "./pages/Prevencion/AccreditationDetailPage";
+import { AccreditationPacksPage } from "./pages/Prevencion/AccreditationPacksPage";
+import { AccreditationsPage } from "./pages/Prevencion/AccreditationsPage";
+import { ContractorDetailPage } from "./pages/Prevencion/ContractorDetailPage";
+import { ContractorsPage } from "./pages/Prevencion/ContractorsPage";
+import { PermitTypeDetailPage } from "./pages/Prevencion/PermitTypeDetailPage";
+import { PermitTypesPage } from "./pages/Prevencion/PermitTypesPage";
+import { PrevencionHome } from "./pages/Prevencion/PrevencionHome";
+import { TrainingsPage } from "./pages/Prevencion/TrainingsPage";
+import { TrainingSessionsPage } from "./pages/Prevencion/TrainingSessionsPage";
+import { WorkNoticesPage } from "./pages/Prevencion/WorkNoticesPage";
+import { WorkPermitDetailPage } from "./pages/Prevencion/WorkPermitDetailPage";
+import { WorkPermitsPage } from "./pages/Prevencion/WorkPermitsPage";
 import { Ubicaciones } from "./pages/Ubicaciones/Ubicaciones";
 import { Usuarios } from "./pages/Usuarios/Usuarios";
 
@@ -71,6 +91,18 @@ function RequireAuth() {
     return <Navigate to="/login" replace />;
   }
 
+  return <Outlet />;
+}
+
+/**
+ * HAB / personal son solo del dueño portal.
+ * Faena (`contratista_faena`) vuelve a permisos.
+ */
+function RequireContractorOrgAdmin() {
+  const { user } = useAuth();
+  if (user?.internalRol === "contratista_faena") {
+    return <Navigate to="/portal/permisos" replace />;
+  }
   return <Outlet />;
 }
 
@@ -127,8 +159,33 @@ export function App() {
       <Route element={<RequireAuth />}>
         <Route element={<ShellLayout />}>
           <Route index element={<HomeIndex />} />
-          <Route path="embarcados" element={<Embarcados />} />
-          <Route path="embarcados/:id" element={<FichaTripulante />} />
+          <Route element={<RequireContractorOrgAdmin />}>
+            <Route
+              path="portal/habilitacion"
+              element={<ContractorPortalAccreditationPage />}
+            />
+            <Route
+              path="portal/personal"
+              element={<ContractorPortalPeoplePage />}
+            />
+          </Route>
+          <Route
+            path="portal/permisos"
+            element={<ContractorPortalPermitsPage />}
+          />
+          <Route
+            path="portal/permisos/:id"
+            element={<WorkPermitDetailPage />}
+          />
+          {/* Sin embarcados.read → Panel (no listado vacío ni ficha 403). */}
+          <Route
+            element={
+              <RequirePermission resource="embarcados" action="read" />
+            }
+          >
+            <Route path="embarcados" element={<Embarcados />} />
+            <Route path="embarcados/:id" element={<FichaTripulante />} />
+          </Route>
           <Route
             path="tripulantes"
             element={<Navigate to="/embarcados" replace />}
@@ -136,17 +193,142 @@ export function App() {
           <Route path="cursos" element={<CursosHome />} />
           <Route path="cursos/tripulacion" element={<CursosTripulacion />} />
           <Route path="cursos/vencimientos" element={<Vencimientos />} />
-          <Route path="empresas" element={<Empresas />} />
-          <Route path="ubicaciones" element={<Ubicaciones />} />
-          <Route path="catalogos" element={<Catalogos />} />
-          <Route path="usuarios" element={<Usuarios />} />
-          <Route path="notificaciones" element={<NotificacionesVencimiento />} />
+          <Route path="prevencion" element={<PrevencionHome />} />
+          <Route path="prevencion/tipos" element={<PermitTypesPage />} />
           <Route
-            path="notificaciones/outbox"
-            element={<OutboxNotificaciones />}
+            path="prevencion/tipos/:id"
+            element={<PermitTypeDetailPage />}
           />
-          <Route path="roles" element={<Roles />} />
-          <Route path="sistema/actividad" element={<ActivityLogs />} />
+          <Route
+            path="prevencion/capacitaciones"
+            element={<TrainingsPage />}
+          />
+          <Route
+            path="prevencion/capacitaciones/sesiones"
+            element={<TrainingSessionsPage />}
+          />
+          <Route
+            path="prevencion/packs"
+            element={<AccreditationPacksPage />}
+          />
+          <Route
+            path="prevencion/contratistas"
+            element={<ContractorsPage />}
+          />
+          <Route
+            path="prevencion/contratistas/:id"
+            element={<ContractorDetailPage />}
+          />
+          <Route
+            path="prevencion/habilitaciones"
+            element={<AccreditationsPage />}
+          />
+          <Route
+            path="prevencion/habilitaciones/:id"
+            element={<AccreditationDetailPage />}
+          />
+          <Route
+            path="prevencion/avisos"
+            element={<WorkNoticesPage />}
+          />
+          <Route
+            path="prevencion/permisos"
+            element={<WorkPermitsPage />}
+          />
+          <Route
+            path="prevencion/permisos/:id"
+            element={<WorkPermitDetailPage />}
+          />
+          <Route
+            element={
+              <RequirePermission
+                resource="maestros.businesses"
+                action="read"
+              />
+            }
+          >
+            <Route path="empresas" element={<Empresas />} />
+          </Route>
+          {/* Flota: locations u otros maestros de operación. */}
+          <Route
+            element={
+              <RequireAnyPermission
+                options={[
+                  { resource: "maestros.locations", action: "read" },
+                  { resource: "maestros.areas", action: "read" },
+                  { resource: "maestros.ports", action: "read" },
+                  { resource: "maestros.muelles", action: "read" },
+                  { resource: "maestros.travesias", action: "read" },
+                ]}
+              />
+            }
+          >
+            <Route path="ubicaciones" element={<Ubicaciones />} />
+          </Route>
+          <Route
+            element={
+              <RequireAnyPermission
+                options={[
+                  { resource: "maestros.ranks", action: "read" },
+                  { resource: "maestros.degrees", action: "read" },
+                  { resource: "maestros.certificates", action: "read" },
+                  { resource: "cursos.catalog", action: "read" },
+                  { resource: "maestros.document_types", action: "read" },
+                ]}
+              />
+            }
+          >
+            <Route path="catalogos" element={<Catalogos />} />
+          </Route>
+          <Route
+            path="configuracion/flujos"
+            element={<ApprovalFlowsPage />}
+          />
+          <Route
+            path="configuracion/flujos/:id"
+            element={<ApprovalFlowDetailPage />}
+          />
+          {/* Sin maestros.users:read → Panel (no listado 403). */}
+          <Route
+            element={
+              <RequirePermission resource="maestros.users" action="read" />
+            }
+          >
+            <Route path="usuarios" element={<Usuarios />} />
+          </Route>
+          <Route
+            element={
+              <RequirePermission
+                resource="cursos.notifications"
+                action="read"
+              />
+            }
+          >
+            <Route
+              path="notificaciones"
+              element={<NotificacionesVencimiento />}
+            />
+            <Route
+              path="notificaciones/outbox"
+              element={<OutboxNotificaciones />}
+            />
+          </Route>
+          {/* Sin roles:read → Panel. */}
+          <Route
+            element={<RequirePermission resource="roles" action="read" />}
+          >
+            <Route path="roles" element={<Roles />} />
+          </Route>
+          <Route
+            element={
+              <RequirePermission
+                resource="sistema.activity_logs"
+                action="read"
+              />
+            }
+          >
+            <Route path="sistema/actividad" element={<ActivityLogs />} />
+          </Route>
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

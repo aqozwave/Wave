@@ -1,0 +1,42 @@
+meta {
+  name: Patch crew member access role
+  type: http
+  seq: 23
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/access
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "roleKey": "colaborador"
+  }
+}
+
+docs {
+  Cambiar rol Acceso User ↔ Colaborador (Figma D46). Solo admin/superadmin.
+  Esperado: 200, user.roleKey = colaborador.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+}
+
+assert {
+  res.status: eq 200
+  res.body.linked: eq true
+  res.body.user.roleKey: eq colaborador
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -2,6 +2,13 @@ import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X, type LucideIcon } from "lucide-react";
 
+/**
+ * Variante de presentación:
+ * - center: card centrada (Figma Modal).
+ * - drawer: panel full-height anclado a la derecha (slide-over).
+ */
+type ModalVariant = "center" | "drawer";
+
 /** Props del modal centrado (Figma Modal · Overlays + D16). */
 type ModalProps = {
   open: boolean;
@@ -20,12 +27,51 @@ type ModalProps = {
    * Quedan fuera del scroll para no alargar la card.
    */
   footer?: ReactNode;
-  /** Ancho; por defecto 520px (Figma). Lugares usa 640. */
+  /** Ancho; por defecto 520px (Figma). Lugares usa 640. Drawer ~70vw. */
   maxWidthClass?: string;
+  /**
+   * Extra a la derecha del título (badge, acciones), antes del cerrar.
+   * Sirve para layouts anchos tipo preview de dos columnas.
+   */
+  headerEnd?: ReactNode;
+  /**
+   * Clases del cuerpo. Por defecto con padding y scroll.
+   * Pasá p-0 / overflow-hidden cuando el children arma columnas a full height.
+   */
+  bodyClassName?: string;
+  /**
+   * center = modal clásico; drawer = panel lateral derecha → izquierda.
+   */
+  variant?: ModalVariant;
+  /**
+   * Si true, no renderiza el header IconBadge+título (el children arma el suyo).
+   * Útil en drawers tipo ficha P9c.
+   */
+  hideHeader?: boolean;
 };
 
+/** Clases por defecto del cuerpo scrolleable con padding Figma. */
+const DEFAULT_BODY_CLASS =
+  "min-h-0 flex-1 overflow-y-auto px-6 py-[18px]";
+
+/** Ancho por defecto del drawer (~70% viewport, tope 960). */
+const DEFAULT_DRAWER_WIDTH =
+  "w-full max-w-[min(960px,70vw)] sm:w-[min(960px,70vw)]";
+
 /**
- * Modal overlay + card (Figma).
+ * Pila de modales abiertos: Escape / overlay solo cierran el de arriba
+ * (ej. P9m sobre el drawer P9c).
+ */
+const openModalStack: Array<() => void> = [];
+
+/**
+ * Cuántos modales tienen el scroll del body bloqueado.
+ * Evita restaurar overflow/padding si aún queda otro modal abierto.
+ */
+let bodyScrollLockCount = 0;
+
+/**
+ * Modal overlay + card (Figma) o drawer lateral.
  * Portal a document.body: el overlay cubre viewport completo
  * (sidebar + topbar), aunque un ancestro tenga transform (animate-enter).
  */
@@ -37,30 +83,71 @@ export function Modal({
   onClose,
   children,
   footer,
-  maxWidthClass = "w-full max-w-[520px] sm:w-[520px]",
+  maxWidthClass,
+  headerEnd,
+  bodyClassName = DEFAULT_BODY_CLASS,
+  variant = "center",
+  hideHeader = false,
 }: ModalProps) {
+  const isDrawer = variant === "drawer";
+  const widthClass =
+    maxWidthClass ??
+    (isDrawer ? DEFAULT_DRAWER_WIDTH : "w-full max-w-[520px] sm:w-[520px]");
+
+  /** Registra este modal en la pila; Escape solo cierra el tope. */
   useEffect(() => {
     if (!open) {
       return;
     }
+    openModalStack.push(onClose);
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      if (event.key !== "Escape") return;
+      const top = openModalStack[openModalStack.length - 1];
+      if (top === onClose) {
         onClose();
       }
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      const idx = openModalStack.lastIndexOf(onClose);
+      if (idx >= 0) openModalStack.splice(idx, 1);
+    };
   }, [open, onClose]);
 
-  /** Bloquea scroll del fondo mientras el modal está abierto. */
+  /**
+   * Bloquea scroll del fondo y compensa el ancho del scrollbar.
+   * Sin padding-right, al ocultar la barra el contenido se ensancha ~15px
+   * y las tablas “parpadean” al abrir/cerrar firmar o cargar docs.
+   */
   useEffect(() => {
     if (!open) {
       return;
     }
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+
+    bodyScrollLockCount += 1;
+    if (bodyScrollLockCount === 1) {
+      const scrollbarWidth =
+        window.innerWidth - document.documentElement.clientWidth;
+      document.body.dataset.modalPrevOverflow = document.body.style.overflow;
+      document.body.dataset.modalPrevPaddingRight =
+        document.body.style.paddingRight;
+      document.body.style.overflow = "hidden";
+      if (scrollbarWidth > 0) {
+        document.body.style.paddingRight = `${scrollbarWidth}px`;
+      }
+    }
+
     return () => {
-      document.body.style.overflow = prev;
+      bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1);
+      if (bodyScrollLockCount === 0) {
+        document.body.style.overflow =
+          document.body.dataset.modalPrevOverflow ?? "";
+        document.body.style.paddingRight =
+          document.body.dataset.modalPrevPaddingRight ?? "";
+        delete document.body.dataset.modalPrevOverflow;
+        delete document.body.dataset.modalPrevPaddingRight;
+      }
     };
   }, [open]);
 
@@ -68,20 +155,48 @@ export function Modal({
     return null;
   }
 
-  const overlay = (
+  /**
+   * Shell fijo + backdrop aparte del panel.
+   * Si la opacidad anima en el mismo nodo que envuelve la card, la card
+   * también se oscurece (el bug «modal detrás de la sombra»).
+   */
+  const shell = (
     <div
-      className="animate-modal-overlay fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-[rgba(15,18,23,0.45)] px-6 py-8 sm:items-center"
+      className={[
+        "fixed inset-0",
+        isDrawer
+          ? "z-[100] flex justify-end"
+          : "z-[110] flex items-start justify-center overflow-y-auto px-6 py-8 sm:items-center",
+      ].join(" ")}
       role="presentation"
-      onClick={onClose}
+      onClick={() => {
+        // Solo el tope de la pila cierra (P9m sobre drawer P9c).
+        if (openModalStack[openModalStack.length - 1] === onClose) onClose();
+      }}
     >
+      {/* Fondo oscuro: anima solo este nodo, no la card. */}
+      <div
+        className="animate-modal-overlay absolute inset-0 bg-[rgba(15,18,23,0.45)]"
+        aria-hidden
+      />
+
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="wave-modal-title"
         className={[
-          "animate-modal-panel relative my-auto flex max-h-[calc(100vh-4rem)] flex-col rounded-2xl bg-white",
-          "shadow-[0_12px_40px_rgba(0,0,0,0.18),0_4px_16px_rgba(0,0,0,0.08)]",
-          maxWidthClass,
+          "relative z-[1] flex flex-col bg-white",
+          isDrawer
+            ? [
+                "animate-drawer-panel ml-auto h-full max-h-none rounded-none",
+                "shadow-[-12px_0_40px_rgba(0,0,0,0.14),-4px_0_16px_rgba(0,0,0,0.06)]",
+                widthClass,
+              ].join(" ")
+            : [
+                "animate-modal-panel my-auto max-h-[calc(100vh-4rem)] rounded-2xl",
+                "shadow-[0_12px_40px_rgba(0,0,0,0.18),0_4px_16px_rgba(0,0,0,0.08)]",
+                widthClass,
+              ].join(" "),
         ].join(" ")}
         onClick={(e) => e.stopPropagation()}
       >
@@ -94,34 +209,44 @@ export function Modal({
           <X className="size-4" strokeWidth={1.5} aria-hidden />
         </button>
 
-        {/* Header: IconBadge 40 + títulos (Figma 2:549 / 164:848). */}
-        <div className="flex shrink-0 items-start gap-3 px-6 pb-0 pt-5 pr-12">
-          {Icon ? (
-            <span
-              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-status-info-bg)] text-[var(--color-status-info-fg)]"
-              aria-hidden
-            >
-              <Icon className="size-5" strokeWidth={1.5} />
-            </span>
-          ) : null}
-          <div className="min-w-0 flex-1 pt-0.5">
-            <h2
-              id="wave-modal-title"
-              className="text-[18px] font-semibold leading-normal text-[var(--color-nachipa-title)]"
-            >
-              {title}
-            </h2>
-            {subtitle ? (
-              <p className="mt-1 text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
-                {subtitle}
-              </p>
+        {/* Header Figma Modal; omitible si el children trae header propio (P9c). */}
+        {!hideHeader ? (
+          <div className="flex shrink-0 items-start gap-3 px-6 pb-0 pt-5 pr-12">
+            {Icon ? (
+              <span
+                className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-status-info-bg)] text-[var(--color-status-info-fg)]"
+                aria-hidden
+              >
+                <Icon className="size-5" strokeWidth={1.5} />
+              </span>
+            ) : null}
+            <div className="min-w-0 flex-1 pt-0.5">
+              <h2
+                id="wave-modal-title"
+                className="text-[18px] font-semibold leading-normal text-[var(--color-nachipa-title)]"
+              >
+                {title}
+              </h2>
+              {subtitle ? (
+                <p className="mt-1 text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
+                  {subtitle}
+                </p>
+              ) : null}
+            </div>
+            {headerEnd ? (
+              <div className="flex shrink-0 items-center gap-2 pt-1">
+                {headerEnd}
+              </div>
             ) : null}
           </div>
-        </div>
+        ) : (
+          /* Título accesible oculto cuando el header visual vive en children. */
+          <h2 id="wave-modal-title" className="sr-only">
+            {title}
+          </h2>
+        )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-[18px]">
-          {children}
-        </div>
+        <div className={bodyClassName}>{children}</div>
 
         {footer ? (
           <div className="shrink-0 border-t border-[var(--color-nachipa-border-subtle)] px-6 py-4">
@@ -132,5 +257,5 @@ export function Modal({
     </div>
   );
 
-  return createPortal(overlay, document.body);
+  return createPortal(shell, document.body);
 }

@@ -18,6 +18,7 @@ import {
   type DashboardSummary,
   type DashboardUpcomingItem,
 } from "../../lib/api/dashboard";
+import { VesselLocationMap } from "../../components/VesselLocationMap/VesselLocationMap";
 import { listLocationsRequest } from "../../lib/api/locations";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
@@ -538,7 +539,7 @@ export function Panel() {
           </div>
         </div>
 
-        <div className="flex w-[min(420px,36%)] shrink-0 flex-col gap-3 overflow-hidden">
+        <div className="flex w-[min(460px,40%)] shrink-0 flex-col gap-3 overflow-hidden">
           <div
             className={[
               "grid shrink-0 gap-3",
@@ -663,19 +664,51 @@ export function Panel() {
             })}
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-3.5">
-            <div className="mb-2 flex shrink-0 items-center gap-2">
-              <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-[21px] text-[var(--color-nachipa-title)]">
+          {/* Mapa primero: más espacio que el listado de cumplimiento. */}
+          {accessToken ? (
+            <div className="flex min-h-0 flex-[1.65] flex-col overflow-hidden">
+              <VesselLocationMap
+                accessToken={accessToken}
+                mode={
+                  locationScoped || vesselFilter ? "single" : "fleet"
+                }
+                locationId={
+                  locationScoped
+                    ? (user?.locationId ?? null)
+                    : vesselFilter || user?.locationId || null
+                }
+                locationName={
+                  locationScoped
+                    ? (user?.locationName ?? null)
+                    : vesselOptions.find((v) => v.id === vesselFilter)?.name ??
+                      user?.locationName ??
+                      null
+                }
+                canReport={Boolean(
+                  user?.locationId &&
+                    (locationScoped
+                      ? true
+                      : !vesselFilter || vesselFilter === user.locationId),
+                )}
+                businessId={user?.businessId}
+              />
+            </div>
+          ) : null}
+
+          {/* Cumplimiento secundario: compacto bajo el mapa. */}
+          <div className="flex max-h-[200px] shrink-0 flex-col overflow-hidden rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] p-3">
+            <div className="mb-1.5 flex shrink-0 items-center gap-2">
+              <h2 className="min-w-0 flex-1 text-[14px] font-semibold leading-[20px] text-[var(--color-nachipa-title)]">
                 Cumplimiento por nave
               </h2>
               <button
                 type="button"
-                className="shrink-0 text-[13px] font-semibold leading-[19px] text-[var(--color-nachipa-primary)]"
+                className="shrink-0 text-[12px] font-semibold leading-[18px] text-[var(--color-nachipa-primary)]"
               >
                 Ver todo
               </button>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
               {loading && vessels.length === 0 ? (
                 <p className="m-0 px-2.5 text-[12px] text-[var(--color-nachipa-secondary)]">
                   Cargando…
@@ -694,11 +727,11 @@ export function Panel() {
                 return (
                   <div
                     key={nave.locationId}
-                    className="flex items-center gap-2.5 px-1.5 py-0.5"
+                    className="flex items-center gap-2 px-1 py-0.5"
                   >
-                    <div className="flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-[var(--color-nav-item-active-bg)]">
+                    <div className="flex size-6 shrink-0 items-center justify-center rounded-[7px] bg-[var(--color-nav-item-active-bg)]">
                       <Ship
-                        size={16}
+                        size={14}
                         strokeWidth={1.5}
                         className="text-[var(--color-nav-icon)]"
                         aria-hidden
@@ -706,14 +739,14 @@ export function Panel() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="mb-0.5 flex items-center justify-between gap-2">
-                        <p className="min-w-0 truncate text-[13px] font-medium leading-[18px] text-[var(--color-nachipa-title)]">
+                        <p className="min-w-0 truncate text-[12px] font-medium leading-[16px] text-[var(--color-nachipa-title)]">
                           {nave.name}
                         </p>
-                        <p className="shrink-0 text-[13px] font-semibold tabular-nums leading-[18px] text-[var(--color-nachipa-title)]">
+                        <p className="shrink-0 text-[12px] font-semibold tabular-nums leading-[16px] text-[var(--color-nachipa-title)]">
                           {pct == null ? "—" : `${pct}%`}
                         </p>
                       </div>
-                      <div className="h-1.5 overflow-hidden rounded-[3px] bg-[var(--color-chart-track)]">
+                      <div className="h-1 overflow-hidden rounded-[3px] bg-[var(--color-chart-track)]">
                         <div
                           className="h-full rounded-[3px]"
                           style={{
@@ -725,6 +758,12 @@ export function Panel() {
                           }}
                         />
                       </div>
+                      <p className="m-0 mt-0.5 text-[11px] leading-[14px] text-[var(--color-nachipa-secondary)]">
+                        {nave.completedTrainingSessionsCount}{" "}
+                        {nave.completedTrainingSessionsCount === 1
+                          ? "capacitación cerrada"
+                          : "capacitaciones cerradas"}
+                      </p>
                     </div>
                   </div>
                 );

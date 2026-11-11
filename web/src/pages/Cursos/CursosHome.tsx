@@ -2,11 +2,9 @@ import { useMemo } from "react";
 import {
   Anchor,
   ArrowRight,
-  Bell,
   BookOpen,
   ClipboardList,
   GraduationCap,
-  Inbox,
   Ship,
   type LucideIcon,
 } from "lucide-react";
@@ -87,26 +85,6 @@ const HUB_GROUPS: HubGroup[] = [
       },
     ],
   },
-  {
-    title: "Avisos",
-    legend: "Hitos y cola de envío (override de prueba activo).",
-    items: [
-      {
-        label: "Notificaciones de vencimiento",
-        legend: "Días de aviso al tripulante y resumen admin.",
-        icon: Bell,
-        to: "/notificaciones",
-        canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
-      },
-      {
-        label: "Outbox",
-        legend: "Cola pending / sent / failed y reintentos.",
-        icon: Inbox,
-        to: "/notificaciones/outbox",
-        canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
-      },
-    ],
-  },
 ];
 
 /**
@@ -131,13 +109,13 @@ export function CursosHome() {
         actions={<UserMenu />}
       />
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 py-5 lg:px-8">
-        {/* Header a la izquierda (ancho completo); solo el hub de tarjetas se centra. */}
         <PageHeader
           crumbs={[{ label: "Cursos" }, { label: "Presentación" }]}
           title="Gestión de cursos"
           description="Formación OMI, títulos marítimos, asignaciones en ficha y avisos de vencimiento. Solo ves lo que tu rol permite."
         />
 
+        {/* Header a la izquierda (ancho completo); solo el hub de tarjetas se centra. */}
         <div className="mx-auto flex w-full max-w-[960px] flex-col gap-8">
           {groups.length === 0 ? (
             <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">

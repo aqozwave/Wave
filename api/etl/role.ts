@@ -13,10 +13,12 @@
 
 import { PrismaClient, type RoleDataScope } from "@prisma/client";
 import {
-  PERMISSION_ACTIONS,
+  PERMISSION_ACTION_VALUES,
   PERMISSION_RESOURCES,
   ROLE_DATA_SCOPES,
   SYSTEM_ROLE_DEFS,
+  SYSTEM_ROLE_KEYS,
+  catalogActionsFor,
 } from "../src/lib/permissions.js";
 import { connectMongoReadOnly } from "./lib/mongo.js";
 
@@ -71,8 +73,11 @@ function sanitizePermissions(
     if (!(PERMISSION_RESOURCES as readonly string[]).includes(row.resource)) {
       continue;
     }
-    const actions = (row.actions ?? []).filter((a) =>
-      (PERMISSION_ACTIONS as readonly string[]).includes(a),
+    const allowed = catalogActionsFor(row.resource);
+    const actions = (row.actions ?? []).filter(
+      (a) =>
+        (PERMISSION_ACTION_VALUES as readonly string[]).includes(a) &&
+        allowed.includes(a),
     );
     if (actions.length === 0) continue;
     out.push({ resource: row.resource, actions });
@@ -143,6 +148,14 @@ async function main(): Promise<void> {
         continue;
       }
 
+      /**
+       * Roles de sistema Wave: el seed SYSTEM_ROLE_DEFS manda.
+       * Mongo solo aporta legacyMongoId; no pisa permisos ni scope (Prevención nace en Wave).
+       */
+      const isWaveSystemKey = (SYSTEM_ROLE_KEYS as readonly string[]).includes(
+        key,
+      );
+
       const name = (rawName || key).trim();
       const dataScope = mapDataScope(doc.dataScope);
       const permissions = sanitizePermissions(doc.permissions);
@@ -163,6 +176,17 @@ async function main(): Promise<void> {
         where: { legacyMongoId },
       });
       if (byLegacy) {
+        if (byLegacy.isSystem || isWaveSystemKey) {
+          // Solo asegura el enlace legacy; no toca name/permissions/scope.
+          if (!byLegacy.legacyMongoId) {
+            await prisma.role.update({
+              where: { id: byLegacy.id },
+              data: { legacyMongoId },
+            });
+          }
+          mongoWritten += 1;
+          continue;
+        }
         await prisma.role.update({
           where: { id: byLegacy.id },
           data: payload,
@@ -175,14 +199,23 @@ async function main(): Promise<void> {
         where: { key, deletedAt: null },
       });
       if (byKey) {
-        // Une legacy al rol ya sembrado por key (sistema).
+        if (byKey.isSystem || isWaveSystemKey) {
+          // Une legacy al rol de sistema sin pisar el seed Wave.
+          await prisma.role.update({
+            where: { id: byKey.id },
+            data: {
+              legacyMongoId: byKey.legacyMongoId ?? legacyMongoId,
+              isSystem: true,
+            },
+          });
+          mongoWritten += 1;
+          continue;
+        }
         await prisma.role.update({
           where: { id: byKey.id },
           data: {
             ...payload,
             legacyMongoId,
-            // Conserva isSystem del seed si ya era sistema.
-            isSystem: byKey.isSystem || payload.isSystem,
           },
         });
         mongoWritten += 1;

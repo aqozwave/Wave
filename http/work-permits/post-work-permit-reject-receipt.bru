@@ -1,0 +1,51 @@
+meta {
+  name: Post work permit reject receipt
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/api/v1/work-permits/{{workPermitId}}/reject-receipt
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "reviewNote": "Checklist incompleto en el puente; vuelve a Prevención."
+  }
+}
+
+docs {
+  Capitán no autoriza: to_receive → to_approve con reviewNote.
+  Variable workPermitId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken.");
+  }
+  if (!bru.getEnvVar("workPermitId")) {
+    throw new Error("Sin workPermitId.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq to_approve
+  res.body.reviewNote: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

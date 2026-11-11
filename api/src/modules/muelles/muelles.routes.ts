@@ -1,6 +1,7 @@
 import { Router } from "express";
+import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
+import { requirePermission } from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createMuelleHandler,
@@ -33,7 +34,10 @@ muellesRouter.get(
 muellesRouter.post(
   "/",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_MUELLES,
+    PERMISSION_ACTION.CREATE,
+  ),
   validate(createMuelleRequestSchema),
   createMuelleHandler,
 );
@@ -48,7 +52,10 @@ muellesRouter.get(
 muellesRouter.patch(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_MUELLES,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(updateMuelleRequestSchema),
   updateMuelleHandler,
 );
@@ -56,7 +63,10 @@ muellesRouter.patch(
 muellesRouter.delete(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_MUELLES,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
   validate(deleteMuelleRequestSchema),
   deleteMuelleHandler,
 );

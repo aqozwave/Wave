@@ -141,3 +141,59 @@ export async function deleteBusinessRequest(
   }
   return body as Business;
 }
+
+/** Keys de submódulos Prevención (P0). */
+export type BusinessModuleKey =
+  | "contractors"
+  | "work_permits"
+  | "trainings";
+
+/** Interruptor de un submódulo por empresa. */
+export type BusinessModule = {
+  key: BusinessModuleKey;
+  enabled: boolean;
+  enabledAt: string | null;
+  enabledById: string | null;
+  updatedAt: string | null;
+};
+
+/** GET /api/v1/businesses/:id/modules — solo superadmin. */
+export async function listBusinessModulesRequest(
+  accessToken: string,
+  businessId: string,
+): Promise<{ businessId: string; items: BusinessModule[] }> {
+  const res = await fetch(`/api/v1/businesses/${businessId}/modules`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as { businessId: string; items: BusinessModule[] };
+}
+
+/** PATCH /api/v1/businesses/:id/modules/:key — solo superadmin (S6). */
+export async function patchBusinessModuleRequest(
+  accessToken: string,
+  businessId: string,
+  key: BusinessModuleKey,
+  enabled: boolean,
+): Promise<{
+  businessId: string;
+  item: BusinessModule;
+  cascadedOff: BusinessModuleKey[];
+}> {
+  const res = await fetch(
+    `/api/v1/businesses/${businessId}/modules/${key}`,
+    {
+      method: "PATCH",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify({ enabled }),
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as {
+    businessId: string;
+    item: BusinessModule;
+    cascadedOff: BusinessModuleKey[];
+  };
+}

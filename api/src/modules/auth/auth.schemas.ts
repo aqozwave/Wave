@@ -17,6 +17,12 @@ export const authPermissionEntrySchema = z.object({
   actions: z.array(z.string()).min(1),
 });
 
+/** Estado de un submódulo Prevención en la empresa del usuario (capa 1). */
+export const authBusinessModuleSchema = z.object({
+  key: z.enum(["contractors", "work_permits", "trainings"]),
+  enabled: z.boolean(),
+});
+
 export const authUserSchema = z
   .object({
     id: z.uuid(),
@@ -33,6 +39,21 @@ export const authUserSchema = z
     locationId: z.uuid().nullable(),
     /** Nombre de la nave/lugar para el Panel C1. */
     locationName: z.string().nullable(),
+    /** Área del usuario (solicitante / dataScope area). */
+    areaId: z.uuid().nullable(),
+    /**
+     * Org contratista si es usuario externo (P2 · P9b / portal E*).
+     * Null = usuario del tenant (interno).
+     */
+    organizationId: z.uuid().nullable(),
+    /** Resumen de la org (solo si organizationId). */
+    organization: z
+      .object({
+        id: z.uuid(),
+        name: z.string(),
+        rut: z.string(),
+      })
+      .nullable(),
     /**
      * Alcance de datos del rol (`all` | `business` | `location` | `area` | `self`).
      * Null si no hay rol (p. ej. superadmin sin fila Role).
@@ -43,10 +64,15 @@ export const authUserSchema = z
     confirmed: z.boolean(),
     state: z.boolean(),
     /**
-     * Snapshot del Role.permissions (o todo si superadmin).
-     * La UI usa esto en vez de hardcodear internalRol.
+     * Permisos efectivos = rol ∩ módulos activos de la empresa.
+     * Superadmin: catálogo completo (sin filtro de módulos).
      */
     permissions: z.array(authPermissionEntrySchema),
+    /**
+     * Interruptores Prevención del tenant (fila ausente = enabled false).
+     * Sin businessId: los tres keys en false.
+     */
+    modules: z.array(authBusinessModuleSchema),
   })
   .openapi("AuthUser");
 

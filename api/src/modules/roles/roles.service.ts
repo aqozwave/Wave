@@ -1,18 +1,26 @@
 import { Prisma, type RoleDataScope } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
 import {
+  getEnabledModuleKeySet,
+  isBusinessModuleEnabled,
+  listBusinessModuleStates,
+} from "../../lib/businessModules.js";
+import {
   PERMISSION_ACTION,
-  PERMISSION_ACTIONS,
   PERMISSION_CATALOG,
   PERMISSION_RESOURCE,
   PERMISSION_RESOURCES,
+  RESOURCE_TO_MODULE_KEY,
   ROLE_DATA_SCOPES,
+  SYSTEM_ROLE_KEY,
   SYSTEM_ROLE_KEYS,
+  catalogActionsFor,
 } from "../../lib/permissions.js";
 import { prisma } from "../../lib/prisma.js";
 import type {
   CreateRoleBody,
   ListRolesQuery,
+  PermissionCatalogQuery,
   PermissionEntry,
   RoleResponse,
   UpdateRoleBody,
@@ -78,33 +86,118 @@ function assertValidPermissions(permissions: PermissionEntry[]): void {
         `El recurso ${row.resource} requiere al menos una acción`,
       );
     }
+    const allowed = catalogActionsFor(row.resource);
     for (const action of row.actions) {
-      if (!(PERMISSION_ACTIONS as readonly string[]).includes(action)) {
+      if (!allowed.includes(action)) {
         throw new AppError(
           400,
           "validation_error",
-          `Acción inválida: ${action}`,
+          `Acción inválida para ${row.resource}: ${action}`,
         );
       }
     }
   }
 }
 
-/** Catálogo estático para la matriz de checks en UI. */
-export function getPermissionCatalog() {
-  return {
-    actions: [...PERMISSION_ACTIONS],
-    scopes: [...ROLE_DATA_SCOPES],
-    catalog: PERMISSION_CATALOG.map((mod) => ({
-      module: mod.module,
-      items: mod.items.map((item) => ({
+/**
+ * ¿El resource debe verse en la matriz para estos módulos activos?
+ * Sin moduleKey (base / cursos) → siempre visible.
+ */
+function isResourceVisibleForModules(
+  resource: string,
+  enabledKeys: Set<string> | null,
+): boolean {
+  if (!enabledKeys) return true;
+  const moduleKey = RESOURCE_TO_MODULE_KEY[resource];
+  if (moduleKey == null) return true;
+  return enabledKeys.has(moduleKey);
+}
+
+/**
+ * Catálogo para la matriz de checks (R-04 / S3b).
+ * Con businessId: oculta filas de Prevención cuyo submódulo está apagado.
+ * Sin businessId: catálogo completo (superadmin sin empresa de contexto).
+ */
+export async function getPermissionCatalog(query: PermissionCatalogQuery = {}) {
+  const businessId = query.businessId ?? null;
+
+  if (businessId) {
+    const business = await prisma.business.findFirst({
+      where: { id: businessId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!business) {
+      throw new AppError(404, "business_not_found", "Empresa no encontrada");
+    }
+  }
+
+  const enabledKeys = businessId
+    ? await getEnabledModuleKeySet(businessId)
+    : null;
+  const modules = businessId
+    ? await listBusinessModuleStates(businessId)
+    : null;
+
+  const catalog = PERMISSION_CATALOG.map((mod) => ({
+    module: mod.module,
+    items: mod.items
+      .filter((item) =>
+        isResourceVisibleForModules(item.resource, enabledKeys),
+      )
+      .map((item) => ({
         resource: item.resource,
         label: item.label,
         actions: [...item.actions],
         ...(item.hint ? { hint: item.hint } : {}),
       })),
-    })),
+  })).filter((mod) => mod.items.length > 0);
+
+  /** Acciones solo de filas visibles (receive no aparece si no hay work_permits). */
+  const actions = [
+    ...new Set(
+      catalog.flatMap((mod) => mod.items.flatMap((item) => item.actions)),
+    ),
+  ];
+
+  return {
+    actions,
+    scopes: [...ROLE_DATA_SCOPES],
+    /** Empresa usada para filtrar; null = sin filtro de módulos. */
+    businessId,
+    /** Estados de submódulos; null si no se filtró por empresa. */
+    modules,
+    catalog,
   };
+}
+
+/**
+ * Al guardar permisos con contexto de empresa: conserva en BD los de módulos
+ * apagados (no vienen en el form) y rechaza si el body intenta setearlos.
+ */
+export async function mergePermissionsForBusinessModules(
+  businessId: string | null | undefined,
+  incoming: PermissionEntry[],
+  existing: PermissionEntry[] | null,
+): Promise<PermissionEntry[]> {
+  if (!businessId) return incoming;
+
+  const enabledKeys = await getEnabledModuleKeySet(businessId);
+
+  for (const row of incoming) {
+    if (!isResourceVisibleForModules(row.resource, enabledKeys)) {
+      throw new AppError(
+        400,
+        "module_disabled",
+        `El recurso ${row.resource} no está disponible: su módulo está apagado en la empresa`,
+      );
+    }
+  }
+
+  const preserved = (existing ?? []).filter(
+    (row) => !isResourceVisibleForModules(row.resource, enabledKeys),
+  );
+
+  return [...incoming, ...preserved];
 }
 
 /** Lista roles (activos por defecto). */
@@ -156,6 +249,12 @@ export async function createRole(body: CreateRoleBody): Promise<RoleResponse> {
 
   assertValidPermissions(body.permissions ?? []);
 
+  const permissions = await mergePermissionsForBusinessModules(
+    body.businessId,
+    body.permissions ?? [],
+    null,
+  );
+
   const exists = await prisma.role.findFirst({
     where: {
       deletedAt: null,
@@ -178,7 +277,7 @@ export async function createRole(body: CreateRoleBody): Promise<RoleResponse> {
         description: body.description?.trim() ?? "",
         isSystem: false,
         dataScope: body.dataScope as RoleDataScope,
-        permissions: body.permissions ?? [],
+        permissions,
         state: body.state ?? true,
       },
     });
@@ -232,7 +331,14 @@ export async function updateRole(
   }
   if (payload.state !== undefined) data.state = payload.state;
   if (payload.permissions !== undefined) {
-    data.permissions = payload.permissions;
+    const existingPerms = Array.isArray(existing.permissions)
+      ? (existing.permissions as PermissionEntry[])
+      : [];
+    data.permissions = await mergePermissionsForBusinessModules(
+      payload.businessId,
+      payload.permissions,
+      existingPerms,
+    );
   }
   if (!existing.isSystem && payload.dataScope !== undefined) {
     data.dataScope = payload.dataScope as RoleDataScope;
@@ -300,11 +406,15 @@ export async function deleteRoleById(id: string): Promise<RoleResponse> {
 }
 
 /**
- * ¿El rol del actor tiene resource+action?
+ * ¿El rol del actor tiene resource+action y el módulo de empresa está on?
  * Superadmin (internalRol) bypass; si no hay roleId, false.
  */
 export async function actorHasPermission(
-  actor: { internalRol: string; roleId?: string | null },
+  actor: {
+    internalRol: string;
+    roleId?: string | null;
+    businessId?: string | null;
+  },
   resource: string,
   action: string,
 ): Promise<boolean> {
@@ -320,7 +430,16 @@ export async function actorHasPermission(
     ? (role.permissions as PermissionEntry[])
     : [];
   const entry = permissions.find((row) => row.resource === resource);
-  return Boolean(entry?.actions?.includes(action));
+  if (!entry?.actions?.includes(action)) return false;
+
+  /** Capa 1: resource de Prevención exige business_modules.enabled. */
+  const moduleKey = RESOURCE_TO_MODULE_KEY[resource];
+  if (moduleKey != null) {
+    const on = await isBusinessModuleEnabled(actor.businessId, moduleKey);
+    if (!on) return false;
+  }
+
+  return true;
 }
 
 /** Destinatario de digests diarios de vencimiento (cursos / libreta). */
@@ -379,6 +498,97 @@ export async function listExpiryDigestRecipients(): Promise<
       businessId: user.businessId,
       seesAllBusinesses:
         user.internalRol === "superadmin" || user.role.dataScope === "all",
+    });
+  }
+  return out;
+}
+
+/**
+ * Claves de rol de staff Prevención / admin del tenant
+ * (avisos de trabajo + digest de capacitaciones).
+ */
+const PREVENTION_STAFF_ROLE_KEYS = new Set<string>([
+  SYSTEM_ROLE_KEY.ADMIN,
+  SYSTEM_ROLE_KEY.PREVENCIONISTA,
+]);
+
+/**
+ * Usuarios activos admin o prevencionista.
+ * Opcional: filtrar por empresa (misma businessId).
+ * seesAllBusinesses = superadmin o dataScope all (digests globales).
+ */
+export async function listPreventionStaffRecipients(options?: {
+  businessId?: string;
+}): Promise<ExpiryDigestRecipient[]> {
+  const users = await prisma.user.findMany({
+    where: {
+      deletedAt: null,
+      state: true,
+      ...(options?.businessId
+        ? {
+            OR: [
+              { businessId: options.businessId },
+              { internalRol: "superadmin" },
+            ],
+          }
+        : {}),
+    },
+    select: {
+      id: true,
+      email: true,
+      businessId: true,
+      internalRol: true,
+      role: {
+        select: {
+          key: true,
+          dataScope: true,
+          state: true,
+          deletedAt: true,
+        },
+      },
+    },
+  });
+
+  const out: ExpiryDigestRecipient[] = [];
+  for (const user of users) {
+    const email = user.email?.trim().toLowerCase();
+    if (!email) continue;
+
+    const roleKey = user.role?.deletedAt || !user.role?.state
+      ? null
+      : user.role.key;
+    const isStaffByRole =
+      roleKey != null && PREVENTION_STAFF_ROLE_KEYS.has(roleKey);
+    const isStaffByInternal =
+      user.internalRol === SYSTEM_ROLE_KEY.ADMIN ||
+      user.internalRol === SYSTEM_ROLE_KEY.PREVENCIONISTA;
+    // Superadmin solo entra si pide digests globales (sin filtro business).
+    const isSuperadmin = user.internalRol === "superadmin";
+    if (!isStaffByRole && !isStaffByInternal && !isSuperadmin) continue;
+
+    // Con filtro de empresa: excluir superadmin sin business (no es staff del tenant).
+    if (
+      options?.businessId &&
+      user.businessId !== options.businessId &&
+      !isStaffByRole &&
+      !isStaffByInternal
+    ) {
+      continue;
+    }
+    if (
+      options?.businessId &&
+      user.businessId !== options.businessId &&
+      isSuperadmin
+    ) {
+      continue;
+    }
+
+    out.push({
+      id: user.id,
+      email,
+      businessId: user.businessId,
+      seesAllBusinesses:
+        isSuperadmin || user.role?.dataScope === "all",
     });
   }
   return out;

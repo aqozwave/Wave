@@ -1,0 +1,49 @@
+meta {
+  name: Get trainings
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/trainings?page=1&limit=20
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Catálogo P1 capacitaciones Prevención (EXT-01, ODI-01…).
+  Exige trainings.read y módulo trainings on (no-superadmin).
+  Guarda trainingId (preferencia EXT-01).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && body && Array.isArray(body.items)) {
+    const ext = body.items.find((i) => i.code === "EXT-01");
+    const pick = ext || body.items[0];
+    if (pick && pick.id) {
+      bru.setEnvVar("trainingId", pick.id);
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -1,0 +1,38 @@
+meta {
+  name: Delete checklist item
+  type: http
+  seq: 13
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/permit-types/{{permitTypeId}}/checklist-items/{{checklistItemId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Desactiva (active=false).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const typeId = bru.getEnvVar("permitTypeId");
+  const itemId = bru.getEnvVar("checklistItemId");
+  if (!token || !typeId || !itemId) {
+    throw new Error("Definí accessToken, permitTypeId y checklistItemId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.active: eq false
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

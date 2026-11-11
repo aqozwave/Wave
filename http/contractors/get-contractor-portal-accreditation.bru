@@ -1,0 +1,33 @@
+meta {
+  name: Get contractor portal accreditation
+  type: http
+  seq: 21
+}
+
+get {
+  url: {{baseUrl}}/api/v1/contractors/me/accreditation
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  E4: HAB de la org del usuario portal (organizationId).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+}
+
+assert {
+  res.status: in [200, 403, 404]
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -1,16 +1,44 @@
 import { Prisma } from "@prisma/client";
+import {
+  applyDataScopeToWhere,
+  assertDataScopeAccess,
+} from "../../lib/dataScope.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import type {
   CreateLocationBody,
   ListLocationsQuery,
+  ListVesselPositionsQuery,
   LocationResponse,
+  ReportVesselPositionBody,
   UpdateLocationBody,
+  VesselPositionListItem,
+  VesselPositionResponse,
 } from "./locations.schemas.js";
 
-/** Actor mínimo para reglas de tenant. */
-type Actor = Pick<AuthUser, "internalRol" | "businessId">;
+/** Actor con tenant + dataScope (nave). */
+type Actor = Pick<
+  AuthUser,
+  | "internalRol"
+  | "businessId"
+  | "locationId"
+  | "areaId"
+  | "organizationId"
+  | "dataScope"
+>;
+
+/** Actor con nave asignada (reporte desde el PC a bordo). */
+type PositionActor = Pick<
+  AuthUser,
+  | "id"
+  | "internalRol"
+  | "businessId"
+  | "locationId"
+  | "areaId"
+  | "organizationId"
+  | "dataScope"
+>;
 
 /** Serializa fila Prisma → contrato Zod. */
 function toLocationResponse(row: {
@@ -51,7 +79,7 @@ function toLocationResponse(row: {
 
 /**
  * Filtro de listado: superadmin ve todas (o filtra por businessId);
- * admin/user solo las de su empresa.
+ * dataScope location → solo su nave (id); resto → empresa.
  */
 function listWhere(
   actor: Actor,
@@ -59,22 +87,15 @@ function listWhere(
 ): Prisma.LocationWhereInput {
   const base: Prisma.LocationWhereInput = { deletedAt: null };
 
-  if (actor.internalRol === "superadmin") {
+  if (actor.internalRol === "superadmin" || actor.dataScope === "all") {
     if (query.businessId) {
       return { ...base, businessId: query.businessId };
     }
     return base;
   }
 
-  if (!actor.businessId) {
-    throw new AppError(
-      403,
-      "forbidden",
-      "Tu usuario no tiene una empresa asignada",
-    );
-  }
-
-  return { ...base, businessId: actor.businessId };
+  /** locationField `id`: la fila ES la ubicación. */
+  return applyDataScopeToWhere(actor, base, { locationField: "id" });
 }
 
 /**
@@ -108,20 +129,18 @@ function resolveCreateBusinessId(
 }
 
 /**
- * 404 genérico si el actor no puede ver esa empresa
- * (no filtrar existencia a otra empresa).
+ * 404/403 si el actor no puede ver esa ubicación
+ * (empresa + nave según dataScope).
  */
 function assertLocationTenantAccess(
   actor: Actor,
-  locationBusinessId: string,
+  row: { id: string; businessId: string },
 ): void {
-  if (actor.internalRol === "superadmin") {
-    return;
-  }
-
-  if (!actor.businessId || actor.businessId !== locationBusinessId) {
-    throw new AppError(404, "location_not_found", "Ubicación no encontrada");
-  }
+  assertDataScopeAccess(
+    actor,
+    { businessId: row.businessId, locationId: row.id },
+    { code: "location_not_found", message: "Ubicación no encontrada" },
+  );
 }
 
 /**
@@ -220,7 +239,7 @@ export async function getLocationById(
     throw new AppError(404, "location_not_found", "Ubicación no encontrada");
   }
 
-  assertLocationTenantAccess(actor, row.businessId);
+  assertLocationTenantAccess(actor, row);
   return toLocationResponse(row);
 }
 
@@ -240,7 +259,7 @@ export async function updateLocation(
     throw new AppError(404, "location_not_found", "Ubicación no encontrada");
   }
 
-  assertLocationTenantAccess(actor, existing.businessId);
+  assertLocationTenantAccess(actor, existing);
 
   let nextBusinessId = existing.businessId;
   if (payload.businessId !== undefined) {
@@ -318,7 +337,7 @@ export async function deleteLocationById(
     throw new AppError(404, "location_not_found", "Ubicación no encontrada");
   }
 
-  assertLocationTenantAccess(actor, location.businessId);
+  assertLocationTenantAccess(actor, location);
 
   const activeUsers = await prisma.user.count({
     where: {
@@ -345,4 +364,199 @@ export async function deleteLocationById(
   });
 
   return toLocationResponse(updated);
+}
+
+/** Serializa la fila de posición al contrato de API (null si no hay). */
+function toVesselPositionResponse(
+  row: {
+    locationId: string;
+    latitude: number;
+    longitude: number;
+    accuracyM: number | null;
+    source: string;
+    recordedAt: Date;
+    reportedById: string | null;
+    location: { name: string };
+  } | null,
+): VesselPositionResponse {
+  if (!row) {
+    return null;
+  }
+  return {
+    locationId: row.locationId,
+    locationName: row.location.name,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    accuracyM: row.accuracyM,
+    source: row.source,
+    recordedAt: row.recordedAt.toISOString(),
+    reportedById: row.reportedById,
+  };
+}
+
+/**
+ * Guarda una lectura del navegador para la nave del usuario logueado.
+ * Exige locationId en la sesión (PC a bordo).
+ */
+export async function reportMyVesselPosition(
+  actor: PositionActor,
+  body: ReportVesselPositionBody,
+): Promise<NonNullable<VesselPositionResponse>> {
+  if (!actor.locationId) {
+    throw new AppError(
+      400,
+      "location_required",
+      "Tu usuario no tiene una nave/ubicación asignada",
+    );
+  }
+
+  const location = await prisma.location.findFirst({
+    where: { id: actor.locationId, deletedAt: null },
+    select: { id: true, name: true, businessId: true },
+  });
+  if (!location) {
+    throw new AppError(404, "location_not_found", "Ubicación no encontrada");
+  }
+  assertLocationTenantAccess(actor, location);
+
+  const created = await prisma.vesselPosition.create({
+    data: {
+      locationId: location.id,
+      latitude: body.latitude,
+      longitude: body.longitude,
+      accuracyM: body.accuracyM ?? null,
+      source: "browser",
+      reportedById: actor.id,
+    },
+    include: { location: { select: { name: true } } },
+  });
+
+  const out = toVesselPositionResponse(created);
+  if (!out) {
+    throw new AppError(500, "position_create_failed", "No se pudo guardar la posición");
+  }
+  return out;
+}
+
+/**
+ * Última posición de la nave asignada al usuario (null si aún no hay lecturas).
+ */
+export async function getMyVesselPosition(
+  actor: PositionActor,
+): Promise<VesselPositionResponse> {
+  if (!actor.locationId) {
+    throw new AppError(
+      400,
+      "location_required",
+      "Tu usuario no tiene una nave/ubicación asignada",
+    );
+  }
+  return getLocationVesselPosition(actor, actor.locationId);
+}
+
+/**
+ * Última posición de una ubicación (tenant-aware). null si no hay lecturas.
+ */
+export async function getLocationVesselPosition(
+  actor: Actor,
+  locationId: string,
+): Promise<VesselPositionResponse> {
+  const location = await prisma.location.findFirst({
+    where: { id: locationId, deletedAt: null },
+    select: { id: true, businessId: true },
+  });
+  if (!location) {
+    throw new AppError(404, "location_not_found", "Ubicación no encontrada");
+  }
+  assertLocationTenantAccess(actor, location);
+
+  const latest = await prisma.vesselPosition.findFirst({
+    where: { locationId: location.id },
+    orderBy: { recordedAt: "desc" },
+    include: { location: { select: { name: true } } },
+  });
+
+  return toVesselPositionResponse(latest);
+}
+
+/**
+ * Última señal por nave visible para el actor (Panel admin / flota).
+ * Incluye naves sin lectura (coords null) para marcar “sin señal”.
+ * Misma regla de listado que ubicaciones; solo kind vessel o sin clasificar.
+ */
+export async function listLatestVesselPositions(
+  actor: Actor,
+  query: ListVesselPositionsQuery,
+): Promise<{ items: VesselPositionListItem[] }> {
+  const where: Prisma.LocationWhereInput = {
+    ...listWhere(actor, { page: 1, limit: 100, businessId: query.businessId }),
+    state: true,
+    OR: [{ kind: "vessel" }, { kind: null }],
+  };
+
+  const locations = await prisma.location.findMany({
+    where,
+    select: { id: true, name: true, kind: true },
+    orderBy: { name: "asc" },
+  });
+
+  if (locations.length === 0) {
+    return { items: [] };
+  }
+
+  const locationIds = locations.map((loc) => loc.id);
+  const positions = await prisma.vesselPosition.findMany({
+    where: { locationId: { in: locationIds } },
+    orderBy: { recordedAt: "desc" },
+    select: {
+      locationId: true,
+      latitude: true,
+      longitude: true,
+      accuracyM: true,
+      source: true,
+      recordedAt: true,
+      reportedById: true,
+    },
+  });
+
+  // Primera aparición por locationId = la más reciente (ya vienen desc).
+  const latestByLocation = new Map<
+    string,
+    (typeof positions)[number]
+  >();
+  for (const row of positions) {
+    if (!latestByLocation.has(row.locationId)) {
+      latestByLocation.set(row.locationId, row);
+    }
+  }
+
+  const items: VesselPositionListItem[] = locations.map((loc) => {
+    const latest = latestByLocation.get(loc.id);
+    if (!latest) {
+      return {
+        locationId: loc.id,
+        locationName: loc.name,
+        kind: loc.kind,
+        latitude: null,
+        longitude: null,
+        accuracyM: null,
+        source: null,
+        recordedAt: null,
+        reportedById: null,
+      };
+    }
+    return {
+      locationId: loc.id,
+      locationName: loc.name,
+      kind: loc.kind,
+      latitude: latest.latitude,
+      longitude: latest.longitude,
+      accuracyM: latest.accuracyM,
+      source: latest.source,
+      recordedAt: latest.recordedAt.toISOString(),
+      reportedById: latest.reportedById,
+    };
+  });
+
+  return { items };
 }

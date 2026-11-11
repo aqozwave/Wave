@@ -17,6 +17,98 @@ enum RoleDataScope {
   self
 }
 
+/**
+ * Submódulos de Prevención por empresa (P0 · S6).
+ * Apagar `contractors` debe apagar también `work_permits` (R-02; se aplica en service).
+ * PPE / near_misses etc. se agregan al enum cuando existan pantallas.
+ */
+enum BusinessModuleKey {
+  contractors
+  work_permits
+  trainings
+}
+
+/**
+ * Relación laboral de la org contratista con el tenant (P2 · P1/P10).
+ * permanent = habitual; occasional = por faena.
+ */
+enum ContractorRole {
+  permanent
+  occasional
+}
+
+/**
+ * Estado de una habilitación de org contratista (P2 · bandeja).
+ * Flujo: pending → in_review → approved | observed | rejected.
+ * invited = reservado para invitación sin docs aún.
+ */
+enum AccreditationStatus {
+  invited
+  pending
+  in_review
+  observed
+  approved
+  rejected
+}
+
+/**
+ * Criticidad del tipo de permiso (P1 · P14/P15).
+ * UI: chips Activo + Criticidad alta/media/baja.
+ */
+enum PermitCriticality {
+  low
+  medium
+  high
+}
+
+/**
+ * Cómo se entrega el AST cuando requiresAst=true.
+ * Solo BUC en el seed inicial; FORM = formulario, PDF = archivo, BOTH = ambos.
+ */
+enum PermitAstMode {
+  form
+  pdf
+  both
+}
+
+/**
+ * Tipo de exigencia del permiso (P1 · P15 Exigencias).
+ * document = tipo de doc o pack de habilitación; training = curso; checklist = lista del tipo.
+ */
+enum PermitRequirementKind {
+  document
+  training
+  checklist
+}
+
+/**
+ * A quién aplica la exigencia.
+ * company = empresa contratista; person = cada trabajador; permit = el PT en sí.
+ */
+enum PermitRequirementScope {
+  company
+  person
+  permit
+}
+
+/**
+ * Momento del ciclo en que se exige.
+ * before = antes de iniciar; closure = al cierre.
+ */
+enum PermitRequirementMoment {
+  before
+  closure
+}
+
+/**
+ * Pack de documentos de habilitación («los 8»).
+ * company = 8 de empresa; person = 8 por persona.
+ */
+enum AccreditationScope {
+  company
+  person
+}
+
 /// Propósito del token de correo (confirmación de cuenta o reset de clave).
 enum EmailTokenPurpose {
   confirm_email
@@ -51,9 +143,41 @@ enum CrewCourseStatus {
 }
 
 /**
+ * Estado de una capacitación de Prevención asignada al tripulante.
+ * Misma semántica que CrewCourseStatus; enum propio para no acoplar dominios.
+ */
+enum CrewTrainingStatus {
+  pending
+  valid
+  expiring_soon
+  expired
+}
+
+/**
  * Origen de la asignación (portal viejo CREW_COURSE_SOURCE).
  * rank = legacy (ya no se auto-crea); certificate = por título; manual = a mano.
  */
+/**
+ * Tipo de entrada manual en bitácora del tripulante (D31).
+ * observation / sanction / boarding = filtros de la timeline.
+ */
+enum CrewLogEntryKind {
+  observation
+  sanction
+  boarding
+  /// Capacitación grupal/individual cerrada desde Prevención (sistema).
+  training
+}
+
+/**
+ * Estado de una sesión de capacitación (borrador → cerrada).
+ */
+enum TrainingSessionStatus {
+  draft
+  completed
+  cancelled
+}
+
 enum CrewCourseSource {
   rank
   certificate
@@ -70,6 +194,14 @@ enum NotificationOutboxType {
   course_expired
   boarding_book_admin_digest
   course_admin_digest
+  /// Capacitaciones Prevención por vencer / vencidas.
+  training_expiring
+  training_expired
+  training_admin_digest
+  /// Nuevo aviso de trabajo → Prevención / admin del tenant.
+  work_notice_created
+  /// PT creado por Prevención → usuarios portal de la org contratista.
+  work_permit_created
 }
 
 /**
@@ -127,7 +259,111 @@ enum ActivityResource {
   port
   course
   role
+  /// Catálogo tipos de permiso (Prevención / P14m).
+  permitType
+  /// Catálogo capacitaciones Prevención (P1).
+  training
+  /// Organización contratista (P2).
+  contractorOrganization
+  /// Habilitación de org contratista (P2 bandeja).
+  contractorAccreditation
+  /// Persona externa de una org contratista (P2 personal).
+  contractorPerson
+  /// Documento de empresa en habilitación (P2 · P5).
+  contractorOrgDocument
+  /// Documento de persona externa en habilitación (P2 · pack person).
+  contractorPersonDocument
+  /// Aviso de trabajo (solicitante con área → Prevención; P4 · AT1/AT2).
+  workNotice
+  /// Permiso de trabajo (ciclo Por completar → Cerrado).
+  workPermit
   system
+}
+
+/**
+ * Estado del aviso de trabajo (aún no es el ciclo del permiso).
+ * pending = enviado a Prevención; linked = ya tiene PT; cancelled = anulado.
+ */
+enum WorkNoticeStatus {
+  pending
+  linked
+  cancelled
+}
+
+/**
+ * Ciclo del permiso de trabajo (diagrama P4/P6).
+ * to_complete → to_approve → to_receive → active → to_verify → closed
+ * active → no_closure si vence sin registrar término.
+ */
+enum WorkPermitStatus {
+  to_complete
+  to_approve
+  to_receive
+  active
+  to_verify
+  closed
+  no_closure
+}
+
+/**
+ * Etapa del checklist del permiso (contratista / recepción puente / cierre).
+ * P5d usa contractor; reception y closure llegan en P5c/P6.
+ */
+enum WorkPermitChecklistStage {
+  contractor
+  reception
+  closure
+}
+
+/**
+ * Firma lógica del ciclo del PT (P6 · documento).
+ * Una por hito; se reescribe si el hito se repite (ej. re-aprobar).
+ */
+enum WorkPermitSignatureKind {
+  prevention_approve
+  captain_receive
+  contractor_request_close
+  captain_close
+  captain_no_closure
+}
+
+/** Respuesta de un ítem de checklist del PT. */
+enum WorkPermitChecklistAnswerValue {
+  yes
+  no
+  na
+}
+
+/**
+ * Quién ejecuta una etapa del flujo de aprobación (P16).
+ * requesting_area = área que crea el aviso (User.areaId).
+ */
+enum ApprovalFlowStageActor {
+  requesting_area
+  prevention
+  contractor
+  captain
+}
+
+/**
+ * Momento relativo de la etapa en la faena (P16 columna Momento).
+ * before = antes de subir; on_arrival = al llegar al puente; on_finish = al terminar.
+ */
+enum ApprovalFlowStageMoment {
+  before
+  on_arrival
+  on_finish
+}
+
+/**
+ * Estado de un documento de org contratista en la HAB.
+ * pending_validation → validated | observed; replace marca el anterior replaced.
+ */
+enum ContractorDocumentStatus {
+  pending_validation
+  validated
+  observed
+  replaced
 }
 
 /**
@@ -245,6 +481,14 @@ model User {
   location        Location?        @relation(fields: [locationId], references: [id])
   areaId          String?          @map("area_id") @db.Uuid
   area            Area?            @relation(fields: [areaId], references: [id])
+  /// Org contratista si es usuario externo invitado (P2 · P9b). null = usuario del tenant.
+  organizationId  String?          @map("organization_id") @db.Uuid
+  organization    ContractorOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  /// Quién invitó a este usuario al portal contratista (P9 · Invitado por). null = legado / no invitado.
+  invitedById     String?          @map("invited_by_id") @db.Uuid
+  invitedBy       User?            @relation("UserInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  /// Usuarios que este actor invitó (inverso de invitedBy).
+  usersInvited    User[]           @relation("UserInvitedBy")
   tokenVersion    Int              @default(0) @map("token_version")
   lastLoginAt     DateTime?        @map("last_login_at") @db.Timestamptz
   lastLoginIp     String?          @map("last_login_ip")
@@ -263,18 +507,50 @@ model User {
   crewMember      CrewMember?
   /// Documentos de tripulante subidos por este usuario.
   uploadedCrewDocuments CrewMemberDocument[]
+  /// Entradas de bitácora (observación / amonestación / embarque) creadas por este usuario.
+  crewMemberLogEntriesCreated CrewMemberLogEntry[]
   /// Filas de auditoría donde este usuario es el actor.
   activityLogs ActivityLog[]
   /// Avisos de sistema marcados como leídos.
   announcementReads UserAnnouncementRead[]
   /// Avisos publicados por este usuario (si aplica).
   announcementsCreated SystemAnnouncement[] @relation("AnnouncementCreatedBy")
+  /// Activaciones/desactivaciones de submódulos Prevención hechas por este usuario.
+  businessModulesEnabled BusinessModule[] @relation("BusinessModuleEnabledBy")
+  /// Habilitaciones solicitadas por este usuario.
+  accreditationsRequested ContractorAccreditation[] @relation("AccreditationRequestedBy")
+  /// Habilitaciones revisadas (aprobar / devolver / rechazar) por este usuario.
+  accreditationsReviewed  ContractorAccreditation[] @relation("AccreditationReviewedBy")
+  /// Docs de org contratista subidos por este usuario.
+  contractorOrgDocumentsUploaded ContractorOrgDocument[] @relation("ContractorOrgDocUploadedBy")
+  /// Docs de org contratista validados/observados por este usuario.
+  contractorOrgDocumentsValidated ContractorOrgDocument[] @relation("ContractorOrgDocValidatedBy")
+  /// Docs de persona contratista subidos por este usuario.
+  contractorPersonDocumentsUploaded ContractorPersonDocument[] @relation("ContractorPersonDocUploadedBy")
+  /// Docs de persona contratista validados/observados por este usuario.
+  contractorPersonDocumentsValidated ContractorPersonDocument[] @relation("ContractorPersonDocValidatedBy")
+  /// Avisos de trabajo creados por este usuario (solicitante).
+  workNoticesCreated WorkNotice[] @relation("WorkNoticeCreatedBy")
+  /// Permisos de trabajo creados por este usuario (Prevención).
+  workPermitsCreated WorkPermit[] @relation("WorkPermitCreatedBy")
+  /// Firmas de hitos en permisos de trabajo (P6).
+  workPermitSignatures WorkPermitSignature[] @relation("WorkPermitSignatureSignedBy")
+  /// Respuestas de checklist de PT contestadas por este usuario.
+  workPermitChecklistAnswers WorkPermitChecklistAnswer[] @relation("WorkPermitChecklistAnsweredBy")
+  /// Posiciones de nave reportadas desde el navegador por este usuario.
+  vesselPositionsReported VesselPosition[]
+  /// Sesiones de capacitación creadas por este usuario.
+  trainingSessionsCreated TrainingSession[] @relation("TrainingSessionCreatedBy")
+  /// Sesiones de capacitación cerradas por este usuario.
+  trainingSessionsClosed  TrainingSession[] @relation("TrainingSessionClosedBy")
 
   @@index([email])
   @@index([username])
   @@index([businessId])
   @@index([locationId])
   @@index([areaId])
+  @@index([organizationId])
+  @@index([invitedById])
   @@map("users")
 }
 
@@ -324,9 +600,50 @@ model Business {
   documentTypes          DocumentType[]
   /// Filas del outbox de notificaciones de esta empresa.
   notificationOutbox     NotificationOutbox[]
+  /// Interruptores de Prevención (contractors / work_permits / trainings).
+  modules                BusinessModule[]
+  /// Catálogo de tipos de permiso de trabajo (ALT, CAL, …).
+  permitTypes            PermitType[]
+  /// Catálogo de capacitaciones de Prevención (EXT-01, ODI-01, …).
+  trainings              Training[]
+  /// Sesiones grupales/individuales de capacitación Prevención.
+  trainingSessions       TrainingSession[]
+  /// Organizaciones contratistas (empresas externas del módulo contractors).
+  contractorOrganizations ContractorOrganization[]
+  /// Avisos de trabajo (área solicitante).
+  workNotices             WorkNotice[]
+  /// Permisos de trabajo en curso / historial.
+  workPermits             WorkPermit[]
+  /// Plantillas de flujo de aprobación de PT (P16).
+  approvalFlows           ApprovalFlow[]
 
   @@index([name])
   @@map("businesses")
+}
+
+/**
+ * Interruptor de un submódulo de Prevención para un tenant.
+ * Nace en Wave (sin legacyMongoId). Una fila por (empresa, key); default enabled=false.
+ */
+model BusinessModule {
+  id          String            @id @default(uuid()) @db.Uuid
+  businessId  String            @map("business_id") @db.Uuid
+  business    Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  /// Clave del submódulo (contractors | work_permits | trainings).
+  key         BusinessModuleKey
+  /// Si false, los permisos de ese módulo no cuentan (capa 1 de autorización).
+  enabled     Boolean           @default(false)
+  /// Cuándo se prendió por última vez (null si nunca o quedó apagado).
+  enabledAt   DateTime?         @map("enabled_at") @db.Timestamptz
+  /// Superadmin (u operador) que hizo el último cambio a enabled=true; null si se apagó o seed.
+  enabledById String?           @map("enabled_by_id") @db.Uuid
+  enabledBy   User?             @relation("BusinessModuleEnabledBy", fields: [enabledById], references: [id], onDelete: SetNull)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([businessId, key])
+  @@index([businessId])
+  @@map("business_modules")
 }
 
 /**
@@ -354,6 +671,17 @@ model DocumentType {
   crewCanView   Boolean   @default(true) @map("crew_can_view")
   /// Legacy: nobody | employee | employee_supervisor | supervisor (sincronizado con crewCanView).
   visibility    String    @default("employee") @map("visibility")
+  /**
+   * Pack de habilitación editable (Anexo A).
+   * company = entra en los 8 de empresa; person = los 8 de persona; null = fuera del pack.
+   */
+  accreditationPack AccreditationScope? @map("accreditation_pack")
+  /**
+   * Si está en pack empresa/persona: true = bloquea pack completo;
+   * false = aparece en checklist pero es opcional.
+   * Ignorado cuando accreditationPack es null.
+   */
+  accreditationPackRequired Boolean @default(true) @map("accreditation_pack_required")
   businessId    String    @map("business_id") @db.Uuid
   business      Business  @relation(fields: [businessId], references: [id])
   state         Boolean   @default(true)
@@ -361,11 +689,20 @@ model DocumentType {
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   documents     CrewMemberDocument[]
+  /// Docs de habilitación de org contratista (pack company).
+  contractorOrgDocuments ContractorOrgDocument[]
+  /// Docs de habilitación por persona (pack person).
+  contractorPersonDocuments ContractorPersonDocument[]
+  /// Exigencias de tipos de permiso que apuntan a este tipo de documento.
+  permitTypeRequirements PermitTypeRequirement[]
+  /// Capacitaciones que se acreditan con este tipo de documento.
+  trainings              Training[]
 
   @@index([businessId])
   @@index([code, businessId])
   @@index([subtype])
   @@index([appliesTo])
+  @@index([accreditationPack])
   @@map("document_types")
 }
 
@@ -493,11 +830,44 @@ model Location {
   users         User[]
   areas         Area[]
   crewMembers   CrewMember[]
+  /// Avisos de trabajo previstos en esta nave/lugar.
+  workNotices   WorkNotice[]
+  /// Permisos de trabajo en esta nave/lugar.
+  workPermits   WorkPermit[]
+  /// Lecturas de posición (navegador a bordo / futuro AIS).
+  vesselPositions VesselPosition[]
+  /// Sesiones de capacitación Prevención dictadas en esta nave/lugar.
+  trainingSessions TrainingSession[]
 
   @@index([businessId])
   @@index([name, businessId])
   @@index([kind])
   @@map("locations")
+}
+
+/**
+ * Posición reportada de una nave/lugar (prueba: geolocalización del PC a bordo).
+ * Historial por locationId; el Panel lee la más reciente.
+ */
+model VesselPosition {
+  id           String   @id @default(uuid()) @db.Uuid
+  locationId   String   @map("location_id") @db.Uuid
+  location     Location @relation(fields: [locationId], references: [id])
+  latitude     Float
+  longitude    Float
+  /// Precisión del navegador en metros (coords.accuracy); null si no vino.
+  accuracyM    Float?   @map("accuracy_m")
+  /// Origen de la lectura (browser = PC a bordo; ais queda para después).
+  source       String   @default("browser")
+  recordedAt   DateTime @default(now()) @map("recorded_at") @db.Timestamptz
+  /// Quién reportó (usuario del PC); null si llega de un job futuro.
+  reportedById String?  @map("reported_by_id") @db.Uuid
+  reportedBy   User?    @relation(fields: [reportedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([locationId, recordedAt])
+  @@index([reportedById])
+  @@map("vessel_positions")
 }
 
 /**
@@ -521,6 +891,8 @@ model Area {
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   users         User[]
   crewMembers   CrewMember[]
+  /// Avisos de trabajo donde esta área es la solicitante.
+  workNoticesRequested WorkNotice[]
 
   @@index([locationId])
   @@index([businessId])
@@ -571,6 +943,12 @@ model CrewMember {
   travesiaAssignments        CrewMemberTravesia[]
   /// Cursos asignados a este tripulante (ficha).
   courseAssignments          CrewMemberCourse[]
+  /// Capacitaciones Prevención asignadas a este tripulante (ficha).
+  trainingAssignments        CrewMemberTraining[]
+  /// Asistencias a sesiones grupales/individuales de capacitación.
+  trainingSessionAttendances TrainingSessionAttendee[]
+  /// Entradas manuales de bitácora (observaciones, amonestaciones, embarques).
+  logEntries                 CrewMemberLogEntry[]
   /// Avisos de vencimiento dirigidos a este tripulante.
   notificationOutbox         NotificationOutbox[]
 
@@ -583,6 +961,35 @@ model CrewMember {
   @@index([run, businessId])
   @@index([email, businessId])
   @@map("crew_members")
+}
+
+/**
+ * Entrada manual de bitácora del tripulante (observación, amonestación o embarque).
+ * Nota + fecha; soft delete. Se muestra en GET …/history.
+ * documentId: adjunto opcional (p. ej. carta de amonestación) → tab Documentos.
+ */
+model CrewMemberLogEntry {
+  id           String              @id @default(uuid()) @db.Uuid
+  crewMemberId String              @map("crew_member_id") @db.Uuid
+  crewMember   CrewMember          @relation(fields: [crewMemberId], references: [id])
+  kind         CrewLogEntryKind
+  /// Texto libre del evento.
+  note         String
+  /// Cuándo ocurrió el hecho (editable; puede diferir de createdAt).
+  occurredAt   DateTime            @map("occurred_at") @db.Timestamptz
+  /// Documento del expediente vinculado (1:1 opcional; típico en amonestación).
+  documentId   String?             @unique @map("document_id") @db.Uuid
+  document     CrewMemberDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  createdById  String?             @map("created_by_id") @db.Uuid
+  createdBy    User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  deletedAt    DateTime?           @map("deleted_at") @db.Timestamptz
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([crewMemberId])
+  @@index([kind])
+  @@index([occurredAt])
+  @@map("crew_member_log_entries")
 }
 
 /**
@@ -688,6 +1095,7 @@ model CrewMemberTravesia {
 /**
  * Documento de tripulante (archivo en disco local).
  * Tipo vía DocumentType; sourceModule indica quién lo cargó.
+ * expiresAt: evidencia de capacitaciones / docs que vencen (Figma «Vence»).
  */
 model CrewMemberDocument {
   id             String       @id @default(uuid()) @db.Uuid
@@ -703,15 +1111,22 @@ model CrewMemberDocument {
   filePath       String       @map("file_path")
   /// crew | prevention | assets | system
   sourceModule   String       @default("crew") @map("source_module")
+  /// Vencimiento del documento; null = sin caducidad.
+  expiresAt      DateTime?    @map("expires_at") @db.Timestamptz
   uploadedById   String?      @map("uploaded_by_id") @db.Uuid
   uploadedBy     User?        @relation(fields: [uploadedById], references: [id])
   deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  /// Asignaciones de capacitación que usan este archivo como evidencia.
+  trainingEvidenceFor CrewMemberTraining[]
+  /// Entrada de bitácora que apunta a este documento (amonestación, etc.).
+  logEntry            CrewMemberLogEntry?
 
   @@index([crewMemberId])
   @@index([documentTypeId])
   @@index([sourceModule])
+  @@index([expiresAt])
   @@map("crew_member_documents")
 }
 
@@ -873,4 +1288,695 @@ model UserAnnouncementRead {
   @@id([userId, announcementId])
   @@index([userId])
   @@map("user_announcement_reads")
+}
+
+/**
+ * Organización contratista / empresa externa (P2).
+ * Hija del tenant Business (no es otro Business). Sin legacyMongoId.
+ * Personal (ContractorPerson) llega en un micro-paso siguiente.
+ */
+model ContractorOrganization {
+  id                  String         @id @default(uuid()) @db.Uuid
+  businessId          String         @map("business_id") @db.Uuid
+  business            Business       @relation(fields: [businessId], references: [id])
+  /// Razón social (se guarda en minúsculas como Business.name).
+  name                String
+  /// RUT normalizado cuerpo-dv; único por tenant.
+  rut                 String
+  role                ContractorRole
+  specialty           String?
+  contactName         String?        @map("contact_name")
+  contactEmail        String?        @map("contact_email")
+  contactPhone        String?        @map("contact_phone")
+  legalRepresentative String?        @map("legal_representative")
+  address             String?
+  /// Mutual de seguridad (texto libre por ahora).
+  mutual              String?
+  supervisorName      String?        @map("supervisor_name")
+  supervisorEmail     String?        @map("supervisor_email")
+  prevencionistName   String?        @map("prevencionist_name")
+  prevencionistEmail  String?        @map("prevencionist_email")
+  subcontractors      String?
+  workDescription     String?        @map("work_description")
+  active              Boolean        @default(true)
+  deletedAt           DateTime?      @map("deleted_at") @db.Timestamptz
+  createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+  /// Habilitaciones (solicitudes de documentación / revisión).
+  accreditations      ContractorAccreditation[]
+  /// Usuarios invitados al portal de esta org (P9b).
+  users               User[]
+  /// Personal externo (trabajadores de la org).
+  people              ContractorPerson[]
+  /// Documentos de empresa (pack habilitación).
+  documents           ContractorOrgDocument[]
+  /// Avisos de trabajo que referencian esta org.
+  workNotices         WorkNotice[]
+  /// Permisos de trabajo de esta org.
+  workPermits         WorkPermit[]
+
+  @@unique([businessId, rut])
+  @@index([businessId])
+  @@index([active])
+  @@index([name])
+  @@map("contractor_organizations")
+}
+
+/**
+ * Persona externa / trabajador de una organización contratista (P2).
+ * Estado «Habilitado» / «Con pendientes» se calculará con docs (R-10); no se guarda.
+ */
+model ContractorPerson {
+  id               String                 @id @default(uuid()) @db.Uuid
+  organizationId   String                 @map("organization_id") @db.Uuid
+  organization     ContractorOrganization @relation(fields: [organizationId], references: [id])
+  /// RUN normalizado cuerpo-dv; único por org.
+  rut              String
+  /// Nombre completo (UI Figma usa un solo campo).
+  fullName         String                 @map("full_name")
+  position         String?
+  email            String?
+  phone            String?
+  emergencyContact String?                @map("emergency_contact")
+  active           Boolean                @default(true)
+  deletedAt        DateTime?              @map("deleted_at") @db.Timestamptz
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+  /// Documentos del pack person en habilitaciones.
+  documents        ContractorPersonDocument[]
+  /// Asignaciones a permisos de trabajo.
+  workPermits      WorkPermitPerson[]
+
+  @@unique([organizationId, rut])
+  @@index([organizationId])
+  @@index([active])
+  @@map("contractor_people")
+}
+
+/**
+ * Habilitación de una organización contratista (P2 · HAB-NNNN).
+ * Sin vencimiento propio: vencen los documentos. Docs/personal llegan después.
+ */
+model ContractorAccreditation {
+  id             String              @id @default(uuid()) @db.Uuid
+  /// Código estable único global (HAB-0020).
+  code           String              @unique
+  organizationId String              @map("organization_id") @db.Uuid
+  organization   ContractorOrganization @relation(fields: [organizationId], references: [id])
+  status         AccreditationStatus @default(pending)
+  /// Mensaje al solicitar documentación (POST create).
+  message        String?
+  /// Observaciones al devolver o motivo de rechazo.
+  reviewNote     String?             @map("review_note")
+  /**
+   * HAB aprobada: Prevención pidió docs adicionales al contratista.
+   * El portal puede subir huecos vacíos sin crear otra HAB ni perder approved.
+   */
+  awaitingAdditionalDocs Boolean @default(false) @map("awaiting_additional_docs")
+  /// Texto al contratista al pedir docs adicionales.
+  additionalDocsMessage String? @map("additional_docs_message")
+  /// Tipos de documento pedidos en el pedido adicional (uuids).
+  additionalDocsTypeIds String[] @default([]) @map("additional_docs_type_ids") @db.Uuid
+  requestedAt    DateTime?           @map("requested_at") @db.Timestamptz
+  requestedById  String?             @map("requested_by_id") @db.Uuid
+  requestedBy    User?               @relation("AccreditationRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  dueAt          DateTime?           @map("due_at") @db.Timestamptz
+  submittedAt    DateTime?           @map("submitted_at") @db.Timestamptz
+  reviewedAt     DateTime?           @map("reviewed_at") @db.Timestamptz
+  reviewedById   String?             @map("reviewed_by_id") @db.Uuid
+  reviewedBy     User?               @relation("AccreditationReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+  /// Soft-delete: sale de bandeja; no borra docs en disco.
+  deletedAt      DateTime?           @map("deleted_at") @db.Timestamptz
+  /// Documentos de empresa asociados a esta solicitud HAB.
+  documents      ContractorOrgDocument[]
+  /// Documentos por persona asociados a esta solicitud HAB.
+  personDocuments ContractorPersonDocument[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([requestedAt])
+  @@index([deletedAt])
+  @@map("contractor_accreditations")
+}
+
+/**
+ * Documento de empresa en una habilitación (P2 · P5 pack company).
+ * Archivo en disco local (mismo patrón que CrewMemberDocument).
+ */
+model ContractorOrgDocument {
+  id              String                   @id @default(uuid()) @db.Uuid
+  organizationId  String                   @map("organization_id") @db.Uuid
+  organization    ContractorOrganization   @relation(fields: [organizationId], references: [id])
+  accreditationId String                   @map("accreditation_id") @db.Uuid
+  accreditation   ContractorAccreditation  @relation(fields: [accreditationId], references: [id])
+  documentTypeId  String                   @map("document_type_id") @db.Uuid
+  documentType    DocumentType             @relation(fields: [documentTypeId], references: [id])
+  originalName    String                   @map("original_name")
+  mimeType        String                   @map("mime_type")
+  size            Int
+  /// Relativa: /uploads/{businessId}/contractors/{orgId}/accreditations/{habId}/…
+  filePath        String                   @map("file_path")
+  status          ContractorDocumentStatus @default(pending_validation)
+  /// Nota al observar o al validar (opcional).
+  observation     String?
+  expiresAt       DateTime?                @map("expires_at") @db.Timestamptz
+  uploadedById    String?                  @map("uploaded_by_id") @db.Uuid
+  uploadedBy      User?                    @relation("ContractorOrgDocUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  validatedById   String?                  @map("validated_by_id") @db.Uuid
+  validatedBy     User?                    @relation("ContractorOrgDocValidatedBy", fields: [validatedById], references: [id], onDelete: SetNull)
+  validatedAt     DateTime?                @map("validated_at") @db.Timestamptz
+  deletedAt       DateTime?                @map("deleted_at") @db.Timestamptz
+  createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([organizationId])
+  @@index([accreditationId])
+  @@index([documentTypeId])
+  @@index([status])
+  @@map("contractor_org_documents")
+}
+
+/**
+ * Documento de persona externa en una habilitación (P2 · pack person).
+ * Archivo en disco local (mismo patrón que docs de empresa).
+ */
+model ContractorPersonDocument {
+  id              String                   @id @default(uuid()) @db.Uuid
+  personId        String                   @map("person_id") @db.Uuid
+  person          ContractorPerson         @relation(fields: [personId], references: [id])
+  accreditationId String                   @map("accreditation_id") @db.Uuid
+  accreditation   ContractorAccreditation  @relation(fields: [accreditationId], references: [id])
+  documentTypeId  String                   @map("document_type_id") @db.Uuid
+  documentType    DocumentType             @relation(fields: [documentTypeId], references: [id])
+  originalName    String                   @map("original_name")
+  mimeType        String                   @map("mime_type")
+  size            Int
+  /// Relativa: /uploads/{businessId}/contractors/{orgId}/people/{personId}/accreditations/{habId}/…
+  filePath        String                   @map("file_path")
+  status          ContractorDocumentStatus @default(pending_validation)
+  observation     String?
+  expiresAt       DateTime?                @map("expires_at") @db.Timestamptz
+  uploadedById    String?                  @map("uploaded_by_id") @db.Uuid
+  uploadedBy      User?                    @relation("ContractorPersonDocUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  validatedById   String?                  @map("validated_by_id") @db.Uuid
+  validatedBy     User?                    @relation("ContractorPersonDocValidatedBy", fields: [validatedById], references: [id], onDelete: SetNull)
+  validatedAt     DateTime?                @map("validated_at") @db.Timestamptz
+  deletedAt       DateTime?                @map("deleted_at") @db.Timestamptz
+  createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([personId])
+  @@index([accreditationId])
+  @@index([documentTypeId])
+  @@index([status])
+  @@map("contractor_person_documents")
+}
+
+/**
+ * Tipo de permiso de trabajo (P1 · P14).
+ * Maestro por empresa: ALT, CAL, ECF, GEN, BUC (+ tipos nuevos).
+ * Flujo/checklist ítems se agregan en pasos siguientes.
+ */
+model PermitType {
+  id          String            @id @default(uuid()) @db.Uuid
+  businessId  String            @map("business_id") @db.Uuid
+  business    Business          @relation(fields: [businessId], references: [id])
+  /// Código corto estable (ALT, CAL, ECF, GEN, BUC).
+  code        String
+  name        String
+  criticality PermitCriticality
+  /// Si true, el tipo exige AST (formulario y/o PDF según astMode).
+  requiresAst Boolean           @default(false) @map("requires_ast")
+  /// Null si requiresAst=false.
+  astMode     PermitAstMode?    @map("ast_mode")
+  description String?
+  /// Flujo de aprobación por defecto al crear un PT de este tipo (P16).
+  defaultApprovalFlowId String?       @map("default_approval_flow_id") @db.Uuid
+  defaultApprovalFlow   ApprovalFlow? @relation(fields: [defaultApprovalFlowId], references: [id], onDelete: SetNull)
+  /// false = desactivado (Figma «Desactivar tipo»); no borra historial.
+  active      Boolean           @default(true)
+  deletedAt   DateTime?         @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+  /// Exigencias del tipo (documentos, capacitaciones, checklist).
+  requirements PermitTypeRequirement[]
+  /// Ítems del checklist propio del tipo (P15 · Checklist N ítems).
+  checklistItems PermitChecklistItem[]
+  /// Avisos de trabajo de este tipo.
+  workNotices    WorkNotice[]
+  /// Permisos emitidos de este tipo.
+  workPermits    WorkPermit[]
+
+  @@unique([businessId, code])
+  @@index([businessId])
+  @@index([active])
+  @@index([defaultApprovalFlowId])
+  @@map("permit_types")
+}
+
+/**
+ * Plantilla de flujo de aprobación de permisos de trabajo (P16).
+ * EST = sistema (no editable); copias personalizadas hasta 8 etapas.
+ */
+model ApprovalFlow {
+  id           String    @id @default(uuid()) @db.Uuid
+  businessId   String    @map("business_id") @db.Uuid
+  business     Business  @relation(fields: [businessId], references: [id])
+  /// Código corto estable (EST, EST-C…).
+  code         String
+  name         String
+  description  String?
+  /// true = plantilla de sistema (no se edita ni borra).
+  isSystem     Boolean   @default(false) @map("is_system")
+  /// Flujo origen al duplicar; null en EST raíz.
+  copiedFromId String?   @map("copied_from_id") @db.Uuid
+  copiedFrom   ApprovalFlow?  @relation("ApprovalFlowCopies", fields: [copiedFromId], references: [id], onDelete: SetNull)
+  copies       ApprovalFlow[] @relation("ApprovalFlowCopies")
+  active       Boolean   @default(true)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  stages       ApprovalFlowStage[]
+  /// Tipos de permiso que lo usan como default.
+  permitTypes  PermitType[]
+  /// Permisos que congelaron este flujo al crearse.
+  workPermits  WorkPermit[]
+
+  @@unique([businessId, code])
+  @@index([businessId])
+  @@index([active])
+  @@index([isSystem])
+  @@map("approval_flows")
+}
+
+/**
+ * Etapa ordenada de un flujo (máx. 8 por flujo — validado en API).
+ * key estable para cablear el motor de estados del PT más adelante.
+ */
+model ApprovalFlowStage {
+  id                String                   @id @default(uuid()) @db.Uuid
+  flowId            String                   @map("flow_id") @db.Uuid
+  flow              ApprovalFlow             @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  /// Posición 1..8.
+  position          Int
+  /// Clave de motor (notice, create_permit, complete, approve, receive, request_close…).
+  key               String
+  /// Texto «Qué se hace» (Figma).
+  label             String
+  actor             ApprovalFlowStageActor
+  moment            ApprovalFlowStageMoment
+  requiresSignature Boolean                  @default(false) @map("requires_signature")
+  mandatory         Boolean                  @default(true)
+  /// true = etapa fija del sistema (no se quita en EST).
+  fixed             Boolean                  @default(false)
+  createdAt         DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([flowId, position])
+  @@unique([flowId, key])
+  @@index([flowId])
+  @@map("approval_flow_stages")
+}
+
+/**
+ * Exigencia de un tipo de permiso (P1 · P15 Exigencias).
+ * Seed de ejemplo: 8 filas de CAL (spec Anexo).
+ * trainingCode hasta existir tabla trainings (P1 capacitaciones).
+ */
+model PermitTypeRequirement {
+  id                   String                   @id @default(uuid()) @db.Uuid
+  permitTypeId         String                   @map("permit_type_id") @db.Uuid
+  permitType           PermitType               @relation(fields: [permitTypeId], references: [id], onDelete: Cascade)
+  /// Clave estable por tipo (seed idempotente), ej. cal.docs_company_pack.
+  key                  String
+  kind                 PermitRequirementKind
+  scope                PermitRequirementScope
+  moment               PermitRequirementMoment  @default(before)
+  mandatory            Boolean                  @default(true)
+  /// kind=document y apunta a un tipo concreto (PS, PP…).
+  documentTypeId       String?                  @map("document_type_id") @db.Uuid
+  documentType         DocumentType?            @relation(fields: [documentTypeId], references: [id], onDelete: SetNull)
+  /// kind=document pack «los 8» (empresa o persona).
+  accreditationScope   AccreditationScope?      @map("accreditation_scope")
+  /// kind=training: código de catálogo (EXT-01); redundante con trainingId para lectura.
+  trainingCode         String?                  @map("training_code")
+  /// FK a Training cuando el catálogo ya existe en la empresa.
+  trainingId           String?                  @map("training_id") @db.Uuid
+  training             Training?                @relation(fields: [trainingId], references: [id], onDelete: SetNull)
+  /// Texto visible en la tabla (Figma columna Exigencia).
+  label                String
+  active               Boolean                  @default(true)
+  createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([permitTypeId, key])
+  @@index([permitTypeId])
+  @@index([kind])
+  @@index([trainingId])
+  @@map("permit_type_requirements")
+}
+
+/**
+ * Capacitación del módulo Prevención (P1 · P4).
+ * Distinta de Course (OMI/tripulación). Código estable por empresa (EXT-01…).
+ */
+model Training {
+  id             String    @id @default(uuid()) @db.Uuid
+  businessId     String    @map("business_id") @db.Uuid
+  business       Business  @relation(fields: [businessId], references: [id])
+  /// Código corto (ALT-01, EXT-01, ODI-01, IND-SEG…).
+  code           String
+  name           String
+  /// Meses de vigencia; null = sin vencimiento.
+  validityMonths Int?      @map("validity_months")
+  /**
+   * A quién aplica (tags). Valores: crew | external_person.
+   * Array Prisma para poder marcar ambos.
+   */
+  appliesTo      String[]  @default([]) @map("applies_to")
+  /// Documento que acredita la capacitación (opcional si el tipo aún no existe).
+  documentTypeId String?   @map("document_type_id") @db.Uuid
+  documentType   DocumentType? @relation(fields: [documentTypeId], references: [id], onDelete: SetNull)
+  active         Boolean   @default(true)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  /// Exigencias de permiso que apuntan a esta capacitación.
+  permitTypeRequirements PermitTypeRequirement[]
+  /// Asignaciones a tripulantes (ficha Embarcados).
+  crewAssignments        CrewMemberTraining[]
+  /// Sesiones (grupales o de una persona) de esta capacitación.
+  sessions               TrainingSession[]
+
+  @@unique([businessId, code])
+  @@index([businessId])
+  @@index([active])
+  @@map("trainings")
+}
+
+/**
+ * Asignación de una capacitación Prevención a un tripulante.
+ * Única por (crewMember, training) entre no borradas (índice parcial en migración).
+ * expiresAt se calcula con completedAt + Training.validityMonths (si hay).
+ */
+model CrewMemberTraining {
+  id                  String             @id @default(uuid()) @db.Uuid
+  crewMemberId        String             @map("crew_member_id") @db.Uuid
+  crewMember          CrewMember         @relation(fields: [crewMemberId], references: [id])
+  trainingId          String             @map("training_id") @db.Uuid
+  training            Training           @relation(fields: [trainingId], references: [id])
+  /// Fecha en que completó / aprobó; null = pendiente.
+  completedAt         DateTime?          @map("completed_at") @db.Timestamptz
+  /// Vencimiento; null = sin caducidad (catálogo sin validityMonths).
+  expiresAt           DateTime?          @map("expires_at") @db.Timestamptz
+  /// Estado persistido; la API lo recalcula al leer/escribir.
+  status              CrewTrainingStatus @default(pending)
+  /// Evidencia documental opcional (mismo expediente del tripulante).
+  evidenceDocumentId  String?            @map("evidence_document_id") @db.Uuid
+  evidenceDocument    CrewMemberDocument? @relation(fields: [evidenceDocumentId], references: [id], onDelete: SetNull)
+  /// Último mail “por vencer” enviado (auditoría / dedupe blando).
+  lastExpiringEmailAt DateTime?          @map("last_expiring_email_at") @db.Timestamptz
+  /// Último mail “vencido” enviado.
+  lastExpiredEmailAt  DateTime?          @map("last_expired_email_at") @db.Timestamptz
+  /// Hitos (días) ya avisados para esta vigencia (evita reenvío del mismo hito).
+  expiringMilestonesSent Int[]           @default([]) @map("expiring_milestones_sent")
+  deletedAt           DateTime?          @map("deleted_at") @db.Timestamptz
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([crewMemberId])
+  @@index([trainingId])
+  @@index([expiresAt])
+  @@index([status])
+  @@index([evidenceDocumentId])
+  @@map("crew_member_trainings")
+}
+
+/**
+ * Sesión de capacitación Prevención (1 persona = individual; N = grupal).
+ * Borrador hasta cerrar con el PDF/acta; al completar renueva cada ficha.
+ */
+model TrainingSession {
+  id               String                @id @default(uuid()) @db.Uuid
+  businessId       String                @map("business_id") @db.Uuid
+  business         Business              @relation(fields: [businessId], references: [id])
+  /// Nave/lugar donde se dictó (filtra embarcados y contador del Panel).
+  locationId       String                @map("location_id") @db.Uuid
+  location         Location              @relation(fields: [locationId], references: [id])
+  trainingId       String                @map("training_id") @db.Uuid
+  training         Training              @relation(fields: [trainingId], references: [id])
+  /// Día/hora en que se dictó la capacitación.
+  heldAt           DateTime              @map("held_at") @db.Timestamptz
+  status           TrainingSessionStatus @default(draft)
+  notes            String?
+  /// Ruta relativa del acta/PDF final (/uploads/…).
+  filePath         String?               @map("file_path")
+  fileOriginalName String?               @map("file_original_name")
+  fileMimeType     String?               @map("file_mime_type")
+  fileSize         Int?                  @map("file_size")
+  closedAt         DateTime?             @map("closed_at") @db.Timestamptz
+  closedById       String?               @map("closed_by_id") @db.Uuid
+  closedBy         User?                 @relation("TrainingSessionClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  createdById      String?               @map("created_by_id") @db.Uuid
+  createdBy        User?                 @relation("TrainingSessionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  deletedAt        DateTime?             @map("deleted_at") @db.Timestamptz
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime              @updatedAt @map("updated_at") @db.Timestamptz
+  attendees        TrainingSessionAttendee[]
+
+  @@index([businessId])
+  @@index([locationId])
+  @@index([trainingId])
+  @@index([status])
+  @@index([heldAt])
+  @@map("training_sessions")
+}
+
+/**
+ * Asistente de una sesión. Al cerrar se llenan los FKs de ficha/doc/bitácora.
+ */
+model TrainingSessionAttendee {
+  id                   String              @id @default(uuid()) @db.Uuid
+  sessionId            String              @map("session_id") @db.Uuid
+  session              TrainingSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  crewMemberId         String              @map("crew_member_id") @db.Uuid
+  crewMember           CrewMember          @relation(fields: [crewMemberId], references: [id])
+  /// Asignación renovada/creada al cerrar la sesión.
+  crewMemberTrainingId String?             @map("crew_member_training_id") @db.Uuid
+  /// Copia del acta en el expediente del tripulante.
+  evidenceDocumentId   String?             @map("evidence_document_id") @db.Uuid
+  /// Entrada de bitácora generada al cerrar.
+  logEntryId           String?             @map("log_entry_id") @db.Uuid
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([sessionId, crewMemberId])
+  @@index([crewMemberId])
+  @@index([crewMemberTrainingId])
+  @@index([evidenceDocumentId])
+  @@map("training_session_attendees")
+}
+
+/**
+ * Ítem del checklist de un tipo de permiso (P1).
+ * Orden estable; el requisito kind=checklist apunta al set completo.
+ */
+model PermitChecklistItem {
+  id           String     @id @default(uuid()) @db.Uuid
+  permitTypeId String     @map("permit_type_id") @db.Uuid
+  permitType   PermitType @relation(fields: [permitTypeId], references: [id], onDelete: Cascade)
+  /// Posición 1-based en la UI / PDF del permiso.
+  order        Int
+  text         String
+  active       Boolean    @default(true)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  /// Respuestas de PT que apuntan a este ítem.
+  workPermitAnswers WorkPermitChecklistAnswer[]
+
+  @@unique([permitTypeId, order])
+  @@index([permitTypeId])
+  @@map("permit_checklist_items")
+}
+
+/**
+ * Aviso de trabajo (P4 · AT1 / AT2).
+ * Lo crea un usuario con área (área solicitante); Prevención recibe la solicitud.
+ * La org debe existir; el estado de HAB se lee de la org (no es toggle).
+ * El ciclo Por completar→Cerrado vive en WorkPermit (paso siguiente).
+ */
+model WorkNotice {
+  id                     String                   @id @default(uuid()) @db.Uuid
+  businessId             String                   @map("business_id") @db.Uuid
+  business               Business                 @relation(fields: [businessId], references: [id])
+  /// Código estable AV-NNNN.
+  code                   String                   @unique
+  organizationId         String                   @map("organization_id") @db.Uuid
+  organization           ContractorOrganization   @relation(fields: [organizationId], references: [id])
+  permitTypeId           String                   @map("permit_type_id") @db.Uuid
+  permitType             PermitType               @relation(fields: [permitTypeId], references: [id])
+  /// Nave / lugar donde se hará el trabajo.
+  locationId             String                   @map("location_id") @db.Uuid
+  location               Location                 @relation(fields: [locationId], references: [id])
+  /// Área solicitante (copia de User.areaId al crear; acumulador de KPIs).
+  requestingAreaId       String                   @map("requesting_area_id") @db.Uuid
+  requestingArea         Area                     @relation(fields: [requestingAreaId], references: [id])
+  /// Fecha tentativa del trabajo (día, sin hora obligatoria).
+  tentativeDate          DateTime                 @map("tentative_date") @db.Date
+  /// Duración estimada en días; null = no indicada (opcional).
+  estimatedDurationDays  Int?                     @map("estimated_duration_days")
+  description            String?
+  contactName            String?                  @map("contact_name")
+  contactEmail           String?                  @map("contact_email")
+  contactPhone           String?                  @map("contact_phone")
+  /// Si true, Prevención también recibe correo (envío real = paso posterior).
+  notifyByEmail          Boolean                  @default(true) @map("notify_by_email")
+  status                 WorkNoticeStatus         @default(pending)
+  /// Usuario que creó el aviso (autoría; conteo por persona).
+  createdById            String?                  @map("created_by_id") @db.Uuid
+  createdBy              User?                    @relation("WorkNoticeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  /// Permiso creado a partir de este aviso (1:1).
+  workPermit             WorkPermit?
+  deletedAt              DateTime?                @map("deleted_at") @db.Timestamptz
+  createdAt              DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([businessId])
+  @@index([organizationId])
+  @@index([permitTypeId])
+  @@index([locationId])
+  @@index([requestingAreaId])
+  @@index([status])
+  @@index([tentativeDate])
+  @@map("work_notices")
+}
+
+/**
+ * Permiso de trabajo (PT-NNNN).
+ * Nace desde un aviso (Prevención crea); el contratista completa y el capitán recibe/cierra.
+ * Firmas y checklists llegan en micro-pasos siguientes.
+ */
+model WorkPermit {
+  id             String                 @id @default(uuid()) @db.Uuid
+  businessId     String                 @map("business_id") @db.Uuid
+  business       Business               @relation(fields: [businessId], references: [id])
+  /// Código estable PT-NNNN.
+  code           String                 @unique
+  /// Aviso origen (único: un aviso → un PT).
+  workNoticeId   String                 @unique @map("work_notice_id") @db.Uuid
+  workNotice     WorkNotice             @relation(fields: [workNoticeId], references: [id])
+  organizationId String                 @map("organization_id") @db.Uuid
+  organization   ContractorOrganization @relation(fields: [organizationId], references: [id])
+  permitTypeId   String                 @map("permit_type_id") @db.Uuid
+  permitType     PermitType             @relation(fields: [permitTypeId], references: [id])
+  locationId     String                 @map("location_id") @db.Uuid
+  location       Location               @relation(fields: [locationId], references: [id])
+  /// Copia de la fecha tentativa del aviso al crear (se puede ajustar después).
+  scheduledDate  DateTime               @map("scheduled_date") @db.Date
+  description    String?
+  status         WorkPermitStatus       @default(to_complete)
+  /// Motivo al devolver a «Por completar»; se limpia al aprobar.
+  reviewNote     String?                @map("review_note")
+  /// Exigencias/checklist congelados al crear el PT (R-13 · P13b).
+  requirementsSnapshot Json?            @map("requirements_snapshot")
+  /// Flujo de aprobación congelado al crear (desde PermitType.defaultApprovalFlowId).
+  approvalFlowId String?                @map("approval_flow_id") @db.Uuid
+  approvalFlow   ApprovalFlow?          @relation(fields: [approvalFlowId], references: [id], onDelete: SetNull)
+  /// Copia de código/nombre/etapas del flujo al crear (el catálogo puede cambiar después).
+  approvalFlowSnapshot Json?            @map("approval_flow_snapshot")
+  createdById    String?                @map("created_by_id") @db.Uuid
+  createdBy      User?                  @relation("WorkPermitCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  deletedAt      DateTime?              @map("deleted_at") @db.Timestamptz
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+  /// Personal asignado al permiso (completado por contratista o Prevención).
+  people         WorkPermitPerson[]
+  /// Respuestas de checklist por etapa.
+  checklistAnswers WorkPermitChecklistAnswer[]
+  /// Firmas de hitos (aprobación, recepción, cierre).
+  signatures     WorkPermitSignature[]
+
+  @@index([businessId])
+  @@index([organizationId])
+  @@index([permitTypeId])
+  @@index([locationId])
+  @@index([approvalFlowId])
+  @@index([status])
+  @@index([scheduledDate])
+  @@map("work_permits")
+}
+
+/**
+ * Firma de un hito del PT (quién / cuándo + trazo PNG opcional).
+ * Prevención/capitán: pad + aceptación. Contratista pedir cierre: solo registro.
+ */
+model WorkPermitSignature {
+  id           String                  @id @default(uuid()) @db.Uuid
+  workPermitId String                  @map("work_permit_id") @db.Uuid
+  workPermit   WorkPermit              @relation(fields: [workPermitId], references: [id], onDelete: Cascade)
+  kind         WorkPermitSignatureKind
+  signedById   String?                 @map("signed_by_id") @db.Uuid
+  signedBy     User?                   @relation("WorkPermitSignatureSignedBy", fields: [signedById], references: [id], onDelete: SetNull)
+  /// Nombre visible congelado al firmar.
+  signerName   String                  @map("signer_name")
+  /// Trazo PNG (data URL); null en hitos sin pad (ej. pedir cierre).
+  signatureImage String?               @map("signature_image") @db.Text
+  /// Cuándo marcó «Confirmo» (pad digital); null si solo registro automático.
+  acceptedAt   DateTime?               @map("accepted_at") @db.Timestamptz
+  note         String?
+  signedAt     DateTime                @default(now()) @map("signed_at") @db.Timestamptz
+  createdAt    DateTime                @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime                @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([workPermitId, kind])
+  @@index([workPermitId])
+  @@index([signedById])
+  @@map("work_permit_signatures")
+}
+
+/**
+ * Persona asignada a un permiso de trabajo (P5d).
+ * presentAt lo setea el capitán en el puente (después); acá solo se elige el personal.
+ */
+model WorkPermitPerson {
+  workPermitId String           @map("work_permit_id") @db.Uuid
+  workPermit   WorkPermit       @relation(fields: [workPermitId], references: [id], onDelete: Cascade)
+  personId     String           @map("person_id") @db.Uuid
+  person       ContractorPerson @relation(fields: [personId], references: [id], onDelete: Cascade)
+  /// Confirmado presente a bordo por el capitán; null hasta recepción.
+  presentAt    DateTime?        @map("present_at") @db.Timestamptz
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([workPermitId, personId])
+  @@index([personId])
+  @@map("work_permit_people")
+}
+
+/**
+ * Respuesta a un ítem de checklist del tipo, congelando el texto al responder (P5d).
+ * stage=contractor al completar; reception/closure en pasos posteriores.
+ */
+model WorkPermitChecklistAnswer {
+  id              String                         @id @default(uuid()) @db.Uuid
+  workPermitId    String                         @map("work_permit_id") @db.Uuid
+  workPermit      WorkPermit                     @relation(fields: [workPermitId], references: [id], onDelete: Cascade)
+  stage           WorkPermitChecklistStage
+  checklistItemId String                         @map("checklist_item_id") @db.Uuid
+  checklistItem   PermitChecklistItem            @relation(fields: [checklistItemId], references: [id], onDelete: Restrict)
+  /// Copia del texto del ítem al momento de responder (R-13 parcial).
+  itemText        String                         @map("item_text")
+  answer          WorkPermitChecklistAnswerValue
+  answeredById    String?                        @map("answered_by_id") @db.Uuid
+  answeredBy      User?                          @relation("WorkPermitChecklistAnsweredBy", fields: [answeredById], references: [id], onDelete: SetNull)
+  answeredAt      DateTime                       @default(now()) @map("answered_at") @db.Timestamptz
+  createdAt       DateTime                       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime                       @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([workPermitId, stage, checklistItemId])
+  @@index([workPermitId, stage])
+  @@index([checklistItemId])
+  @@map("work_permit_checklist_answers")
 }

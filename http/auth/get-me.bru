@@ -28,6 +28,8 @@ script:pre-request {
 assert {
   res.status: eq 200
   res.body.user.email: eq fsoto@nachipa-w.com
+  // P0: interruptores Prevención (superadmin sin empresa → los tres en false).
+  res.body.user.modules: isArray
 }
 
 settings {

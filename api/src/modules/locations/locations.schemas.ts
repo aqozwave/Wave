@@ -139,3 +139,87 @@ export type CreateLocationBody = z.infer<typeof createLocationBodySchema>;
 export type ListLocationsQuery = z.infer<typeof listLocationsQuerySchema>;
 export type LocationResponse = z.infer<typeof locationResponseSchema>;
 export type UpdateLocationBody = z.infer<typeof updateLocationBodySchema>;
+
+/** Body POST /locations/me/position — lat/lng del navegador a bordo. */
+export const reportVesselPositionBodySchema = z.object({
+  /** Latitud WGS84 (−90…90). */
+  latitude: z.number().min(-90).max(90),
+  /** Longitud WGS84 (−180…180). */
+  longitude: z.number().min(-180).max(180),
+  /** Precisión en metros (GeolocationCoordinates.accuracy); opcional. */
+  accuracyM: z.number().nonnegative().nullable().optional(),
+});
+
+export const reportVesselPositionRequestSchema = z.object({
+  body: reportVesselPositionBodySchema,
+});
+
+/** Última posición conocida de una nave (o null si aún no hay lecturas). */
+export const vesselPositionResponseSchema = z
+  .object({
+    locationId: z.uuid(),
+    locationName: z.string(),
+    latitude: z.number(),
+    longitude: z.number(),
+    accuracyM: z.number().nullable(),
+    source: z.string(),
+    recordedAt: z.string().datetime(),
+    reportedById: z.uuid().nullable(),
+  })
+  .nullable()
+  .openapi("VesselPosition");
+
+export const getMyVesselPositionRequestSchema = z.object({});
+
+export const getLocationPositionRequestSchema = z.object({
+  params: locationIdParamsSchema,
+});
+
+/**
+ * Una fila del listado admin: nave + última señal (coords null = sin lecturas).
+ * Sirve para el mapa de flota y la tabla “última señal”.
+ */
+export const vesselPositionListItemSchema = z
+  .object({
+    locationId: z.uuid(),
+    locationName: z.string(),
+    kind: locationKindSchema.nullable(),
+    latitude: z.number().nullable(),
+    longitude: z.number().nullable(),
+    accuracyM: z.number().nullable(),
+    source: z.string().nullable(),
+    recordedAt: z.string().datetime().nullable(),
+    reportedById: z.uuid().nullable(),
+  })
+  .openapi("VesselPositionListItem");
+
+/** Query GET /locations/positions — filtro opcional de empresa (superadmin). */
+export const listVesselPositionsQuerySchema = z.object({
+  businessId: z.uuid().optional(),
+});
+
+export const listVesselPositionsRequestSchema = z.object({
+  query: listVesselPositionsQuerySchema,
+});
+
+export const listVesselPositionsResponseSchema = z
+  .object({
+    items: z.array(vesselPositionListItemSchema),
+  })
+  .openapi("ListVesselPositionsResponse");
+
+export const reportVesselPositionResponseSchema = vesselPositionResponseSchema;
+export const getVesselPositionResponseSchema = vesselPositionResponseSchema;
+
+export type ReportVesselPositionBody = z.infer<
+  typeof reportVesselPositionBodySchema
+>;
+export type VesselPositionResponse = z.infer<
+  typeof vesselPositionResponseSchema
+>;
+export type ListVesselPositionsQuery = z.infer<
+  typeof listVesselPositionsQuerySchema
+>;
+export type VesselPositionListItem = z.infer<
+  typeof vesselPositionListItemSchema
+>;

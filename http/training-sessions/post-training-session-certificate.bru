@@ -1,0 +1,50 @@
+meta {
+  name: Post training session certificate
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/training-sessions/{{trainingSessionId}}/certificate
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "fileName": "acta-capacitacion.pdf",
+    "mimeType": "application/pdf",
+    "contentBase64": "{{pdfBase64}}"
+  }
+}
+
+docs {
+  Sube el acta/PDF del borrador. Definí pdfBase64 (contenido en base64) y trainingSessionId.
+  PDF mínimo válido de prueba: JVBERi0xLjAKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUl0KL0NvdW50IDEKPD4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgovTWVkaWFCb3ggWzAgMCAyMDAgMjAwXQo+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNjMgMDAwMDAgbiAKMDAwMDAwMDEyMSAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDQKL1Jvb3QgMSAwIFIKPj4Kc3RhcnR4cmVmCjIwMwolJUVPRgo=
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("trainingSessionId");
+  if (!token || !id) throw new Error("Definí accessToken y trainingSessionId");
+  if (!bru.getEnvVar("pdfBase64")) {
+    bru.setEnvVar(
+      "pdfBase64",
+      "JVBERi0xLjAKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUl0KL0NvdW50IDEKPD4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgovTWVkaWFCb3ggWzAgMCAyMDAgMjAwXQo+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNjMgMDAwMDAgbiAKMDAwMDAwMDEyMSAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDQKL1Jvb3QgMSAwIFIKPj4Kc3RhcnR4cmVmCjIwMwolJUVPRgo="
+    );
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.hasCertificate: eq true
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

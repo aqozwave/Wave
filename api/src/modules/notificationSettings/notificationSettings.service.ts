@@ -54,6 +54,16 @@ function normalizeSettings(
         ...DEFAULT_EXPIRY_NOTIFICATION_SETTINGS.boardingBookAdminDays,
       ],
     ),
+    trainingCrewDays: normalizeDays(
+      payload.trainingCrewDays ?? [
+        ...DEFAULT_EXPIRY_NOTIFICATION_SETTINGS.trainingCrewDays,
+      ],
+    ),
+    trainingAdminDays: normalizeDays(
+      payload.trainingAdminDays ?? [
+        ...DEFAULT_EXPIRY_NOTIFICATION_SETTINGS.trainingAdminDays,
+      ],
+    ),
     courseExpiredCrewRepeatDays:
       typeof payload.courseExpiredCrewRepeatDays === "number" &&
       payload.courseExpiredCrewRepeatDays >= 0
@@ -64,6 +74,16 @@ function normalizeSettings(
       payload.courseExpiredCrewMaxReminders >= 1
         ? payload.courseExpiredCrewMaxReminders
         : DEFAULT_EXPIRY_NOTIFICATION_SETTINGS.courseExpiredCrewMaxReminders,
+    trainingExpiredCrewRepeatDays:
+      typeof payload.trainingExpiredCrewRepeatDays === "number" &&
+      payload.trainingExpiredCrewRepeatDays >= 0
+        ? payload.trainingExpiredCrewRepeatDays
+        : DEFAULT_EXPIRY_NOTIFICATION_SETTINGS.trainingExpiredCrewRepeatDays,
+    trainingExpiredCrewMaxReminders:
+      typeof payload.trainingExpiredCrewMaxReminders === "number" &&
+      payload.trainingExpiredCrewMaxReminders >= 1
+        ? payload.trainingExpiredCrewMaxReminders
+        : DEFAULT_EXPIRY_NOTIFICATION_SETTINGS.trainingExpiredCrewMaxReminders,
   };
   return expiryNotificationSettingsSchema.parse(merged);
 }
@@ -96,6 +116,7 @@ export async function getExpiryNotificationSettings(options?: {
   const normalized = row
     ? normalizeSettings(parseStoredValue(row.value))
     : normalizeSettings({
+        ...DEFAULT_EXPIRY_NOTIFICATION_SETTINGS,
         courseCrewDays: [...DEFAULT_EXPIRY_NOTIFICATION_SETTINGS.courseCrewDays],
         courseAdminDays: [
           ...DEFAULT_EXPIRY_NOTIFICATION_SETTINGS.courseAdminDays,
@@ -106,10 +127,12 @@ export async function getExpiryNotificationSettings(options?: {
         boardingBookAdminDays: [
           ...DEFAULT_EXPIRY_NOTIFICATION_SETTINGS.boardingBookAdminDays,
         ],
-        courseExpiredCrewRepeatDays:
-          DEFAULT_EXPIRY_NOTIFICATION_SETTINGS.courseExpiredCrewRepeatDays,
-        courseExpiredCrewMaxReminders:
-          DEFAULT_EXPIRY_NOTIFICATION_SETTINGS.courseExpiredCrewMaxReminders,
+        trainingCrewDays: [
+          ...DEFAULT_EXPIRY_NOTIFICATION_SETTINGS.trainingCrewDays,
+        ],
+        trainingAdminDays: [
+          ...DEFAULT_EXPIRY_NOTIFICATION_SETTINGS.trainingAdminDays,
+        ],
       });
 
   cachedSettings = normalized;
@@ -153,7 +176,9 @@ export function getMaxWarningDays(
     | "courseCrewDays"
     | "courseAdminDays"
     | "boardingBookCrewDays"
-    | "boardingBookAdminDays",
+    | "boardingBookAdminDays"
+    | "trainingCrewDays"
+    | "trainingAdminDays",
 ): number {
   const days = settings[field];
   if (!days.length) return 0;

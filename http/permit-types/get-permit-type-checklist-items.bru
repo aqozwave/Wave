@@ -1,0 +1,40 @@
+meta {
+  name: Get permit type checklist items
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/permit-types/{{permitTypeId}}/checklist-items
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Ítems del checklist del tipo (ordenados).
+  Seed: CAL = 6 (provisional); ECF = 8 (anexo spec).
+  Corré antes Get permit types.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("permitTypeId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y permitTypeId (vía Get permit types)");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+  res.body.total: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

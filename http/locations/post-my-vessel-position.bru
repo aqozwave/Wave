@@ -1,0 +1,45 @@
+meta {
+  name: Post my vessel position
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/api/v1/locations/me/position
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "latitude": -36.9765,
+    "longitude": -73.1564,
+    "accuracyM": 25
+  }
+}
+
+docs {
+  Reporta lat/lng del navegador a la nave del usuario (locationId de la sesión).
+  Usuario de prueba: pc-nave-polaris@test.local / Password1!
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+}
+
+assert {
+  res.status: eq 201
+  res.body.locationId: isDefined
+  res.body.latitude: isDefined
+  res.body.longitude: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

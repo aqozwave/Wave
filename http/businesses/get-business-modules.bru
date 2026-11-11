@@ -1,0 +1,36 @@
+meta {
+  name: Get business modules
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{baseUrl}}/api/v1/businesses/{{businessId}}/modules
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  S6 · Solo superadmin. Lista contractors / work_permits / trainings (off si no hay fila).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken (superadmin)");
+  const businessId = bru.getVar("businessId") || bru.getEnvVar("businessId");
+  if (!businessId) throw new Error("Definí businessId");
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isArray
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -1,0 +1,44 @@
+meta {
+  name: Patch requirement
+  type: http
+  seq: 9
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/permit-types/{{permitTypeId}}/requirements/{{requirementId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "label": "Nota de prueba (editada)",
+    "mandatory": true
+  }
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const typeId = bru.getEnvVar("permitTypeId");
+  const reqId = bru.getEnvVar("requirementId");
+  if (!token || !typeId || !reqId) {
+    throw new Error("Definí accessToken, permitTypeId y requirementId");
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

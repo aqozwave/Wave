@@ -1,0 +1,35 @@
+meta {
+  name: Delete crew member access
+  type: http
+  seq: 24
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/access
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Desvincular acceso (Figma D44m). Solo admin/superadmin.
+  No borra el usuario; linked=false. Esperado: 200.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+}
+
+assert {
+  res.status: eq 200
+  res.body.linked: eq false
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -1,6 +1,7 @@
 import { Router } from "express";
+import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
+import { requirePermission } from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createCourseHandler,
@@ -33,7 +34,10 @@ coursesRouter.get(
 coursesRouter.post(
   "/",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.CURSOS_CATALOG,
+    PERMISSION_ACTION.CREATE,
+  ),
   validate(createCourseRequestSchema),
   createCourseHandler,
 );
@@ -48,7 +52,10 @@ coursesRouter.get(
 coursesRouter.patch(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.CURSOS_CATALOG,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(updateCourseRequestSchema),
   updateCourseHandler,
 );
@@ -56,7 +63,10 @@ coursesRouter.patch(
 coursesRouter.delete(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.CURSOS_CATALOG,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
   validate(deleteCourseRequestSchema),
   deleteCourseHandler,
 );

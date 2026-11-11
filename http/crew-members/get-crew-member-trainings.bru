@@ -1,0 +1,37 @@
+meta {
+  name: Get crew member trainings
+  type: http
+  seq: 24
+}
+
+get {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/trainings
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Lista asignaciones de capacitaciones Prevención de la ficha (status recalculado).
+  Variables: accessToken, crewMemberId. Exige trainings.read.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("crewMemberId");
+  if (!token) throw new Error("Sin accessToken");
+  if (!id) throw new Error("Sin crewMemberId");
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

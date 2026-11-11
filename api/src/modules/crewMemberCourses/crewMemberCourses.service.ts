@@ -1,5 +1,9 @@
 import type { Course, CrewCourseSource, CrewMemberCourse } from "@prisma/client";
 import {
+  applyDataScopeToWhere,
+  assertDataScopeAccess,
+} from "../../lib/dataScope.js";
+import {
   daysUntilExpiry,
   getCourseExpiryWarningDays,
   resolveAssignmentStatus,
@@ -19,8 +23,16 @@ import type {
   UpdateCrewMemberCourseBody,
 } from "./crewMemberCourses.schemas.js";
 
-/** Actor mínimo tenant. */
-type Actor = Pick<AuthUser, "internalRol" | "businessId">;
+/** Actor con tenant + dataScope. */
+type Actor = Pick<
+  AuthUser,
+  | "internalRol"
+  | "businessId"
+  | "locationId"
+  | "areaId"
+  | "organizationId"
+  | "dataScope"
+>;
 
 /** Fila con curso incluido. */
 type AssignmentWithCourse = CrewMemberCourse & { course: Course | null };
@@ -45,16 +57,15 @@ export function isCertificateManagedAssignment(row: {
   );
 }
 
-/** 404 genérico si el actor no ve la empresa del tripulante. */
-function assertCrewTenantAccess(actor: Actor, businessId: string): void {
-  if (actor.internalRol === "superadmin") return;
-  if (!actor.businessId || actor.businessId !== businessId) {
-    throw new AppError(
-      404,
-      "crew_member_not_found",
-      "Tripulante no encontrado",
-    );
-  }
+/** 404/403 si el actor no ve al tripulante. */
+function assertCrewTenantAccess(
+  actor: Actor,
+  row: { businessId: string; locationId: string; areaId: string | null },
+): void {
+  assertDataScopeAccess(actor, row, {
+    code: "crew_member_not_found",
+    message: "Tripulante no encontrado",
+  });
 }
 
 /**
@@ -220,7 +231,7 @@ async function loadCrewForActor(actor: Actor, crewMemberId: string) {
       "Tripulante no encontrado",
     );
   }
-  assertCrewTenantAccess(actor, crew.businessId);
+  assertCrewTenantAccess(actor, crew);
   return crew;
 }
 
@@ -337,24 +348,20 @@ export async function listExpiringCrewMemberCourses(
     getCourseExpiryWarningDays();
   const now = new Date();
 
-  const crewWhere: {
-    deletedAt: null;
-    state: boolean;
-    businessId?: string;
-  } = { deletedAt: null, state: true };
-
-  if (actor.internalRol === "superadmin") {
-    if (query.businessId) crewWhere.businessId = query.businessId;
-  } else {
-    if (!actor.businessId) {
-      throw new AppError(
-        403,
-        "forbidden",
-        "Tu usuario no tiene una empresa asignada",
-      );
-    }
-    crewWhere.businessId = actor.businessId;
-  }
+  const crewBase: { deletedAt: null; state: boolean } = {
+    deletedAt: null,
+    state: true,
+  };
+  const crewWhere =
+    actor.internalRol === "superadmin" || actor.dataScope === "all"
+      ? {
+          ...crewBase,
+          ...(query.businessId ? { businessId: query.businessId } : {}),
+        }
+      : applyDataScopeToWhere(actor, crewBase, {
+          locationField: "locationId",
+          areaField: "areaId",
+        });
 
   // Vencimientos solo mira filas con fecha; el listado masivo incluye pending sin fecha.
   const onlyDated =

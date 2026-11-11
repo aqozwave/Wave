@@ -143,3 +143,259 @@ export type CreateCrewMemberBody = z.infer<typeof createCrewMemberBodySchema>;
 export type ListCrewMembersQuery = z.infer<typeof listCrewMembersQuerySchema>;
 export type CrewMemberResponse = z.infer<typeof crewMemberResponseSchema>;
 export type UpdateCrewMemberBody = z.infer<typeof updateCrewMemberBodySchema>;
+
+/** Roles permitidos en Acceso (Figma D45/D46: User ↔ Colaborador). */
+export const crewAccessRoleKeySchema = z.enum(["user", "colaborador"]);
+
+/** Usuario vinculado en la pestaña Acceso. */
+export const crewAccessUserSchema = z
+  .object({
+    id: z.uuid(),
+    email: z.email(),
+    username: z.string(),
+    firstName: z.string(),
+    lastName: z.string(),
+    run: z.string(),
+    internalRol: z.string(),
+    roleKey: z.string().nullable(),
+    roleName: z.string().nullable(),
+    dataScope: z.string().nullable(),
+    locationId: z.uuid().nullable(),
+    locationName: z.string().nullable(),
+    lastLoginAt: z.string().datetime().nullable(),
+    confirmed: z.boolean(),
+    state: z.boolean(),
+  })
+  .openapi("CrewAccessUser");
+
+/**
+ * Estado Acceso del tripulante (Figma D44 / D44b).
+ * linked=false → empty state; linked=true → ficha de cuenta.
+ */
+export const crewAccessResponseSchema = z
+  .object({
+    linked: z.boolean(),
+    /** true si hay cuenta pero aún no confirmó / no definió clave. */
+    invitePending: z.boolean(),
+    /** Resumen legible del alcance (ej. "User · Wellboat Aurora"). */
+    scopeSummary: z.string().nullable(),
+    user: crewAccessUserSchema.nullable(),
+  })
+  .openapi("CrewAccess");
+
+export const getCrewMemberAccessRequestSchema = z.object({
+  params: crewMemberIdParamsSchema,
+});
+
+/** Body otorgar acceso: invita o vincula cuenta existente. */
+export const grantCrewMemberAccessBodySchema = z.object({
+  /** Si se omite, usa el email del tripulante. */
+  email: z.email().trim().toLowerCase().optional(),
+  /** Rol inicial; por defecto User (tripulante de nave). */
+  roleKey: crewAccessRoleKeySchema.optional().default("user"),
+});
+
+export const grantCrewMemberAccessRequestSchema = z.object({
+  params: crewMemberIdParamsSchema,
+  body: grantCrewMemberAccessBodySchema,
+});
+
+/** Body cambiar rol User ↔ Colaborador (solo admin). */
+export const changeCrewMemberAccessRoleBodySchema = z.object({
+  roleKey: crewAccessRoleKeySchema,
+});
+
+export const changeCrewMemberAccessRoleRequestSchema = z.object({
+  params: crewMemberIdParamsSchema,
+  body: changeCrewMemberAccessRoleBodySchema,
+});
+
+export const revokeCrewMemberAccessRequestSchema = z.object({
+  params: crewMemberIdParamsSchema,
+});
+
+export type GrantCrewMemberAccessBody = z.infer<
+  typeof grantCrewMemberAccessBodySchema
+>;
+export type ChangeCrewMemberAccessRoleBody = z.infer<
+  typeof changeCrewMemberAccessRoleBodySchema
+>;
+export type CrewAccessResponse = z.infer<typeof crewAccessResponseSchema>;
+
+/**
+ * Categoría de evento en bitácora (Figma D31 filtros).
+ * observation / sanction / boarding también salen de CrewMemberLogEntry.
+ */
+export const crewHistoryCategorySchema = z.enum([
+  "all",
+  "contract",
+  "document",
+  "course",
+  "observation",
+  "sanction",
+  "boarding",
+]);
+
+/** Query GET /crew-members/:id/history (AQO-68 · D31). */
+export const listCrewMemberHistoryQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(50),
+  category: crewHistoryCategorySchema.optional().default("all"),
+});
+
+export const listCrewMemberHistoryRequestSchema = z.object({
+  params: crewMemberIdParamsSchema,
+  query: listCrewMemberHistoryQuerySchema,
+});
+
+/** Origen del ítem en la timeline (para UI: solo log_entry se puede borrar). */
+export const crewHistorySourceSchema = z.enum([
+  "audit",
+  "document",
+  "log_entry",
+]);
+
+/** Ítem timeline de bitácora. */
+export const crewHistoryItemSchema = z
+  .object({
+    id: z.string(),
+    createdAt: z.string().datetime(),
+    title: z.string(),
+    detail: z.string().nullable(),
+    category: z.enum([
+      "contract",
+      "document",
+      "course",
+      "observation",
+      "sanction",
+      "boarding",
+    ]),
+    categoryLabel: z.string(),
+    statusLabel: z.string().nullable(),
+    statusTone: z.enum(["success", "warning", "danger", "info", "neutral"]),
+    actor: z.string().nullable(),
+    /** Nombre de archivo adjunto si aplica (docs). */
+    attachmentName: z.string().nullable(),
+    /** De dónde salió el evento. */
+    source: crewHistorySourceSchema,
+  })
+  .openapi("CrewHistoryItem");
+
+/** Conteos del resumen lateral D31. */
+export const crewHistorySummarySchema = z
+  .object({
+    documents: z.number().int().nonnegative(),
+    courses: z.number().int().nonnegative(),
+    boardings: z.number().int().nonnegative(),
+    observations: z.number().int().nonnegative(),
+    sanctions: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+  })
+  .openapi("CrewHistorySummary");
+
+export const listCrewMemberHistoryResponseSchema = z
+  .object({
+    items: z.array(crewHistoryItemSchema),
+    summary: crewHistorySummarySchema,
+    total: z.number().int().nonnegative(),
+    page: z.number().int().positive(),
+    limit: z.number().int().positive(),
+  })
+  .openapi("ListCrewMemberHistoryResponse");
+
+/** kind de entrada manual de bitácora (alta por UI). */
+export const crewLogEntryKindSchema = z.enum([
+  "observation",
+  "sanction",
+  "boarding",
+]);
+
+/** kind en respuestas (incluye training generado por sesión grupal). */
+export const crewLogEntryKindResponseSchema = z.enum([
+  "observation",
+  "sanction",
+  "boarding",
+  "training",
+]);
+
+/**
+ * Adjunto opcional al crear entrada (solo amonestación).
+ * Crea CrewMemberDocument y lo vincula; aparece en tab Documentos.
+ */
+export const createCrewMemberLogEntryAttachmentSchema = z.object({
+  documentTypeId: z.uuid(),
+  fileName: z.string().trim().min(1).max(255),
+  mimeType: z.string().trim().min(1),
+  contentBase64: z.string().min(1),
+  expiresAt: z.string().datetime().nullable().optional(),
+});
+
+/** Body POST /crew-members/:id/log-entries. */
+export const createCrewMemberLogEntryBodySchema = z
+  .object({
+    kind: crewLogEntryKindSchema,
+    note: z
+      .string({ error: "La nota es requerida" })
+      .trim()
+      .min(1, "La nota es requerida")
+      .max(2000),
+    /** ISO 8601; si falta, la API usa ahora. */
+    occurredAt: z.string().datetime().optional(),
+    /** Solo permitido si kind = sanction. */
+    attachment: createCrewMemberLogEntryAttachmentSchema.optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.attachment && val.kind !== "sanction") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["attachment"],
+        message: "El adjunto solo aplica a amonestaciones",
+      });
+    }
+  });
+
+export const createCrewMemberLogEntryRequestSchema = z.object({
+  params: crewMemberIdParamsSchema,
+  body: createCrewMemberLogEntryBodySchema,
+});
+
+/** Respuesta de una entrada de bitácora. */
+export const crewMemberLogEntryResponseSchema = z
+  .object({
+    id: z.uuid(),
+    crewMemberId: z.uuid(),
+    kind: crewLogEntryKindResponseSchema,
+    note: z.string(),
+    occurredAt: z.string().datetime(),
+    documentId: z.uuid().nullable(),
+    createdById: z.uuid().nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi("CrewMemberLogEntry");
+
+export const createCrewMemberLogEntryResponseSchema =
+  crewMemberLogEntryResponseSchema;
+
+export const deleteCrewMemberLogEntryParamsSchema = z.object({
+  id: z.uuid(),
+  entryId: z.uuid(),
+});
+
+export const deleteCrewMemberLogEntryRequestSchema = z.object({
+  params: deleteCrewMemberLogEntryParamsSchema,
+});
+
+export const deleteCrewMemberLogEntryResponseSchema =
+  crewMemberLogEntryResponseSchema;
+
+export type ListCrewMemberHistoryQuery = z.infer<
+  typeof listCrewMemberHistoryQuerySchema
+>;
+export type CrewHistoryItem = z.infer<typeof crewHistoryItemSchema>;
+export type CreateCrewMemberLogEntryBody = z.infer<
+  typeof createCrewMemberLogEntryBodySchema
+>;
+export type CrewMemberLogEntryResponse = z.infer<
+  typeof crewMemberLogEntryResponseSchema
+>;

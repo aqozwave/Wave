@@ -1,4 +1,8 @@
 import { Prisma } from "@prisma/client";
+import {
+  applyDataScopeToWhere,
+  assertDataScopeAccess,
+} from "../../lib/dataScope.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
@@ -9,8 +13,16 @@ import type {
   UpdateAreaBody,
 } from "./areas.schemas.js";
 
-/** Actor mínimo para reglas de tenant. */
-type Actor = Pick<AuthUser, "internalRol" | "businessId">;
+/** Actor con tenant + dataScope (nave/área). */
+type Actor = Pick<
+  AuthUser,
+  | "internalRol"
+  | "businessId"
+  | "locationId"
+  | "areaId"
+  | "organizationId"
+  | "dataScope"
+>;
 
 /** Serializa fila Prisma → contrato Zod. */
 function toAreaResponse(row: {
@@ -39,7 +51,8 @@ function toAreaResponse(row: {
 
 /**
  * Filtro de listado: superadmin ve todas (filtros opcionales);
- * admin/user solo las de su empresa.
+ * dataScope location → solo áreas de su nave; area → su área;
+ * business → empresa (query.locationId opcional).
  */
 function listWhere(
   actor: Actor,
@@ -47,7 +60,7 @@ function listWhere(
 ): Prisma.AreaWhereInput {
   const base: Prisma.AreaWhereInput = { deletedAt: null };
 
-  if (actor.internalRol === "superadmin") {
+  if (actor.internalRol === "superadmin" || actor.dataScope === "all") {
     return {
       ...base,
       ...(query.businessId ? { businessId: query.businessId } : {}),
@@ -55,29 +68,35 @@ function listWhere(
     };
   }
 
-  if (!actor.businessId) {
-    throw new AppError(
-      403,
-      "forbidden",
-      "Tu usuario no tiene una empresa asignada",
-    );
+  const scoped = applyDataScopeToWhere(actor, base, {
+    locationField: "locationId",
+    areaField: "id",
+  });
+
+  if (
+    (actor.dataScope === "business" || actor.dataScope == null) &&
+    query.locationId
+  ) {
+    scoped.locationId = query.locationId;
   }
 
-  return {
-    ...base,
-    businessId: actor.businessId,
-    ...(query.locationId ? { locationId: query.locationId } : {}),
-  };
+  return scoped;
 }
 
-/** 404 genérico si el actor no puede ver esa empresa. */
-function assertAreaTenantAccess(actor: Actor, areaBusinessId: string): void {
-  if (actor.internalRol === "superadmin") {
-    return;
-  }
-  if (!actor.businessId || actor.businessId !== areaBusinessId) {
-    throw new AppError(404, "area_not_found", "Área no encontrada");
-  }
+/** 404/403 si el actor no puede ver esa área. */
+function assertAreaTenantAccess(
+  actor: Actor,
+  row: { id: string; businessId: string; locationId: string },
+): void {
+  assertDataScopeAccess(
+    actor,
+    {
+      businessId: row.businessId,
+      locationId: row.locationId,
+      areaId: row.id,
+    },
+    { code: "area_not_found", message: "Área no encontrada" },
+  );
 }
 
 /**
@@ -96,13 +115,24 @@ async function resolveLocationBusiness(
     throw new AppError(400, "location_not_found", "Lugar de trabajo no encontrado");
   }
 
-  // Admin solo puede usar locations de su empresa.
-  if (actor.internalRol !== "superadmin") {
+  // Staff: empresa; dataScope location → solo su nave.
+  if (actor.internalRol !== "superadmin" && actor.dataScope !== "all") {
     if (!actor.businessId || actor.businessId !== location.businessId) {
       throw new AppError(
         400,
         "location_not_found",
         "Lugar de trabajo no encontrado",
+      );
+    }
+    if (
+      actor.dataScope === "location" &&
+      actor.locationId &&
+      actor.locationId !== location.id
+    ) {
+      throw new AppError(
+        403,
+        "forbidden",
+        "No puedes usar un lugar de trabajo de otra nave",
       );
     }
   }
@@ -163,7 +193,7 @@ export async function getAreaById(
   if (!row) {
     throw new AppError(404, "area_not_found", "Área no encontrada");
   }
-  assertAreaTenantAccess(actor, row.businessId);
+  assertAreaTenantAccess(actor, row);
   return toAreaResponse(row);
 }
 
@@ -220,7 +250,7 @@ export async function updateArea(
   if (!existing) {
     throw new AppError(404, "area_not_found", "Área no encontrada");
   }
-  assertAreaTenantAccess(actor, existing.businessId);
+  assertAreaTenantAccess(actor, existing);
 
   let nextLocationId = existing.locationId;
   let nextBusinessId = existing.businessId;
@@ -281,7 +311,7 @@ export async function deleteAreaById(
   if (!area) {
     throw new AppError(404, "area_not_found", "Área no encontrada");
   }
-  assertAreaTenantAccess(actor, area.businessId);
+  assertAreaTenantAccess(actor, area);
 
   const activeUsers = await prisma.user.count({
     where: {

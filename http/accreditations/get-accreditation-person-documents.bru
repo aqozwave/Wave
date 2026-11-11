@@ -1,0 +1,38 @@
+meta {
+  name: Get accreditation person documents
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{baseUrl}}/api/v1/accreditations/{{accreditationId}}/people/{{contractorPersonId}}/documents
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  P5d checklist pack person para una persona de la org en la HAB.
+  Requiere accreditationId + contractorPersonId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("accreditationId") || !bru.getEnvVar("contractorPersonId")) {
+    throw new Error("Faltan accreditationId / contractorPersonId.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

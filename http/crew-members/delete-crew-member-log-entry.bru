@@ -1,0 +1,38 @@
+meta {
+  name: Delete crew member log entry
+  type: http
+  seq: 41
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/log-entries/{{crewLogEntryId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Soft delete de entrada de bitácora. Variables: accessToken, crewMemberId, crewLogEntryId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const crewMemberId = bru.getEnvVar("crewMemberId");
+  const crewLogEntryId = bru.getEnvVar("crewLogEntryId");
+  if (!token) throw new Error("Sin accessToken");
+  if (!crewMemberId) throw new Error("Sin crewMemberId");
+  if (!crewLogEntryId) throw new Error("Sin crewLogEntryId");
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

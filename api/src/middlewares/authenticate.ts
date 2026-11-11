@@ -67,11 +67,15 @@ export async function authenticate(
       businessId: user.businessId,
       locationId: user.locationId,
       locationName: null,
+      areaId: user.areaId,
+      organizationId: user.organizationId,
+      organization: null,
       dataScope,
       confirmed: user.confirmed,
       state: user.state,
-      // Los permisos se resuelven en requirePermission / login·me; acá no hace falta.
+      // Los permisos/módulos se resuelven en requirePermission / login·me.
       permissions: [],
+      modules: [],
     };
 
     next();

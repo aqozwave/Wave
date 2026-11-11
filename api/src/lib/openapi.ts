@@ -151,10 +151,13 @@ import {
   uploadUserPhotoResponseSchema,
 } from "../modules/users/users.schemas.js";
 import {
+  changeCrewMemberAccessRoleBodySchema,
   createCrewMemberBodySchema,
   createCrewMemberResponseSchema,
+  crewAccessResponseSchema,
   deleteCrewMemberResponseSchema,
   getCrewMemberResponseSchema,
+  grantCrewMemberAccessBodySchema,
   listCrewMembersResponseSchema,
   updateCrewMemberBodySchema,
   updateCrewMemberResponseSchema,
@@ -202,12 +205,88 @@ import {
   createDocumentTypeBodySchema,
   createDocumentTypeResponseSchema,
   deleteDocumentTypeResponseSchema,
-  documentSubtypeSchema,
   getDocumentTypeResponseSchema,
+  listDocumentTypesQuerySchema,
   listDocumentTypesResponseSchema,
   updateDocumentTypeBodySchema,
   updateDocumentTypeResponseSchema,
 } from "../modules/documentTypes/documentTypes.schemas.js";
+import {
+  createPermitChecklistItemBodySchema,
+  createPermitChecklistItemResponseSchema,
+  createPermitTypeBodySchema,
+  createPermitTypeRequirementBodySchema,
+  createPermitTypeRequirementResponseSchema,
+  createPermitTypeResponseSchema,
+  deletePermitChecklistItemResponseSchema,
+  deletePermitTypeRequirementResponseSchema,
+  deletePermitTypeResponseSchema,
+  getPermitTypeResponseSchema,
+  listPermitChecklistItemsResponseSchema,
+  listPermitTypeRequirementsResponseSchema,
+  listPermitTypesResponseSchema,
+  updatePermitChecklistItemBodySchema,
+  updatePermitChecklistItemResponseSchema,
+  updatePermitTypeBodySchema,
+  updatePermitTypeRequirementBodySchema,
+  updatePermitTypeRequirementResponseSchema,
+  updatePermitTypeResponseSchema,
+} from "../modules/permitTypes/permitTypes.schemas.js";
+import {
+  createTrainingBodySchema,
+  createTrainingResponseSchema,
+  deleteTrainingResponseSchema,
+  getTrainingResponseSchema,
+  listTrainingsResponseSchema,
+  updateTrainingBodySchema,
+  updateTrainingResponseSchema,
+} from "../modules/trainings/trainings.schemas.js";
+import {
+  contractorPortalSummaryResponseSchema,
+  createContractorBodySchema,
+  createContractorPersonBodySchema,
+  createContractorPersonResponseSchema,
+  createContractorPortalDocumentBodySchema,
+  createContractorResponseSchema,
+  deleteContractorPersonResponseSchema,
+  deleteContractorResponseSchema,
+  getContractorResponseSchema,
+  inviteContractorUserBodySchema,
+  inviteContractorUserResponseSchema,
+  listContractorPeopleQuerySchema,
+  listContractorPeopleResponseSchema,
+  listContractorUsersQuerySchema,
+  listContractorUsersResponseSchema,
+  listContractorsQuerySchema,
+  listContractorsResponseSchema,
+  listMyContractorPeopleResponseSchema,
+  updateContractorBodySchema,
+  updateContractorPersonBodySchema,
+  updateContractorPersonResponseSchema,
+  updateContractorResponseSchema,
+  updateMyContractorOrganizationBodySchema,
+} from "../modules/contractors/contractors.schemas.js";
+import {
+  accreditationReviewNoteBodySchema,
+  createAccreditationBodySchema,
+  createAccreditationResponseSchema,
+  getAccreditationResponseSchema,
+  listAccreditationHistoryQuerySchema,
+  listAccreditationHistoryResponseSchema,
+  listAccreditationsQuerySchema,
+  listAccreditationsResponseSchema,
+} from "../modules/accreditations/accreditations.schemas.js";
+import {
+  createAccreditationDocumentBodySchema,
+  createAccreditationDocumentResponseSchema,
+  createAccreditationPersonDocumentResponseSchema,
+  deleteAccreditationDocumentResponseSchema,
+  listAccreditationDocumentsResponseSchema,
+  listAccreditationPersonDocumentsResponseSchema,
+  validateAccreditationDocumentBodySchema,
+  validateAccreditationDocumentResponseSchema,
+  validateAccreditationPersonDocumentResponseSchema,
+} from "../modules/accreditationDocuments/accreditationDocuments.schemas.js";
 import {
   expiryNotificationSettingsSchema,
   updateExpiryNotificationSettingsBodySchema,
@@ -219,6 +298,7 @@ import {
   processBoardingBookExpiryResponseSchema,
   processCourseExpiryResponseSchema,
   processOutboxResponseSchema,
+  processTrainingExpiryResponseSchema,
 } from "../modules/notificationOutbox/notificationOutbox.schemas.js";
 
 const registry = new OpenAPIRegistry();
@@ -1576,13 +1656,7 @@ registry.registerPath({
     "Maestro por empresa (códigos HR). Superadmin: filtro businessId. Admin/user: su empresa. Permiso maestros.document_types read.",
   security: [{ bearerAuth: [] }],
   request: {
-    query: z.object({
-      page: z.coerce.number().int().positive().default(1).optional(),
-      limit: z.coerce.number().int().positive().max(200).default(100).optional(),
-      businessId: z.uuid().optional(),
-      subtype: documentSubtypeSchema.optional(),
-      search: z.string().optional(),
-    }),
+    query: listDocumentTypesQuerySchema,
   },
   responses: {
     200: {
@@ -1592,6 +1666,1433 @@ registry.registerPath({
       },
     },
     401: { description: "Sin token" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/permit-types",
+  tags: ["PermitTypes"],
+  summary: "Listar tipos de permiso de trabajo",
+  description:
+    "Catálogo P1 (ALT/CAL/ECF/GEN/BUC) por empresa. Superadmin: filtro businessId. Permiso permit_types.read + módulo work_permits (capa 1).",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(100).default(20).optional(),
+      businessId: z.uuid().optional(),
+      active: z.enum(["true", "false"]).optional(),
+      search: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listPermitTypesResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo work_permits apagado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/permit-types",
+  tags: ["PermitTypes"],
+  summary: "Crear tipo de permiso",
+  description:
+    "Admin/superadmin + permit_types.create. Superadmin: businessId obligatorio.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createPermitTypeBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": { schema: createPermitTypeResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    409: { description: "Código duplicado en la empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/permit-types/{id}",
+  tags: ["PermitTypes"],
+  summary: "Obtener tipo de permiso por id",
+  description:
+    "Detalle de un tipo. 404 si no existe o es de otra empresa (no-superadmin). Permiso permit_types.read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Tipo de permiso",
+      content: {
+        "application/json": { schema: getPermitTypeResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo work_permits apagado" },
+    404: { description: "No encontrado o otra empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/permit-types/{id}",
+  tags: ["PermitTypes"],
+  summary: "Actualizar tipo de permiso",
+  description:
+    "Editar datos o active (desactivar suave). Admin/superadmin + permit_types.update.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updatePermitTypeBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizado",
+      content: {
+        "application/json": { schema: updatePermitTypeResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrado" },
+    409: { description: "Código duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/permit-types/{id}",
+  tags: ["PermitTypes"],
+  summary: "Eliminar (soft) tipo de permiso",
+  description:
+    "deletedAt + active=false. No borra exigencias/checklist. Permiso permit_types.deactivate.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deletePermitTypeResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/permit-types/{id}/requirements",
+  tags: ["PermitTypes"],
+  summary: "Listar exigencias de un tipo de permiso",
+  description:
+    "P15 Exigencias (documentos, capacitaciones, checklist). Seed CAL = 8 filas. Permiso permit_types.read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Listado de exigencias",
+      content: {
+        "application/json": {
+          schema: listPermitTypeRequirementsResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo work_permits apagado" },
+    404: { description: "Tipo no encontrado o otra empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/permit-types/{id}/requirements",
+  tags: ["PermitTypes"],
+  summary: "Crear exigencia de un tipo",
+  description:
+    "Admin/superadmin + permit_types.create. Key única por tipo.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createPermitTypeRequirementBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creada",
+      content: {
+        "application/json": {
+          schema: createPermitTypeRequirementResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación o FK inválida" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Tipo no encontrado" },
+    409: { description: "Key duplicada" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/permit-types/{id}/requirements/{requirementId}",
+  tags: ["PermitTypes"],
+  summary: "Actualizar exigencia",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), requirementId: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updatePermitTypeRequirementBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizada",
+      content: {
+        "application/json": {
+          schema: updatePermitTypeRequirementResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrada" },
+    409: { description: "Key duplicada" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/permit-types/{id}/requirements/{requirementId}",
+  tags: ["PermitTypes"],
+  summary: "Desactivar exigencia",
+  description: "active=false (sin deletedAt en el modelo).",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), requirementId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Desactivada",
+      content: {
+        "application/json": {
+          schema: deletePermitTypeRequirementResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/permit-types/{id}/checklist-items",
+  tags: ["PermitTypes"],
+  summary: "Listar ítems del checklist de un tipo de permiso",
+  description:
+    "Ítems ordenados del checklist del tipo. Seed: CAL 6 (provisional), ECF 8 (anexo spec). Permiso permit_types.read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Listado de ítems",
+      content: {
+        "application/json": {
+          schema: listPermitChecklistItemsResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo work_permits apagado" },
+    404: { description: "Tipo no encontrado o otra empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/permit-types/{id}/checklist-items",
+  tags: ["PermitTypes"],
+  summary: "Crear ítem de checklist",
+  description: "Si no mandás order, se asigna max+1.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createPermitChecklistItemBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": {
+          schema: createPermitChecklistItemResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Tipo no encontrado" },
+    409: { description: "Orden duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/permit-types/{id}/checklist-items/{itemId}",
+  tags: ["PermitTypes"],
+  summary: "Actualizar ítem de checklist",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), itemId: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updatePermitChecklistItemBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizado",
+      content: {
+        "application/json": {
+          schema: updatePermitChecklistItemResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrado" },
+    409: { description: "Orden duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/permit-types/{id}/checklist-items/{itemId}",
+  tags: ["PermitTypes"],
+  summary: "Desactivar ítem de checklist",
+  description: "active=false.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), itemId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Desactivado",
+      content: {
+        "application/json": {
+          schema: deletePermitChecklistItemResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/trainings",
+  tags: ["Trainings"],
+  summary: "Listar capacitaciones de Prevención",
+  description:
+    "Catálogo P1 (EXT-01, ODI-01…). Superadmin: filtro businessId. Permiso trainings.read + módulo trainings.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(100).default(20).optional(),
+      businessId: z.uuid().optional(),
+      active: z.enum(["true", "false"]).optional(),
+      search: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listTrainingsResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo trainings apagado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/trainings",
+  tags: ["Trainings"],
+  summary: "Crear capacitación",
+  description:
+    "Permiso trainings.create. Superadmin: businessId obligatorio. El resto usa su empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createTrainingBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creada",
+      content: {
+        "application/json": { schema: createTrainingResponseSchema },
+      },
+    },
+    400: { description: "Validación o documentType inválido" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    409: { description: "Código duplicado en la empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/trainings/{id}",
+  tags: ["Trainings"],
+  summary: "Obtener capacitación por id",
+  description: "Detalle. 404 si no existe o es de otra empresa. Permiso trainings.read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Capacitación",
+      content: {
+        "application/json": { schema: getTrainingResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo trainings apagado" },
+    404: { description: "No encontrada o otra empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/trainings/{id}",
+  tags: ["Trainings"],
+  summary: "Actualizar capacitación",
+  description:
+    "Editar datos o active. Permiso trainings.update. Solo superadmin mueve de empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateTrainingBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizada",
+      content: {
+        "application/json": { schema: updateTrainingResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrada" },
+    409: { description: "Código duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/trainings/{id}",
+  tags: ["Trainings"],
+  summary: "Eliminar (soft) capacitación",
+  description:
+    "deletedAt + active=false. No desvincula exigencias de permiso. Permiso trainings.deactivate.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteTrainingResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/me/summary",
+  tags: ["Contractors"],
+  summary: "Resumen portal contratista (E3b)",
+  description:
+    "Usuario con organizationId: org, HAB vigente, conteo docs empresa y personal. Sin permiso contractors.read.",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Resumen",
+      content: {
+        "application/json": { schema: contractorPortalSummaryResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+    404: { description: "Org no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/me",
+  tags: ["Contractors"],
+  summary: "Organización del portal (E19 antecedentes)",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Org del usuario externo",
+      content: {
+        "application/json": { schema: getContractorResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/contractors/me",
+  tags: ["Contractors"],
+  summary: "Actualizar antecedentes desde el portal (E19)",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: updateMyContractorOrganizationBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizada",
+      content: {
+        "application/json": { schema: updateContractorResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/me/accreditation",
+  tags: ["Contractors"],
+  summary: "HAB de la org del portal (E4)",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Habilitación",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+    404: { description: "Sin HAB" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/me/accreditation/documents",
+  tags: ["Contractors"],
+  summary: "Checklist pack company del portal (E4)",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Checklist",
+      content: {
+        "application/json": { schema: listAccreditationDocumentsResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+    404: { description: "Sin HAB" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors/me/accreditation/documents",
+  tags: ["Contractors"],
+  summary: "Subir documento empresa desde el portal (E4)",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createContractorPortalDocumentBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": {
+          schema: createAccreditationDocumentResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación o HAB cerrada" },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors/me/accreditation/submit",
+  tags: ["Contractors"],
+  summary: "Enviar HAB a revisión desde el portal (E4/E7)",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Enviada",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+    409: { description: "Transición inválida" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/me/people",
+  tags: ["Contractors"],
+  summary: "Personal de la org del portal (E5)",
+  security: [{ bearerAuth: [] }],
+  request: { query: listContractorPeopleQuerySchema },
+  responses: {
+    200: {
+      description: "Listado con progreso de docs",
+      content: {
+        "application/json": { schema: listMyContractorPeopleResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors/me/people",
+  tags: ["Contractors"],
+  summary: "Agregar persona desde el portal (E5)",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createContractorPersonBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creada",
+      content: {
+        "application/json": { schema: createContractorPersonResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+    409: { description: "RUN duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/me/accreditation/people/{personId}/documents",
+  tags: ["Contractors"],
+  summary: "Checklist pack person del portal (E5)",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Checklist",
+      content: {
+        "application/json": {
+          schema: listAccreditationPersonDocumentsResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+    404: { description: "Sin HAB o persona" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors/me/accreditation/people/{personId}/documents",
+  tags: ["Contractors"],
+  summary: "Subir documento de persona desde el portal (E5)",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createContractorPortalDocumentBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": {
+          schema: createAccreditationPersonDocumentResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación o HAB cerrada" },
+    401: { description: "Sin token" },
+    403: { description: "No es usuario contratista" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors",
+  tags: ["Contractors"],
+  summary: "Listar organizaciones contratistas",
+  description:
+    "P2 orgs externas del tenant. Superadmin: filtro businessId. Permiso contractors.read + módulo contractors.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    query: listContractorsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listContractorsResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo contractors apagado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors",
+  tags: ["Contractors"],
+  summary: "Crear organización contratista",
+  description:
+    "Admin/superadmin + contractors.create. Superadmin: businessId obligatorio. RUT único por empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createContractorBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creada",
+      content: {
+        "application/json": { schema: createContractorResponseSchema },
+      },
+    },
+    400: { description: "Validación o módulo apagado" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o MODULE_DISABLED" },
+    409: { description: "RUT duplicado en la empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/{id}",
+  tags: ["Contractors"],
+  summary: "Obtener organización contratista",
+  description: "Detalle. 404 si no existe o es de otra empresa.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Organización",
+      content: {
+        "application/json": { schema: getContractorResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrada o otra empresa" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/contractors/{id}",
+  tags: ["Contractors"],
+  summary: "Actualizar organización contratista",
+  description: "Editar ficha o active. Admin/superadmin + contractors.update.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateContractorBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizada",
+      content: {
+        "application/json": { schema: updateContractorResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o MODULE_DISABLED" },
+    404: { description: "No encontrada" },
+    409: { description: "RUT duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/contractors/{id}",
+  tags: ["Contractors"],
+  summary: "Eliminar (soft) organización contratista",
+  description: "deletedAt + active=false. Permiso contractors.deactivate.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteContractorResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "No encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/{id}/users",
+  tags: ["Contractors"],
+  summary: "Listar usuarios invitados de la organización",
+  description:
+    "P9b. Usuarios con organizationId = org. Permiso contractors.read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    query: listContractorUsersQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listContractorUsersResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Org no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors/{id}/users",
+  tags: ["Contractors"],
+  summary: "Invitar usuario a la organización contratista",
+  description:
+    "P9b. Crea o vincula por email; envía reset de clave. Admin/superadmin + contractors.create.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: inviteContractorUserBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Invitado / vinculado",
+      content: {
+        "application/json": { schema: inviteContractorUserResponseSchema },
+      },
+    },
+    400: { description: "Org inactiva o validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o módulo apagado" },
+    404: { description: "Org no encontrada" },
+    409: { description: "Email/RUN en conflicto" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/contractors/{id}/people",
+  tags: ["Contractors"],
+  summary: "Listar personal de la organización",
+  description: "P2 personal. Permiso contractors.read.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    query: listContractorPeopleQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listContractorPeopleResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Org no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/contractors/{id}/people",
+  tags: ["Contractors"],
+  summary: "Agregar persona al personal de la organización",
+  description: "RUN único por org. Admin/superadmin + contractors.create.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createContractorPersonBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creada",
+      content: {
+        "application/json": { schema: createContractorPersonResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Org no encontrada" },
+    409: { description: "RUN duplicado en la org" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/contractors/{id}/people/{personId}",
+  tags: ["Contractors"],
+  summary: "Actualizar persona del personal",
+  description: "Editar ficha o active. Permiso contractors.update.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), personId: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: updateContractorPersonBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizada",
+      content: {
+        "application/json": { schema: updateContractorPersonResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Persona no encontrada" },
+    409: { description: "RUN duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/contractors/{id}/people/{personId}",
+  tags: ["Contractors"],
+  summary: "Eliminar (soft) persona del personal",
+  description: "deletedAt + active=false. Permiso contractors.deactivate.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), personId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Soft-deleted",
+      content: {
+        "application/json": { schema: deleteContractorPersonResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "Persona no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/accreditations",
+  tags: ["Accreditations"],
+  summary: "Listar habilitaciones de contratistas",
+  description:
+    "Bandeja P2 (HAB-NNNN). Filtros status/organizationId/businessId. Permiso accreditations.read.",
+  security: [{ bearerAuth: [] }],
+  request: { query: listAccreditationsQuerySchema },
+  responses: {
+    200: {
+      description: "Listado paginado",
+      content: {
+        "application/json": { schema: listAccreditationsResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations",
+  tags: ["Accreditations"],
+  summary: "Solicitar documentación (crear habilitación)",
+  description:
+    "Crea HAB en pending. Body: organizationId, dueAt?, message?. Una sola abierta por org.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: createAccreditationBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creada",
+      content: {
+        "application/json": { schema: createAccreditationResponseSchema },
+      },
+    },
+    400: { description: "Org inválida" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso o MODULE_DISABLED" },
+    409: { description: "Ya hay habilitación abierta" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/accreditations/{id}",
+  tags: ["Accreditations"],
+  summary: "Detalle de habilitación",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Habilitación",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/accreditations/{id}/history",
+  tags: ["Accreditations"],
+  summary: "Historial de eventos de una habilitación (P5h)",
+  description:
+    "Activity logs de la HAB y de sus documentos empresa/persona, con etiquetas legibles.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    query: listAccreditationHistoryQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Eventos paginados",
+      content: {
+        "application/json": { schema: listAccreditationHistoryResponseSchema },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "No encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/accreditations/{id}/documents",
+  tags: ["Accreditations"],
+  summary: "Checklist documentos pack company (P5)",
+  description:
+    "Tipos con accreditationPack=company + documento vigente. Disco local.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Checklist",
+      content: {
+        "application/json": {
+          schema: listAccreditationDocumentsResponseSchema,
+        },
+      },
+    },
+    401: { description: "Sin token" },
+    404: { description: "HAB no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/documents",
+  tags: ["Accreditations"],
+  summary: "Subir documento de empresa a la HAB",
+  description: "JSON + base64. Reemplaza el vigente del mismo tipo. Permiso update.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createAccreditationDocumentBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": {
+          schema: createAccreditationDocumentResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación / HAB cerrada" },
+    401: { description: "Sin token" },
+    403: { description: "Sin permiso" },
+    404: { description: "HAB no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/accreditations/{id}/documents/{documentId}/download",
+  tags: ["Accreditations"],
+  summary: "Descargar documento de la HAB",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), documentId: z.uuid() }),
+  },
+  responses: {
+    200: { description: "Stream del archivo" },
+    401: { description: "Sin token" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/documents/{documentId}/validate",
+  tags: ["Accreditations"],
+  summary: "Validar u observar documento",
+  description: "Body: status validated|observed + observation opcional/requerida.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), documentId: z.uuid() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: validateAccreditationDocumentBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizado",
+      content: {
+        "application/json": {
+          schema: validateAccreditationDocumentResponseSchema,
+        },
+      },
+    },
+    400: { description: "Estado inválido" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/accreditations/{id}/documents/{documentId}",
+  tags: ["Accreditations"],
+  summary: "Eliminar documento de la HAB",
+  description: "Soft delete + borra archivo.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), documentId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Eliminado",
+      content: {
+        "application/json": {
+          schema: deleteAccreditationDocumentResponseSchema,
+        },
+      },
+    },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/accreditations/{id}/people/{personId}/documents",
+  tags: ["Accreditations"],
+  summary: "Checklist documentos pack person (P5d)",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), personId: z.uuid() }),
+  },
+  responses: {
+    200: {
+      description: "Checklist",
+      content: {
+        "application/json": {
+          schema: listAccreditationPersonDocumentsResponseSchema,
+        },
+      },
+    },
+    404: { description: "HAB o persona no encontrada" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/people/{personId}/documents",
+  tags: ["Accreditations"],
+  summary: "Subir documento pack person a la HAB",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid(), personId: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: createAccreditationDocumentBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Creado",
+      content: {
+        "application/json": {
+          schema: createAccreditationPersonDocumentResponseSchema,
+        },
+      },
+    },
+    400: { description: "Validación" },
+    404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/people/{personId}/documents/{documentId}/validate",
+  tags: ["Accreditations"],
+  summary: "Validar u observar documento de persona",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({
+      id: z.uuid(),
+      personId: z.uuid(),
+      documentId: z.uuid(),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: validateAccreditationDocumentBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Actualizado",
+      content: {
+        "application/json": {
+          schema: validateAccreditationPersonDocumentResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/submit",
+  tags: ["Accreditations"],
+  summary: "Enviar a revisión",
+  description: "pending|observed → in_review.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Actualizada",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    409: { description: "Transición inválida" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/approve",
+  tags: ["Accreditations"],
+  summary: "Aprobar habilitación",
+  description: "in_review → approved.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Aprobada",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    409: { description: "Transición inválida" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/return",
+  tags: ["Accreditations"],
+  summary: "Devolver con observaciones",
+  description: "in_review → observed. Body: reviewNote.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: accreditationReviewNoteBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Devuelta",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    409: { description: "Transición inválida" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/accreditations/{id}/reject",
+  tags: ["Accreditations"],
+  summary: "Rechazar habilitación",
+  description: "in_review → rejected. Body: reviewNote (motivo).",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: accreditationReviewNoteBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Rechazada",
+      content: {
+        "application/json": { schema: getAccreditationResponseSchema },
+      },
+    },
+    409: { description: "Transición inválida" },
   },
 });
 
@@ -2716,7 +4217,8 @@ registry.registerPath({
   path: "/api/v1/crew-members/{id}",
   tags: ["CrewMembers"],
   summary: "Eliminar tripulante (soft)",
-  description: "Requiere embarcados:deactivate. Desvincula userId.",
+  description:
+    "Requiere embarcados:deactivate. Desvincula userId; si el usuario era User/Colaborador, lo desactiva (state=false) sin borrarlo.",
   security: [{ bearerAuth: [] }],
   request: { params: z.object({ id: z.uuid() }) },
   responses: {
@@ -2727,6 +4229,103 @@ registry.registerPath({
       },
     },
     404: { description: "No encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/crew-members/{id}/access",
+  tags: ["CrewMembers"],
+  summary: "Estado Acceso (tripulante ↔ usuario)",
+  description:
+    "Pestaña Acceso (Figma D44/D44b). linked=false → empty; linked=true → cuenta + alcance.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Estado Acceso",
+      content: {
+        "application/json": { schema: crewAccessResponseSchema },
+      },
+    },
+    404: { description: "Tripulante no encontrado" },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/crew-members/{id}/access",
+  tags: ["CrewMembers"],
+  summary: "Otorgar acceso al portal",
+  description:
+    "Figma D45. Crea usuario (invite reset) o vincula uno existente por email. Solo admin/superadmin.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: grantCrewMemberAccessBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Acceso otorgado",
+      content: {
+        "application/json": { schema: crewAccessResponseSchema },
+      },
+    },
+    400: { description: "Validación" },
+    403: { description: "Solo admin" },
+    409: { description: "Ya vinculado / email en otro tenant / RUN duplicado" },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/v1/crew-members/{id}/access",
+  tags: ["CrewMembers"],
+  summary: "Cambiar rol Acceso (User ↔ Colaborador)",
+  description: "Figma D46. Solo admin/superadmin; solo entre user y colaborador.",
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: z.object({ id: z.uuid() }),
+    body: {
+      content: {
+        "application/json": { schema: changeCrewMemberAccessRoleBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Rol actualizado",
+      content: {
+        "application/json": { schema: crewAccessResponseSchema },
+      },
+    },
+    400: { description: "Sin vínculo o rol no intercambiable" },
+    403: { description: "Solo admin" },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/crew-members/{id}/access",
+  tags: ["CrewMembers"],
+  summary: "Desvincular acceso",
+  description:
+    "Figma D44m. Quita crew.userId; no borra ni desactiva la cuenta de usuario.",
+  security: [{ bearerAuth: [] }],
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    200: {
+      description: "Desvinculado",
+      content: {
+        "application/json": { schema: crewAccessResponseSchema },
+      },
+    },
+    400: { description: "Sin vínculo" },
+    403: { description: "Solo admin" },
   },
 });
 
@@ -3158,6 +4757,26 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: processBoardingBookExpiryResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/notification-outbox/run-training-expiry",
+  tags: ["NotificationOutbox"],
+  summary: "Correr generador de avisos de capacitaciones (solo encola)",
+  description:
+    "Hitos trainingCrewDays / trainingAdminDays. Digest a admin y prevencionista. No envía; deja pending en outbox.",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Métricas del ciclo",
+      content: {
+        "application/json": {
+          schema: processTrainingExpiryResponseSchema,
         },
       },
     },

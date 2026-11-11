@@ -34,7 +34,7 @@ const SCOPE_TAGS: Record<DocumentActorScope, ReadonlySet<DocumentActorTag>> = {
  * - admin / superadmin → admin
  * - contratista, prevencion*, prevention* → prevention
  * - hr, rrhh, recursos* → hr
- * - assets, activo*, area_tecnica → assets
+ * - assets, activo*, work_requester, area_tecnica (legado) → assets
  */
 export function resolveDocumentActorTags(input: {
   internalRol: string;
@@ -66,8 +66,10 @@ export function resolveDocumentActorTags(input: {
   }
   if (
     key === "assets" ||
+    key === "work_requester" ||
     key === "area_tecnica" ||
     key.startsWith("activo") ||
+    rol === "work_requester" ||
     rol === "area_tecnica"
   ) {
     tags.add("assets");

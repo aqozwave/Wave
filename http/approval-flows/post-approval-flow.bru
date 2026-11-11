@@ -1,0 +1,63 @@
+meta {
+  name: Post approval flow (duplicate EST)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/approval-flows
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "businessId": "{{businessId}}",
+    "code": "EST-C",
+    "name": "Estándar + cierre",
+    "description": "Estándar con una etapa extra de cierre del trabajo",
+    "stageCount": 6
+  }
+}
+
+docs {
+  P16m · Nuevo flujo = copia editable del EST de la empresa.
+  Requiere approval_flows:create (Admin / Superadmin).
+  Ajustá businessId al tenant. Guarda approvalFlowId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+  const biz = bru.getEnvVar("businessId");
+  if (!biz) {
+    throw new Error("Sin businessId en el entorno Bruno.");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if ((res.getStatus() === 201 || res.getStatus() === 200) && body && body.id) {
+    bru.setEnvVar("approvalFlowId", body.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.isSystem: eq false
+  res.body.stages: isDefined
+}
+
+tests {
+  test("copia no es sistema y trae etapas", function () {
+    const body = res.getBody();
+    expect(body.isSystem).to.eql(false);
+    expect(body.stages.length).to.be.above(0);
+  });
+}

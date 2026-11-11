@@ -1,0 +1,59 @@
+meta {
+  name: Post requirement
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/api/v1/permit-types/{{permitTypeId}}/requirements
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "key": "tst.extra_note",
+    "kind": "document",
+    "scope": "permit",
+    "moment": "before",
+    "mandatory": false,
+    "label": "Nota de prueba Bruno"
+  }
+}
+
+docs {
+  Alta exigencia. Usá un permitTypeId de prueba (Post permit type).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("permitTypeId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y permitTypeId");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body && body.id) {
+    bru.setEnvVar("requirementId", body.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -27,6 +27,9 @@ export type DocumentVisibility =
   | "employee_supervisor"
   | "supervisor";
 
+/** Pack de habilitación (maestro editable). */
+export type DocumentAccreditationPack = "company" | "person";
+
 /** Tipo de documento tal como lo responde la API. */
 export type DocumentType = {
   id: string;
@@ -40,6 +43,10 @@ export type DocumentType = {
   viewBy: string;
   crewCanView: boolean;
   visibility: string;
+  /** null = fuera del pack empresa/persona. */
+  accreditationPack: DocumentAccreditationPack | null;
+  /** Si está en pack: true = obligatorio; false = opcional. */
+  accreditationPackRequired: boolean;
   businessId: string;
   state: boolean;
   deletedAt: string | null;
@@ -66,6 +73,8 @@ export type DocumentTypeWriteBody = {
   viewBy?: DocumentActorScope;
   crewCanView?: boolean;
   visibility?: DocumentVisibility;
+  accreditationPack?: DocumentAccreditationPack | null;
+  accreditationPackRequired?: boolean;
   businessId?: string;
   state?: boolean;
 };
@@ -97,6 +106,7 @@ export async function listDocumentTypesRequest(
     businessId?: string;
     subtype?: DocumentSubtype;
     appliesTo?: DocumentAppliesTo;
+    accreditationPack?: DocumentAccreditationPack;
     search?: string;
     /** Solo tipos que el actor puede subir a un tripulante. */
     forUpload?: boolean;
@@ -109,6 +119,9 @@ export async function listDocumentTypesRequest(
   if (filters?.businessId) params.set("businessId", filters.businessId);
   if (filters?.subtype) params.set("subtype", filters.subtype);
   if (filters?.appliesTo) params.set("appliesTo", filters.appliesTo);
+  if (filters?.accreditationPack) {
+    params.set("accreditationPack", filters.accreditationPack);
+  }
   if (filters?.search) params.set("search", filters.search);
   if (filters?.forUpload) params.set("forUpload", "true");
   const res = await fetch(`/api/v1/document-types?${params}`, {

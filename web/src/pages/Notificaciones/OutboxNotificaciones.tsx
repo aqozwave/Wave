@@ -13,6 +13,7 @@ import { TablePagination } from "../../components/TablePagination/TablePaginatio
 import { Topbar } from "../../components/Topbar/Topbar";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
+import { userHasPermission } from "../../lib/api/auth";
 import {
   listNotificationOutboxRequest,
   processOutboxRequest,
@@ -58,6 +59,11 @@ const TYPE_LABELS: Record<NotificationOutboxType, string> = {
   course_expired: "Curso vencido",
   boarding_book_admin_digest: "Resumen admin · libretas",
   course_admin_digest: "Resumen admin · cursos",
+  training_expiring: "Capacitación por vencer",
+  training_expired: "Capacitación vencida",
+  training_admin_digest: "Resumen · capacitaciones",
+  work_notice_created: "Nuevo aviso de trabajo",
+  work_permit_created: "PT creado → contratista",
 };
 
 const STATUS_TONE: Record<NotificationOutboxStatus, StatusChipTone> = {
@@ -113,8 +119,10 @@ function deliveredLabel(row: NotificationOutboxItem): string {
  * Ruta: /notificaciones/outbox
  */
 export function OutboxNotificaciones() {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const { showToast } = useToast();
+  /** Generar / enviar / reintentar: cursos.notifications:update. */
+  const canUpdate = userHasPermission(user, "cursos.notifications", "update");
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -238,7 +246,7 @@ export function OutboxNotificaciones() {
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
         <PageHeader
           crumbs={[
-            { label: "Configuración" },
+            { label: "Sistema" },
             { label: "Notificaciones", to: "/notificaciones" },
             { label: "Outbox" },
           ]}
@@ -253,25 +261,33 @@ export function OutboxNotificaciones() {
                 <Settings2 className="size-3.5" strokeWidth={1.5} aria-hidden />
                 Hitos
               </Link>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void handleRunGenerator()}
-                className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60"
-              >
-                <RefreshCw className="size-3.5" strokeWidth={1.5} aria-hidden />
-                Generar avisos
-              </button>
-              <Button
-                type="button"
-                size="small"
-                className="!w-auto"
-                disabled={busy}
-                onClick={() => void handleProcess(5)}
-              >
-                <Play className="size-3.5" strokeWidth={1.5} aria-hidden />
-                Enviar 5
-              </Button>
+              {canUpdate ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleRunGenerator()}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60"
+                >
+                  <RefreshCw
+                    className="size-3.5"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                  Generar avisos
+                </button>
+              ) : null}
+              {canUpdate ? (
+                <Button
+                  type="button"
+                  size="small"
+                  className="!w-auto"
+                  disabled={busy}
+                  onClick={() => void handleProcess(5)}
+                >
+                  <Play className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  Enviar 5
+                </Button>
+              ) : null}
             </div>
           }
         />
@@ -408,7 +424,8 @@ export function OutboxNotificaciones() {
                     {formatDateTime(row.createdAt)}
                   </td>
                   <td className="h-[52px] px-3 text-right">
-                    {row.status === "failed" || row.status === "cancelled" ? (
+                    {canUpdate &&
+                    (row.status === "failed" || row.status === "cancelled") ? (
                       <button
                         type="button"
                         disabled={busy}

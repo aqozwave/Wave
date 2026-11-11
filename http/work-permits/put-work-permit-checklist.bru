@@ -1,0 +1,54 @@
+meta {
+  name: Put work permit checklist
+  type: http
+  seq: 9
+}
+
+put {
+  url: {{baseUrl}}/api/v1/work-permits/{{workPermitId}}/checklist
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "stage": "contractor",
+    "answers": [
+      {
+        "checklistItemId": "{{checklistItemId}}",
+        "answer": "yes"
+      }
+    ]
+  }
+}
+
+docs {
+  Guarda respuestas del checklist contractor (to_complete).
+  Variables: workPermitId, checklistItemId (ítem activo del tipo del PT).
+  Repetir answers para todos los ítems antes del submit.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("workPermitId")) throw new Error("Sin workPermitId.");
+  if (!bru.getEnvVar("checklistItemId")) throw new Error("Sin checklistItemId.");
+}
+
+assert {
+  res.status: eq 200
+  res.body.stage: eq contractor
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

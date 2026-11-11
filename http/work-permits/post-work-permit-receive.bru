@@ -1,0 +1,52 @@
+meta {
+  name: Post work permit receive
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/work-permits/{{workPermitId}}/receive
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "signerName": "Capitan Test",
+    "accepted": true,
+    "signatureImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+  }
+}
+
+docs {
+  Capitán (work_permits.receive) recibe PT to_receive → active (+ firma digital).
+  Variable workPermitId. Debe ser de su nave si dataScope=location.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken.");
+  }
+  if (!bru.getEnvVar("workPermitId")) {
+    throw new Error("Sin workPermitId.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq active
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -1,0 +1,47 @@
+meta {
+  name: Get approval flows
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/approval-flows?page=1&limit=20
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Listado P16 de flujos de aprobación (EST, EST-C…).
+  Requiere approval_flows:read (Admin / Superadmin).
+  Guarda approvalFlowId del primer ítem.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && body && Array.isArray(body.items) && body.items[0]) {
+    bru.setEnvVar("approvalFlowId", body.items[0].id);
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+}
+
+tests {
+  test("items es array", function () {
+    const body = res.getBody();
+    expect(Array.isArray(body.items)).to.eql(true);
+  });
+}

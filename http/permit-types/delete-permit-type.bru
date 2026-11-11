@@ -1,0 +1,39 @@
+meta {
+  name: Delete permit type
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/permit-types/{{permitTypeId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Soft delete: deletedAt + active=false.
+  Preferí usar un tipo de prueba (Post permit type), no CAL/ALT seed.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("permitTypeId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y permitTypeId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.deletedAt: isDefined
+  res.body.active: eq false
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

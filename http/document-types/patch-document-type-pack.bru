@@ -1,0 +1,48 @@
+meta {
+  name: Patch document type pack
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/document-types/{{documentTypeId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "accreditationPack": "company"
+  }
+}
+
+docs {
+  Asigna o mueve un tipo al pack empresa (person | null para persona / sacar).
+  Requiere admin/superadmin (requireTenantManager).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("documentTypeId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y documentTypeId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.accreditationPack: eq company
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

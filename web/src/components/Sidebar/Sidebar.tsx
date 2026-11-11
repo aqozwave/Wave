@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Bell,
   Building2,
+  ClipboardCheck,
   ClipboardList,
   GraduationCap,
   HardHat,
@@ -10,6 +11,8 @@ import {
   LayoutDashboard,
   LayoutGrid,
   MapPin,
+  GitBranch,
+  Package,
   PanelLeft,
   PanelLeftClose,
   Settings,
@@ -74,18 +77,6 @@ const CURSOS_LINKS: ReadonlyArray<NavLink> = [
     icon: AlertTriangle,
     canShow: (u) => userHasPermission(u, "cursos.libretas", "read"),
   },
-  {
-    label: "Notificaciones",
-    to: "/notificaciones",
-    icon: Bell,
-    canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
-  },
-  {
-    label: "Outbox",
-    to: "/notificaciones/outbox",
-    icon: Inbox,
-    canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
-  },
 ];
 
 /** ¿Puede abrir el módulo Cursos (alguno de sus recursos)? */
@@ -93,7 +84,6 @@ function canSeeCursosModule(user: AuthUser | null): boolean {
   return (
     userHasPermission(user, "cursos.assignments", "read") ||
     userHasPermission(user, "cursos.libretas", "read") ||
-    userHasPermission(user, "cursos.notifications", "read") ||
     userHasPermission(user, "cursos.catalog", "read")
   );
 }
@@ -110,17 +100,110 @@ function canSeeCatalogos(user: AuthUser | null): boolean {
 }
 
 /**
- * ¿Puede ver el ítem Prevención en el menú?
- * Solo si el rol tiene el módulo o documentos de contratistas (RRHH sin checks → oculto).
+ * Recursos de Prevención con read → mostrar el grupo.
+ * Stub viejo prevencion / prevencion.docs reemplazado por recursos finos (P0).
  */
+const PREVENCION_MENU_RESOURCES = [
+  "contractors",
+  "accreditations",
+  "work_notices",
+  "work_permits",
+  "permit_types",
+  "trainings",
+  "training_sessions",
+  "accreditation_packs",
+] as const;
+
+/** ¿Puede ver el grupo Prevención? */
 function canSeePrevencion(user: AuthUser | null): boolean {
-  return (
-    userHasPermission(user, "prevencion", "read") ||
-    userHasPermission(user, "prevencion.docs", "read")
+  return PREVENCION_MENU_RESOURCES.some((resource) =>
+    userHasPermission(user, resource, "read"),
   );
 }
 
-/** Subítems de Configuración (sin Notificaciones: viven bajo Cursos). */
+/**
+ * Subítems de Prevención en orden de proceso:
+ * operación (contratista → HAB → aviso → PT) y después catálogos.
+ */
+const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
+  {
+    label: "Presentación",
+    to: "/prevencion",
+    icon: HardHat,
+    canShow: (u) => canSeePrevencion(u),
+  },
+  {
+    label: "Habilitaciones",
+    to: "/prevencion/habilitaciones",
+    icon: ClipboardCheck,
+    canShow: (u) => userHasPermission(u, "accreditations", "read"),
+  },
+  {
+    label: "Avisos de trabajo",
+    to: "/prevencion/avisos",
+    icon: Bell,
+    canShow: (u) => userHasPermission(u, "work_notices", "read"),
+  },
+  {
+    label: "Permisos de trabajo",
+    to: "/prevencion/permisos",
+    icon: ShieldCheck,
+    canShow: (u) => userHasPermission(u, "work_permits", "read"),
+  },
+  {
+    label: "Tipos de permiso",
+    to: "/prevencion/tipos",
+    icon: ClipboardList,
+    /** read solo alimenta selects (avisos); el catálogo pide gestionar. */
+    canShow: (u) => userHasPermission(u, "permit_types", "update"),
+  },
+  {
+    label: "Capacitaciones",
+    to: "/prevencion/capacitaciones",
+    icon: GraduationCap,
+    canShow: (u) => userHasPermission(u, "trainings", "read"),
+  },
+  {
+    label: "Sesiones capacitación",
+    to: "/prevencion/capacitaciones/sesiones",
+    icon: Users,
+    canShow: (u) => userHasPermission(u, "training_sessions", "read"),
+  },
+  {
+    label: "Packs de habilitación",
+    to: "/prevencion/packs",
+    icon: Package,
+    canShow: (u) =>
+      userHasPermission(u, "accreditation_packs", "read"),
+  },
+];
+
+/**
+ * Activo exacto en Presentación y Capacitaciones (catálogo):
+ * no deben marcarse activos en /capacitaciones/sesiones (hija).
+ * Resto: match exacto o prefijo de subruta.
+ */
+function isPrevencionNavActive(
+  to: string | null,
+  pathname: string,
+): boolean {
+  if (!to) return false;
+  if (to === "/prevencion") return pathname === "/prevencion";
+  if (to === "/prevencion/capacitaciones") {
+    return pathname === "/prevencion/capacitaciones";
+  }
+  return pathname === to || pathname.startsWith(`${to}/`);
+}
+
+/** ¿Ruta de maestro Contratistas (vive en Configuración, URL legacy bajo /prevencion)? */
+function isContractorsConfigPath(pathname: string): boolean {
+  return (
+    pathname === "/prevencion/contratistas" ||
+    pathname.startsWith("/prevencion/contratistas/")
+  );
+}
+
+/** Subítems de Configuración. */
 const CONFIG_LINKS: ReadonlyArray<NavLink> = [
   {
     label: "Resumen",
@@ -132,14 +215,24 @@ const CONFIG_LINKS: ReadonlyArray<NavLink> = [
     label: "Empresas",
     to: "/empresas",
     icon: Building2,
-    canShow: (u) =>
-      u?.internalRol === "superadmin" || u?.internalRol === "admin",
+    canShow: (u) => userHasPermission(u, "maestros.businesses", "read"),
+  },
+  {
+    label: "Contratistas",
+    to: "/prevencion/contratistas",
+    icon: Building2,
+    canShow: (u) => userHasPermission(u, "contractors", "read"),
   },
   {
     label: "Flota y operación",
     to: "/ubicaciones",
     icon: MapPin,
-    canShow: (u) => userHasPermission(u, "maestros.locations", "read"),
+    canShow: (u) =>
+      userHasPermission(u, "maestros.locations", "read") ||
+      userHasPermission(u, "maestros.areas", "read") ||
+      userHasPermission(u, "maestros.ports", "read") ||
+      userHasPermission(u, "maestros.muelles", "read") ||
+      userHasPermission(u, "maestros.travesias", "read"),
   },
   {
     label: "Catálogos maestros",
@@ -148,12 +241,59 @@ const CONFIG_LINKS: ReadonlyArray<NavLink> = [
     canShow: (u) => canSeeCatalogos(u),
   },
   {
+    label: "Flujos de aprobación",
+    to: "/configuracion/flujos",
+    icon: GitBranch,
+    /** P16 · approval_flows:read (Admin / Superadmin / rol custom). */
+    canShow: (u) => userHasPermission(u, "approval_flows", "read"),
+  },
+];
+
+/**
+ * Subítems de Sistema: cuentas, avisos y auditoría.
+ * Notificaciones / Outbox van acá (no bajo Cursos).
+ */
+const SYSTEM_LINKS: ReadonlyArray<NavLink> = [
+  {
     label: "Usuarios",
     to: "/usuarios",
     icon: Users,
     canShow: (u) => userHasPermission(u, "maestros.users", "read"),
   },
+  {
+    label: "Roles y permisos",
+    to: "/roles",
+    icon: ShieldCheck,
+    canShow: (u) => userHasPermission(u, "roles", "read"),
+  },
+  {
+    label: "Notificaciones",
+    to: "/notificaciones",
+    icon: Bell,
+    canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
+  },
+  {
+    label: "Outbox",
+    to: "/notificaciones/outbox",
+    icon: Inbox,
+    canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
+  },
+  {
+    label: "Bitácora",
+    to: "/sistema/actividad",
+    icon: ClipboardList,
+    canShow: (u) => userHasPermission(u, "sistema.activity_logs", "read"),
+  },
 ];
+
+/**
+ * Activo del subítem Sistema.
+ * /notificaciones no debe marcarse activo en /notificaciones/outbox.
+ */
+function isSystemNavActive(to: string, pathname: string): boolean {
+  if (to === "/notificaciones") return pathname === "/notificaciones";
+  return pathname === to || pathname.startsWith(`${to}/`);
+}
 
 /** Iniciales a partir de nombre y apellido. */
 function initialsOf(firstName: string, lastName: string): string {
@@ -203,69 +343,105 @@ export function Sidebar() {
     location.pathname.startsWith("/empresas") ||
     location.pathname.startsWith("/ubicaciones") ||
     location.pathname.startsWith("/catalogos") ||
-    location.pathname.startsWith("/usuarios");
+    location.pathname.startsWith("/configuracion") ||
+    isContractorsConfigPath(location.pathname);
   /** Rutas bajo Tripulación (lista + ficha). */
   const onCrewSection = location.pathname.startsWith("/embarcados");
-  /** Grupo Cursos: /cursos/* y avisos (no catálogos). */
-  const onCursosSection =
-    location.pathname.startsWith("/cursos") ||
-    location.pathname.startsWith("/notificaciones");
-  /** Rutas bajo Sistema (solo superadmin). */
+  /** Grupo Cursos: solo /cursos/* (avisos viven en Sistema). */
+  const onCursosSection = location.pathname.startsWith("/cursos");
+  /** Grupo Prevención: operación HAB/avisos/PT (Contratistas va en Configuración). */
+  const onPrevencionSection =
+    location.pathname.startsWith("/prevencion") &&
+    !isContractorsConfigPath(location.pathname);
+  /** Rutas bajo Sistema (usuarios, roles, notificaciones, bitácora). */
   const onSystemSection =
+    location.pathname.startsWith("/usuarios") ||
     location.pathname.startsWith("/roles") ||
+    location.pathname.startsWith("/notificaciones") ||
     location.pathname.startsWith("/sistema");
   const onPanel = location.pathname === "/";
-  const [crewOpen, setCrewOpen] = useState(onCrewSection);
-  const [cursosOpen, setCursosOpen] = useState(onCursosSection);
-  const [configOpen, setConfigOpen] = useState(onConfigSection);
-  const [systemOpen, setSystemOpen] = useState(onSystemSection);
+  /** Habilitación del portal contratista (E4). */
+  const onPortalHab = location.pathname.startsWith("/portal/habilitacion");
+  /** Mi personal del portal contratista (E5). */
+  const onPortalPeople = location.pathname.startsWith("/portal/personal");
+  /** Permisos del portal contratista (enviar a aprobación). */
+  const onPortalPermits = location.pathname.startsWith("/portal/permisos");
+  /**
+   * Acordeón: un solo grupo padre abierto a la vez.
+   * null = todos cerrados (p. ej. estás en Panel).
+   */
+  type NavGroupId =
+    | "crew"
+    | "cursos"
+    | "prevencion"
+    | "config"
+    | "system";
+  /** Grupo activo según la URL al montar. */
+  function groupFromRoute(): NavGroupId | null {
+    if (onCrewSection) return "crew";
+    if (onCursosSection) return "cursos";
+    if (onPrevencionSection) return "prevencion";
+    if (onConfigSection) return "config";
+    if (onSystemSection) return "system";
+    return null;
+  }
+  const [openGroup, setOpenGroup] = useState<NavGroupId | null>(groupFromRoute);
+  const crewOpen = openGroup === "crew";
+  const cursosOpen = openGroup === "cursos";
+  const prevencionOpen = openGroup === "prevencion";
+  const configOpen = openGroup === "config";
+  const systemOpen = openGroup === "system";
+  /** Abre un padre y cierra el resto; si ya está abierto, lo cierra. */
+  function toggleGroup(id: NavGroupId) {
+    setOpenGroup((current) => (current === id ? null : id));
+  }
 
   const visibleCrewLinks = CREW_LINKS.filter((item) => item.canShow(user));
   const visibleCursosLinks = CURSOS_LINKS.filter((item) => item.canShow(user));
+  const visiblePrevencionLinks = PREVENCION_LINKS.filter((item) =>
+    item.canShow(user),
+  );
   const visibleConfigLinks = CONFIG_LINKS.filter((item) => item.canShow(user));
-  const showCrewGroup = visibleCrewLinks.length > 0;
-  const showCursosGroup = visibleCursosLinks.length > 0;
-  const showConfigGroup = visibleConfigLinks.length > 0;
-  const showPrevencion = canSeePrevencion(user);
-  const showSystemGroup = user?.internalRol === "superadmin";
+  const visibleSystemLinks = SYSTEM_LINKS.filter((item) => item.canShow(user));
+  /** Usuario externo (P9b): menú portal E*, no el de la naviera. */
+  const isContractorPortal = Boolean(user?.organizationId);
+  /**
+   * Faena: solo Panel + Permisos (sin HAB ni personal).
+   * Dueño (`contratista`) ve el menú completo de Mi empresa.
+   */
+  const isContractorFaena = user?.internalRol === "contratista_faena";
+  const showCrewGroup = !isContractorPortal && visibleCrewLinks.length > 0;
+  const showCursosGroup = !isContractorPortal && visibleCursosLinks.length > 0;
+  const showConfigGroup = !isContractorPortal && visibleConfigLinks.length > 0;
+  const showPrevencion = !isContractorPortal && canSeePrevencion(user);
+  /** Sistema: Usuarios / Roles / avisos / Bitácora por permiso. */
+  const showSystemGroup =
+    !isContractorPortal && visibleSystemLinks.length > 0;
   /** Etiqueta del home según rol (Figma C1 / T* / E3). */
-  const panelLabel =
-    user?.internalRol === "colaborador"
+  const panelLabel = isContractorPortal
+    ? "Panel"
+    : user?.internalRol === "colaborador"
       ? "Panel de mi nave"
       : user?.internalRol === "user"
         ? "Inicio"
-        : user?.internalRol === "contratista"
-          ? "Panel"
-          : "Panel";
+        : "Panel";
 
   useEffect(() => {
     setCollapsed(readCollapsed());
     setReady(true);
   }, []);
 
+  /** Al navegar, abre solo el grupo de la ruta actual (acordeón). */
   useEffect(() => {
-    if (onCrewSection) {
-      setCrewOpen(true);
-    }
-  }, [onCrewSection]);
-
-  useEffect(() => {
-    if (onCursosSection) {
-      setCursosOpen(true);
-    }
-  }, [onCursosSection]);
-
-  useEffect(() => {
-    if (onConfigSection) {
-      setConfigOpen(true);
-    }
-  }, [onConfigSection]);
-
-  useEffect(() => {
-    if (onSystemSection) {
-      setSystemOpen(true);
-    }
-  }, [onSystemSection]);
+    const next = groupFromRoute();
+    if (next) setOpenGroup(next);
+  }, [
+    onCrewSection,
+    onCursosSection,
+    onPrevencionSection,
+    onConfigSection,
+    onSystemSection,
+  ]);
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -282,7 +458,11 @@ export function Sidebar() {
   const displayName = user
     ? `${user.firstName} ${user.lastName}`.trim()
     : "Usuario";
-  const displayMeta = user ? `${user.internalRol} · v2.0` : "…";
+  const displayMeta = user
+    ? isContractorPortal
+      ? `${isContractorFaena ? "Faena" : "Contratista"} · ${user.organization?.name ?? "org"}`
+      : `${user.internalRol} · v2.0`
+    : "…";
   const initials = user ? initialsOf(user.firstName, user.lastName) : "?";
   const width = collapsed ? WIDTH_COLLAPSED : WIDTH_OPEN;
 
@@ -320,6 +500,35 @@ export function Sidebar() {
               active={onPanel}
               collapsed
             />
+            {isContractorPortal ? (
+              <>
+                {!isContractorFaena ? (
+                  <>
+                    <SidebarItem
+                      label="Habilitación"
+                      icon={ClipboardCheck}
+                      to="/portal/habilitacion"
+                      active={onPortalHab}
+                      collapsed
+                    />
+                    <SidebarItem
+                      label="Mi personal"
+                      icon={Users}
+                      to="/portal/personal"
+                      active={onPortalPeople}
+                      collapsed
+                    />
+                  </>
+                ) : null}
+                <SidebarItem
+                  label="Permisos"
+                  icon={ClipboardList}
+                  to="/portal/permisos"
+                  active={onPortalPermits}
+                  collapsed
+                />
+              </>
+            ) : null}
             <div className="h-1.5" aria-hidden />
             {showCrewGroup ? (
               <SidebarItem
@@ -340,7 +549,13 @@ export function Sidebar() {
               />
             ) : null}
             {showPrevencion ? (
-              <SidebarItem label="Prevención" icon={HardHat} collapsed />
+              <SidebarItem
+                label="Prevención"
+                icon={HardHat}
+                to="/prevencion"
+                active={onPrevencionSection}
+                collapsed
+              />
             ) : null}
             {showConfigGroup ? (
               <SidebarItem
@@ -355,7 +570,7 @@ export function Sidebar() {
               <SidebarItem
                 label="Sistema"
                 icon={ShieldCheck}
-                to="/roles"
+                to={visibleSystemLinks[0]?.to ?? "/usuarios"}
                 active={onSystemSection}
                 collapsed
               />
@@ -402,6 +617,35 @@ export function Sidebar() {
               to="/"
               active={onPanel}
             />
+            {isContractorPortal ? (
+              <>
+                <p className="m-0 px-2.5 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-[var(--color-nav-icon)]">
+                  {isContractorFaena ? "Trabajos" : "Mi empresa"}
+                </p>
+                {!isContractorFaena ? (
+                  <>
+                    <SidebarItem
+                      label="Habilitación"
+                      icon={ClipboardCheck}
+                      to="/portal/habilitacion"
+                      active={onPortalHab}
+                    />
+                    <SidebarItem
+                      label="Mi personal"
+                      icon={Users}
+                      to="/portal/personal"
+                      active={onPortalPeople}
+                    />
+                  </>
+                ) : null}
+                <SidebarItem
+                  label="Permisos"
+                  icon={ClipboardList}
+                  to="/portal/permisos"
+                  active={onPortalPermits}
+                />
+              </>
+            ) : null}
             <div className="h-1.5" aria-hidden />
 
             {/* Grupo Tripulación (Figma): Embarcados. */}
@@ -409,7 +653,7 @@ export function Sidebar() {
             <div className="flex w-full flex-col">
               <button
                 type="button"
-                onClick={() => setCrewOpen((v) => !v)}
+                onClick={() => toggleGroup("crew")}
                 className={[
                   "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
                   onCrewSection || crewOpen
@@ -505,7 +749,7 @@ export function Sidebar() {
             <div className="flex w-full flex-col">
               <button
                 type="button"
-                onClick={() => setCursosOpen((v) => !v)}
+                onClick={() => toggleGroup("cursos")}
                 className={[
                   "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
                   onCursosSection || cursosOpen
@@ -599,7 +843,99 @@ export function Sidebar() {
             ) : null}
 
             {showPrevencion ? (
-              <SidebarItem label="Prevención" icon={HardHat} expandable />
+            <div className="flex w-full flex-col">
+              <button
+                type="button"
+                onClick={() => toggleGroup("prevencion")}
+                className={[
+                  "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
+                  onPrevencionSection || prevencionOpen
+                    ? "font-medium text-[var(--color-nav-item-active-fg)]"
+                    : "font-normal text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
+                ].join(" ")}
+                aria-expanded={prevencionOpen}
+              >
+                <HardHat
+                  size={18}
+                  strokeWidth={1.5}
+                  className="text-[var(--color-nav-icon)]"
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1 truncate">Prevención</span>
+                <span
+                  className={[
+                    "inline-flex size-3.5 shrink-0 text-[var(--color-nav-icon)] transition-transform",
+                    prevencionOpen ? "rotate-90" : "",
+                  ].join(" ")}
+                  aria-hidden
+                >
+                  <svg viewBox="0 0 14 14" className="size-3.5" fill="none">
+                    <path
+                      d="M5 3.5 8.5 7 5 10.5"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+              </button>
+              {prevencionOpen ? (
+                <div className="animate-submenu-enter mb-1 ml-[18px] flex flex-col gap-0.5 border-l border-[var(--color-nav-border)] pl-1.5">
+                  {visiblePrevencionLinks.map((item) => {
+                    const Icon = item.icon;
+                    const active = isPrevencionNavActive(
+                      item.to,
+                      location.pathname,
+                    );
+                    const rowClass = [
+                      "relative flex h-8 items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px]",
+                      active
+                        ? "bg-[var(--color-nav-item-active-bg)] font-medium text-[var(--color-nav-item-active-fg)]"
+                        : "text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
+                    ].join(" ");
+                    const content = (
+                      <>
+                        {active ? (
+                          <span
+                            className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--color-nachipa-primary)]"
+                            aria-hidden
+                          />
+                        ) : null}
+                        <Icon
+                          size={14}
+                          strokeWidth={1.5}
+                          className="shrink-0 text-[var(--color-nav-icon)]"
+                          aria-hidden
+                        />
+                        <span className="min-w-0 truncate">{item.label}</span>
+                      </>
+                    );
+                    if (item.to) {
+                      return (
+                        <Link
+                          key={item.label}
+                          to={item.to}
+                          aria-current={active ? "page" : undefined}
+                          className={rowClass}
+                        >
+                          {content}
+                        </Link>
+                      );
+                    }
+                    return (
+                      <span
+                        key={item.label}
+                        className={`${rowClass} cursor-default text-[var(--color-nachipa-muted)]`}
+                        title="Próximamente"
+                      >
+                        {content}
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
             ) : null}
 
             {/* Grupo Configuración (Figma): Empresas es subítem. */}
@@ -607,7 +943,7 @@ export function Sidebar() {
             <div className="flex w-full flex-col">
               <button
                 type="button"
-                onClick={() => setConfigOpen((v) => !v)}
+                onClick={() => toggleGroup("config")}
                 className={[
                   "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
                   onConfigSection || configOpen
@@ -698,12 +1034,12 @@ export function Sidebar() {
             </div>
             ) : null}
 
-            {/* Grupo Sistema (Figma): Roles y permisos — solo superadmin. */}
+            {/* Grupo Sistema: Usuarios internos (+ roles/bitácora superadmin). */}
             {showSystemGroup ? (
             <div className="flex w-full flex-col">
               <button
                 type="button"
-                onClick={() => setSystemOpen((v) => !v)}
+                onClick={() => toggleGroup("system")}
                 className={[
                   "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius-md)] pl-2.5 pr-2 text-left text-[13px] leading-[18px]",
                   onSystemSection || systemOpen
@@ -739,64 +1075,41 @@ export function Sidebar() {
               </button>
               {systemOpen ? (
                 <div className="animate-submenu-enter mb-1 ml-[18px] flex flex-col gap-0.5 border-l border-[var(--color-nav-border)] pl-1.5">
-                  <Link
-                    to="/roles"
-                    aria-current={
-                      location.pathname.startsWith("/roles")
-                        ? "page"
-                        : undefined
-                    }
-                    className={[
-                      "relative flex h-8 items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px]",
-                      location.pathname.startsWith("/roles")
-                        ? "bg-[var(--color-nav-item-active-bg)] font-medium text-[var(--color-nav-item-active-fg)]"
-                        : "text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
-                    ].join(" ")}
-                  >
-                    {location.pathname.startsWith("/roles") ? (
-                      <span
-                        className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--color-nachipa-primary)]"
-                        aria-hidden
-                      />
-                    ) : null}
-                    <ShieldCheck
-                      size={14}
-                      strokeWidth={1.5}
-                      className="shrink-0 text-[var(--color-nav-icon)]"
-                      aria-hidden
-                    />
-                    <span className="min-w-0 truncate">Roles y permisos</span>
-                  </Link>
-                  <Link
-                    to="/sistema/actividad"
-                    aria-current={
-                      location.pathname.startsWith("/sistema/actividad")
-                        ? "page"
-                        : undefined
-                    }
-                    className={[
-                      "relative flex h-8 items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px]",
-                      location.pathname.startsWith("/sistema/actividad")
-                        ? "bg-[var(--color-nav-item-active-bg)] font-medium text-[var(--color-nav-item-active-fg)]"
-                        : "text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
-                    ].join(" ")}
-                  >
-                    {location.pathname.startsWith("/sistema/actividad") ? (
-                      <span
-                        className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--color-nachipa-primary)]"
-                        aria-hidden
-                      />
-                    ) : null}
-                    <ClipboardList
-                      size={14}
-                      strokeWidth={1.5}
-                      className="shrink-0 text-[var(--color-nav-icon)]"
-                      aria-hidden
-                    />
-                    <span className="min-w-0 truncate">
-                      Registro de actividad
-                    </span>
-                  </Link>
+                  {visibleSystemLinks.map((item) => {
+                    if (!item.to) return null;
+                    const Icon = item.icon;
+                    const active = isSystemNavActive(
+                      item.to,
+                      location.pathname,
+                    );
+                    return (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        aria-current={active ? "page" : undefined}
+                        className={[
+                          "relative flex h-8 items-center gap-2 rounded-[var(--radius-md)] px-2.5 text-[13px] leading-[18px]",
+                          active
+                            ? "bg-[var(--color-nav-item-active-bg)] font-medium text-[var(--color-nav-item-active-fg)]"
+                            : "text-[var(--color-nav-text)] hover:bg-[var(--color-nav-item-active-bg)]",
+                        ].join(" ")}
+                      >
+                        {active ? (
+                          <span
+                            className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--color-nachipa-primary)]"
+                            aria-hidden
+                          />
+                        ) : null}
+                        <Icon
+                          size={14}
+                          strokeWidth={1.5}
+                          className="shrink-0 text-[var(--color-nav-icon)]"
+                          aria-hidden
+                        />
+                        <span className="min-w-0 truncate">{item.label}</span>
+                      </Link>
+                    );
+                  })}
                 </div>
               ) : null}
             </div>

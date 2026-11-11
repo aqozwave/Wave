@@ -12,6 +12,7 @@ import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
+import { userHasPermission } from "../../lib/api/auth";
 import {
   ALLOWED_EXPIRY_NOTICE_DAYS,
   COURSE_EXPIRED_MAX_REMINDER_OPTIONS,
@@ -28,7 +29,9 @@ type DaysField =
   | "courseCrewDays"
   | "courseAdminDays"
   | "boardingBookCrewDays"
-  | "boardingBookAdminDays";
+  | "boardingBookAdminDays"
+  | "trainingCrewDays"
+  | "trainingAdminDays";
 
 /** Chip seleccionable (hito o opción numérica). */
 function OptionChip({
@@ -77,10 +80,10 @@ function ChannelRow({
   onToggleDay: (field: DaysField, day: number) => void;
 }) {
   return (
-    <div className="border-t border-[var(--color-tremor-border)] px-3 py-2 first:border-t-0">
-      <div className="mb-1.5 flex items-center gap-2">
+    <div className="border-t border-[var(--color-tremor-border)] px-3 py-2.5 first:border-t-0">
+      <div className="mb-2 flex items-center gap-2">
         {icon}
-        <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
+        <p className="m-0 text-[13px] font-medium leading-5 text-[var(--color-nachipa-title)]">
           {title}
         </p>
       </div>
@@ -98,7 +101,7 @@ function ChannelRow({
   );
 }
 
-/** Tarjeta de sección de settings. */
+/** Tarjeta de sección de settings (altura natural; no se comprime). */
 function SettingsCard({
   title,
   description,
@@ -109,12 +112,12 @@ function SettingsCard({
   children: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white">
+    <section className="shrink-0 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white">
       <div className="border-b border-[var(--color-tremor-border)] px-3 py-2">
-        <h2 className="m-0 text-[13px] font-semibold text-[var(--color-nachipa-title)]">
+        <h2 className="m-0 text-[13px] font-semibold leading-5 text-[var(--color-nachipa-title)]">
           {title}
         </h2>
-        <p className="m-0 mt-0.5 text-[11px] text-[var(--color-nachipa-secondary)]">
+        <p className="m-0 mt-0.5 text-[11px] leading-4 text-[var(--color-nachipa-secondary)]">
           {description}
         </p>
       </div>
@@ -128,8 +131,10 @@ function SettingsCard({
  * Ruta: /notificaciones
  */
 export function NotificacionesVencimiento() {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const { showToast } = useToast();
+  /** Guardar hitos: cursos.notifications:update. */
+  const canUpdate = userHasPermission(user, "cursos.notifications", "update");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<ExpiryNotificationSettings>({
@@ -159,6 +164,7 @@ export function NotificacionesVencimiento() {
 
   /** Alterna un hito en un canal. */
   function toggleDay(field: DaysField, day: number) {
+    if (!canUpdate) return;
     setSettings((prev) => {
       const current = prev[field] ?? [];
       const next = current.includes(day)
@@ -170,7 +176,7 @@ export function NotificacionesVencimiento() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!accessToken || saving) return;
+    if (!accessToken || saving || !canUpdate) return;
     setSaving(true);
     try {
       const saved = await updateExpiryNotificationSettingsRequest(
@@ -201,7 +207,7 @@ export function NotificacionesVencimiento() {
         {/* Header a la izquierda; formulario centrado y compacto sin scroll de página. */}
         <PageHeader
           crumbs={[
-            { label: "Configuración" },
+            { label: "Sistema" },
             { label: "Notificaciones" },
           ]}
           title="Notificaciones de vencimiento"
@@ -224,7 +230,7 @@ export function NotificacionesVencimiento() {
         ) : (
           <form
             onSubmit={handleSubmit}
-            className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-2.5 overflow-hidden"
+            className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-2.5 overflow-y-auto pb-1"
           >
             <SettingsCard
               title="Cursos OMI"
@@ -262,18 +268,18 @@ export function NotificacionesVencimiento() {
               title="Cursos vencidos"
               description="Recordatorios cuando el curso ya venció. El admin sigue viéndolos en el resumen sin tope."
             >
-              <div className="border-t border-[var(--color-tremor-border)] px-3 py-2 first:border-t-0">
-                <div className="mb-1 flex items-center gap-2">
+              <div className="border-t border-[var(--color-tremor-border)] px-3 py-2.5 first:border-t-0">
+                <div className="mb-2 flex items-center gap-2">
                   <Mail
                     className="size-3.5 text-[var(--color-nachipa-primary)]"
                     strokeWidth={1.5}
                     aria-hidden
                   />
-                  <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  <p className="m-0 text-[13px] font-medium leading-5 text-[var(--color-nachipa-title)]">
                     Cada cuántos días
                   </p>
                 </div>
-                <p className="m-0 mb-1.5 text-[11px] text-[var(--color-nachipa-secondary)]">
+                <p className="m-0 mb-2 text-[11px] leading-4 text-[var(--color-nachipa-secondary)]">
                   0 = desactivado (no se envían recordatorios al tripulante).
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -292,14 +298,14 @@ export function NotificacionesVencimiento() {
                   ))}
                 </div>
               </div>
-              <div className="border-t border-[var(--color-tremor-border)] px-3 py-2">
-                <div className="mb-1.5 flex items-center gap-2">
+              <div className="border-t border-[var(--color-tremor-border)] px-3 py-2.5">
+                <div className="mb-2 flex items-center gap-2">
                   <Bell
                     className="size-3.5 text-[var(--color-nachipa-primary)]"
                     strokeWidth={1.5}
                     aria-hidden
                   />
-                  <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  <p className="m-0 text-[13px] font-medium leading-5 text-[var(--color-nachipa-title)]">
                     Máximo de recordatorios
                   </p>
                 </div>
@@ -355,19 +361,129 @@ export function NotificacionesVencimiento() {
               />
             </SettingsCard>
 
-            <div className="mt-auto flex shrink-0 justify-end gap-2 pt-1">
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => void load()}
-                className="inline-flex h-[30px] items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[12px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60"
-              >
-                Descartar
-              </button>
-              <Button type="submit" size="small" className="!w-auto" disabled={saving}>
-                {saving ? "Guardando…" : "Guardar"}
-              </Button>
-            </div>
+            <SettingsCard
+              title="Capacitaciones Prevención"
+              description="Vigencia de capacitaciones en ficha. Digest a admin y prevencionista."
+            >
+              <ChannelRow
+                icon={
+                  <Mail
+                    className="size-3.5 text-[var(--color-nachipa-primary)]"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                }
+                title="Correo al tripulante"
+                field="trainingCrewDays"
+                days={settings.trainingCrewDays}
+                onToggleDay={toggleDay}
+              />
+              <ChannelRow
+                icon={
+                  <Users
+                    className="size-3.5 text-[var(--color-nachipa-primary)]"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                }
+                title="Resumen a admin / prevencionista"
+                field="trainingAdminDays"
+                days={settings.trainingAdminDays}
+                onToggleDay={toggleDay}
+              />
+            </SettingsCard>
+
+            <SettingsCard
+              title="Capacitaciones vencidas"
+              description="Recordatorios cuando la capacitación ya venció."
+            >
+              <div className="border-t border-[var(--color-tremor-border)] px-3 py-2.5 first:border-t-0">
+                <div className="mb-2 flex items-center gap-2">
+                  <Mail
+                    className="size-3.5 text-[var(--color-nachipa-primary)]"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                  <p className="m-0 text-[13px] font-medium leading-5 text-[var(--color-nachipa-title)]">
+                    Cada cuántos días
+                  </p>
+                </div>
+                <p className="m-0 mb-2 text-[11px] leading-4 text-[var(--color-nachipa-secondary)]">
+                  0 = desactivado (no se envían recordatorios al tripulante).
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {COURSE_EXPIRED_REPEAT_DAY_OPTIONS.map((value) => (
+                    <OptionChip
+                      key={`training-repeat-${value}`}
+                      label={value === 0 ? "Off" : `${value} d`}
+                      selected={
+                        settings.trainingExpiredCrewRepeatDays === value
+                      }
+                      onToggle={() =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          trainingExpiredCrewRepeatDays: value,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="border-t border-[var(--color-tremor-border)] px-3 py-2.5">
+                <div className="mb-2 flex items-center gap-2">
+                  <Bell
+                    className="size-3.5 text-[var(--color-nachipa-primary)]"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                  <p className="m-0 text-[13px] font-medium leading-5 text-[var(--color-nachipa-title)]">
+                    Máximo de recordatorios
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {COURSE_EXPIRED_MAX_REMINDER_OPTIONS.map((value) => (
+                    <OptionChip
+                      key={`training-max-${value}`}
+                      label={value === 1 ? "1 vez" : `${value} veces`}
+                      selected={
+                        settings.trainingExpiredCrewMaxReminders === value
+                      }
+                      onToggle={() =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          trainingExpiredCrewMaxReminders: value,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            </SettingsCard>
+
+            {canUpdate ? (
+              <div className="mt-auto flex shrink-0 justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void load()}
+                  className="inline-flex h-[30px] items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[12px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60"
+                >
+                  Descartar
+                </button>
+                <Button
+                  type="submit"
+                  size="small"
+                  className="!w-auto"
+                  disabled={saving}
+                >
+                  {saving ? "Guardando…" : "Guardar"}
+                </Button>
+              </div>
+            ) : (
+              <p className="mt-auto shrink-0 pt-1 text-right text-[12px] text-[var(--color-nachipa-secondary)]">
+                Solo lectura · sin permiso para editar hitos
+              </p>
+            )}
           </form>
         )}
       </div>

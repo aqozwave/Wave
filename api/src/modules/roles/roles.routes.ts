@@ -1,7 +1,10 @@
 import { Router } from "express";
+import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
-import { requireSuperadmin } from "../../middlewares/requireSuperadmin.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
+import {
+  requireAnyPermission,
+  requirePermission,
+} from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createRoleHandler,
@@ -16,13 +19,14 @@ import {
   deleteRoleRequestSchema,
   getRoleRequestSchema,
   listRolesRequestSchema,
+  permissionCatalogRequestSchema,
   updateRoleRequestSchema,
 } from "./roles.schemas.js";
 
 /**
  * Rutas de roles bajo /api/v1/roles.
- * Listado: admin o superadmin (selector usuarios).
- * Catálogo + CRUD: solo superadmin.
+ * Listado: roles:read o quien invita/edita usuarios (selector).
+ * Catálogo + detalle + CRUD: roles.*.
  */
 export const rolesRouter = Router();
 
@@ -30,35 +34,55 @@ rolesRouter.use(authenticate);
 
 rolesRouter.get(
   "/",
-  requireTenantManager,
+  requireAnyPermission([
+    {
+      resource: PERMISSION_RESOURCE.ROLES,
+      action: PERMISSION_ACTION.READ,
+    },
+    {
+      resource: PERMISSION_RESOURCE.MAESTROS_USERS,
+      action: PERMISSION_ACTION.CREATE,
+    },
+    {
+      resource: PERMISSION_RESOURCE.MAESTROS_USERS,
+      action: PERMISSION_ACTION.UPDATE,
+    },
+  ]),
   validate(listRolesRequestSchema),
   listRolesHandler,
 );
 
-rolesRouter.use(requireSuperadmin);
-
-rolesRouter.get("/catalog", getPermissionCatalogHandler);
+rolesRouter.get(
+  "/catalog",
+  requirePermission(PERMISSION_RESOURCE.ROLES, PERMISSION_ACTION.READ),
+  validate(permissionCatalogRequestSchema),
+  getPermissionCatalogHandler,
+);
 
 rolesRouter.get(
   "/:id",
+  requirePermission(PERMISSION_RESOURCE.ROLES, PERMISSION_ACTION.READ),
   validate(getRoleRequestSchema),
   getRoleHandler,
 );
 
 rolesRouter.post(
   "/",
+  requirePermission(PERMISSION_RESOURCE.ROLES, PERMISSION_ACTION.CREATE),
   validate(createRoleRequestSchema),
   createRoleHandler,
 );
 
 rolesRouter.patch(
   "/:id",
+  requirePermission(PERMISSION_RESOURCE.ROLES, PERMISSION_ACTION.UPDATE),
   validate(updateRoleRequestSchema),
   updateRoleHandler,
 );
 
 rolesRouter.delete(
   "/:id",
+  requirePermission(PERMISSION_RESOURCE.ROLES, PERMISSION_ACTION.DEACTIVATE),
   validate(deleteRoleRequestSchema),
   deleteRoleHandler,
 );

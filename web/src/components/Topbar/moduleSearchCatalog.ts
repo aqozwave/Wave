@@ -38,9 +38,19 @@ function canSeeCatalogos(user: AuthUser | null): boolean {
   );
 }
 
+/** ¿Puede ver el módulo Prevención? */
+function canSeePrevencionModule(user: AuthUser | null): boolean {
+  return (
+    userHasPermission(user, "permit_types", "read") ||
+    userHasPermission(user, "trainings", "read") ||
+    userHasPermission(user, "work_permits", "read") ||
+    userHasPermission(user, "contractors", "read")
+  );
+}
+
 /**
  * Catálogo de módulos/pantallas buscables.
- * Solo rutas existentes; Prevención se agrega cuando tenga home propia.
+ * Solo rutas existentes.
  */
 export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
   {
@@ -49,7 +59,10 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     group: "Inicio",
     to: "/",
     keywords: ["dashboard", "inicio", "home", "kpi", "nave"],
-    canShow: (u) => u?.internalRol !== "contratista" && u?.internalRol !== "user",
+    canShow: (u) =>
+      u?.internalRol !== "contratista" &&
+      u?.internalRol !== "contratista_faena" &&
+      u?.internalRol !== "user",
   },
   {
     id: "home-contratista",
@@ -57,7 +70,9 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     group: "Inicio",
     to: "/",
     keywords: ["habilitación", "permisos", "personal"],
-    canShow: (u) => u?.internalRol === "contratista",
+    canShow: (u) =>
+      u?.internalRol === "contratista" ||
+      u?.internalRol === "contratista_faena",
   },
   {
     id: "home-tripulante",
@@ -116,9 +131,74 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     canShow: (u) => userHasPermission(u, "cursos.libretas", "read"),
   },
   {
+    id: "prevencion-home",
+    label: "Prevención — Presentación",
+    group: "Prevención",
+    to: "/prevencion",
+    keywords: ["riesgos", "permisos", "hub", "hard hat"],
+    canShow: (u) => canSeePrevencionModule(u),
+  },
+  {
+    id: "prevencion-tipos",
+    label: "Tipos de permiso",
+    group: "Prevención",
+    to: "/prevencion/tipos",
+    keywords: ["cal", "alt", "ecf", "permit types", "checklist"],
+    /** Catálogo de tipos: gestionar (update), no solo read de selects. */
+    canShow: (u) => userHasPermission(u, "permit_types", "update"),
+  },
+  {
+    id: "prevencion-capacitaciones",
+    label: "Capacitaciones",
+    group: "Prevención",
+    to: "/prevencion/capacitaciones",
+    keywords: ["trainings", "ext-01", "odi", "inducción"],
+    canShow: (u) => userHasPermission(u, "trainings", "read"),
+  },
+  {
+    id: "prevencion-capacitaciones-sesiones",
+    label: "Sesiones de capacitación",
+    group: "Prevención",
+    to: "/prevencion/capacitaciones/sesiones",
+    keywords: [
+      "sesión",
+      "grupal",
+      "individual",
+      "acta",
+      "dictar",
+      "capacitación",
+    ],
+    canShow: (u) => userHasPermission(u, "trainings", "read"),
+  },
+  {
+    id: "prevencion-packs",
+    label: "Packs de habilitación",
+    group: "Prevención",
+    to: "/prevencion/packs",
+    keywords: ["pack", "habilitación", "empresa", "persona", "acreditación"],
+    canShow: (u) =>
+      userHasPermission(u, "accreditation_packs", "read"),
+  },
+  {
+    id: "config-contratistas",
+    label: "Contratistas",
+    group: "Configuración",
+    to: "/prevencion/contratistas",
+    keywords: ["organizaciones", "externas", "RUT", "habilitación", "portal"],
+    canShow: (u) => userHasPermission(u, "contractors", "read"),
+  },
+  {
+    id: "prevencion-habilitaciones",
+    label: "Habilitaciones",
+    group: "Prevención",
+    to: "/prevencion/habilitaciones",
+    keywords: ["HAB", "acreditación", "docs", "aprobar"],
+    canShow: (u) => userHasPermission(u, "accreditations", "read"),
+  },
+  {
     id: "notificaciones",
     label: "Notificaciones de vencimiento",
-    group: "Cursos",
+    group: "Sistema",
     to: "/notificaciones",
     keywords: ["avisos", "hitos", "digest"],
     canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
@@ -126,7 +206,7 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
   {
     id: "outbox",
     label: "Outbox de notificaciones",
-    group: "Cursos",
+    group: "Sistema",
     to: "/notificaciones/outbox",
     keywords: ["cola", "correos", "envíos"],
     canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
@@ -138,7 +218,7 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     to: "/empresas",
     keywords: ["tenants", "compañías"],
     canShow: (u) =>
-      u?.internalRol === "superadmin" || u?.internalRol === "admin",
+      userHasPermission(u, "maestros.businesses", "read"),
   },
   {
     id: "flota",
@@ -157,11 +237,19 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     canShow: (u) => canSeeCatalogos(u),
   },
   {
+    id: "flujos-aprobacion",
+    label: "Flujos de aprobación",
+    group: "Configuración",
+    to: "/configuracion/flujos",
+    keywords: ["EST", "etapas", "permiso de trabajo", "P16"],
+    canShow: (u) => userHasPermission(u, "approval_flows", "read"),
+  },
+  {
     id: "usuarios",
     label: "Usuarios",
-    group: "Configuración",
+    group: "Sistema",
     to: "/usuarios",
-    keywords: ["cuentas", "acceso", "rrhh"],
+    keywords: ["cuentas", "acceso", "rrhh", "invitados internos"],
     canShow: (u) => userHasPermission(u, "maestros.users", "read"),
   },
   {
@@ -170,15 +258,15 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     group: "Sistema",
     to: "/roles",
     keywords: ["rbac", "permisos"],
-    canShow: (u) => u?.internalRol === "superadmin",
+    canShow: (u) => userHasPermission(u, "roles", "read"),
   },
   {
     id: "actividad",
-    label: "Registro de actividad",
+    label: "Bitácora",
     group: "Sistema",
     to: "/sistema/actividad",
-    keywords: ["auditoría", "logs"],
-    canShow: (u) => u?.internalRol === "superadmin",
+    keywords: ["auditoría", "logs", "registro de actividad"],
+    canShow: (u) => userHasPermission(u, "sistema.activity_logs", "read"),
   },
 ];
 

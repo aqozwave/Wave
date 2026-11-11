@@ -1,0 +1,43 @@
+meta {
+  name: Get contractor users
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/v1/contractors/{{contractorId}}/users?page=1&limit=20
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  P9b — listado de usuarios invitados de la org (organizationId).
+  Cada item trae invitedBy (quien invitó) o null si es legado.
+  Requiere contractorId (post-contractor o get-contractors).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+  const id = bru.getEnvVar("contractorId");
+  if (!id) {
+    throw new Error("Sin contractorId. Corré Post contractor antes.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.items: isDefined
+  res.body.total: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

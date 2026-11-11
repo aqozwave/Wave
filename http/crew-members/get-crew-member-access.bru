@@ -1,0 +1,35 @@
+meta {
+  name: Get crew member access
+  type: http
+  seq: 21
+}
+
+get {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/access
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Estado Acceso (Figma D44). Variable crewMemberId.
+  linked=false → empty; linked=true → user + scopeSummary.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+}
+
+assert {
+  res.status: eq 200
+  res.body.linked: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

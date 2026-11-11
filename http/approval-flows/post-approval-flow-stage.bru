@@ -1,0 +1,58 @@
+meta {
+  name: Post approval flow stage
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/approval-flows/{{approvalFlowId}}/stages
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "key": "request_close",
+    "label": "Registra el término y entrega el área",
+    "actor": "contractor",
+    "moment": "on_finish",
+    "requiresSignature": true,
+    "mandatory": false
+  }
+}
+
+docs {
+  Agrega etapa extra (máx. 8). Solo flujos personalizados.
+  approvalFlowId = id de un flujo no sistema.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("approvalFlowId")) {
+    throw new Error("Sin approvalFlowId (usá un flujo personalizado).");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body && Array.isArray(body.stages)) {
+    const extra = body.stages.find((s) => s.fixed === false);
+    if (extra) bru.setEnvVar("approvalFlowStageId", extra.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("stageCount creció", function () {
+    const body = res.getBody();
+    expect(body.stageCount).to.be.at.least(6);
+  });
+}

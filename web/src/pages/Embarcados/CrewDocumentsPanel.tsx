@@ -9,6 +9,7 @@ import {
 import { Download, Eye, FileText, Plus, Trash2, Upload } from "lucide-react";
 
 import { Button } from "../../components/Button/Button";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import { Modal } from "../../components/Modal/Modal";
 import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
 import {
@@ -112,6 +113,9 @@ export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
   const [documentTypeId, setDocumentTypeId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  /** Documento pendiente de confirmar borrado (modal del sistema). */
+  const [pendingDelete, setPendingDelete] =
+    useState<CrewMemberDocument | null>(null);
 
   const load = useCallback(async () => {
     if (!accessToken || !businessId) return;
@@ -262,22 +266,24 @@ export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
     }
   }
 
-  /** Soft-delete del documento (permiso embarcados.docs:deactivate). */
-  async function handleDelete(doc: CrewMemberDocument) {
-    if (!accessToken || !canDelete) return;
-    const ok = window.confirm(
-      `¿Eliminar «${doc.originalName}»? Se quitará del expediente.`,
-    );
-    if (!ok) return;
+  /** Abre modal de confirmación de soft-delete. */
+  function requestDelete(doc: CrewMemberDocument) {
+    if (!canDelete) return;
+    setPendingDelete(doc);
+  }
 
-    setBusy({ id: doc.id, mode: "delete" });
+  /** Soft-delete del documento (permiso embarcados.docs:deactivate). */
+  async function confirmDelete() {
+    if (!accessToken || !canDelete || !pendingDelete) return;
+    setBusy({ id: pendingDelete.id, mode: "delete" });
     try {
       await deleteCrewMemberDocumentRequest(
         accessToken,
         crewMemberId,
-        doc.id,
+        pendingDelete.id,
       );
       showToast("Documento eliminado.", "success");
+      setPendingDelete(null);
       await load();
     } catch (err) {
       showToast(
@@ -441,7 +447,7 @@ export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
                               className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)] disabled:opacity-60"
                               disabled={busy?.id === doc.id}
                               onClick={() => {
-                                void handleDelete(doc);
+                                requestDelete(doc);
                               }}
                             >
                               <Trash2
@@ -564,6 +570,26 @@ export function CrewDocumentsPanel({ crewMemberId, businessId }: Props) {
           </div>
         </form>
       </Modal>
+
+      <ConfirmModal
+        open={pendingDelete !== null}
+        title="Eliminar documento"
+        message={
+          pendingDelete
+            ? `¿Eliminar «${pendingDelete.originalName}»?`
+            : "¿Eliminar este documento?"
+        }
+        detail="Se quitará del expediente."
+        confirmLabel="Eliminar"
+        busyLabel="Eliminando…"
+        busy={busy?.mode === "delete"}
+        onClose={() => {
+          if (busy?.mode !== "delete") setPendingDelete(null);
+        }}
+        onConfirm={() => {
+          void confirmDelete();
+        }}
+      />
     </>
   );
 }

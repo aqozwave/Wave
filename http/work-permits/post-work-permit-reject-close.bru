@@ -1,0 +1,49 @@
+meta {
+  name: Post work permit reject-close
+  type: http
+  seq: 16
+}
+
+post {
+  url: {{baseUrl}}/api/v1/work-permits/{{workPermitId}}/reject-close
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "reviewNote": "Trabajo incompleto / no se pudo verificar",
+    "signerName": "Capitan Test",
+    "accepted": true,
+    "signatureImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+  }
+}
+
+docs {
+  P6b: capitán marca sin cierre (+ firma digital).
+  to_verify → no_closure. Variable workPermitId + reviewNote + pad.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("workPermitId")) throw new Error("Sin workPermitId.");
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq no_closure
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

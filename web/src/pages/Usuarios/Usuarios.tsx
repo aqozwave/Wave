@@ -31,7 +31,7 @@ import { TextField } from "../../components/TextField/TextField";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
-import { forgotPasswordRequest } from "../../lib/api/auth";
+import { forgotPasswordRequest, userHasPermission } from "../../lib/api/auth";
 import { listAreasRequest, type Area } from "../../lib/api/areas";
 import { listBusinessesRequest, type Business } from "../../lib/api/businesses";
 import { listLocationsRequest, type Location } from "../../lib/api/locations";
@@ -47,6 +47,9 @@ import {
 } from "../../lib/api/users";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { isRutValid, normalizeRut } from "../../lib/rut";
+
+/** Recurso RBAC de esta pantalla (catálogo Maestros · Usuarios). */
+const USERS_RESOURCE = "maestros.users";
 
 /** MIME de foto de perfil (misma lista que la API). */
 const PHOTO_MIME_OK = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -328,6 +331,14 @@ export function Usuarios() {
   const { accessToken, user, refreshProfile } = useAuth();
   const { showToast } = useToast();
   const isSuperadmin = user?.internalRol === "superadmin";
+  /** Invitar: create. */
+  const canCreate = userHasPermission(user, USERS_RESOURCE, "create");
+  /** Editar datos, foto, unlock, restablecer, cambiar rol. */
+  const canUpdate = userHasPermission(user, USERS_RESOURCE, "update");
+  /** Activar / desactivar (no aplica sobre la propia cuenta). */
+  const canDeactivate = userHasPermission(user, USERS_RESOURCE, "deactivate");
+  /** Si no hay ninguna acción, no mostramos el kebab. */
+  const canShowRowMenu = canUpdate || canDeactivate;
 
   const [items, setItems] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -393,7 +404,13 @@ export function Usuarios() {
         listAreasRequest(accessToken),
       ]);
       setBusinesses(biz.items);
-      setRoles(roleList.items);
+      // Portal contratista (dueño/faena) se invita solo desde Contratistas.
+      setRoles(
+        roleList.items.filter(
+          (role) =>
+            role.key !== "contratista" && role.key !== "contratista_faena",
+        ),
+      );
       setLocations(locs.items);
       setAreas(areaList.items);
     } catch {
@@ -516,6 +533,7 @@ export function Usuarios() {
   }
 
   function openInvite() {
+    if (!canCreate) return;
     setEditing(null);
     setMenuId(null);
     setForm({
@@ -526,6 +544,7 @@ export function Usuarios() {
   }
 
   function openEdit(row: AdminUser) {
+    if (!canUpdate) return;
     setEditing(row);
     setMenuId(null);
     setForm(formFromRow(row));
@@ -536,6 +555,8 @@ export function Usuarios() {
   }
 
   function openRole(row: AdminUser) {
+    if (!canUpdate) return;
+    if (row.id === user?.id) return;
     if (isLastSuperadmin(row)) return;
     setEditing(row);
     setMenuId(null);
@@ -746,6 +767,7 @@ export function Usuarios() {
   }
 
   async function onResetPassword(row: AdminUser) {
+    if (!canUpdate) return;
     setMenuId(null);
     try {
       await forgotPasswordRequest(row.email);
@@ -759,7 +781,7 @@ export function Usuarios() {
   }
 
   async function onToggleActive(row: AdminUser) {
-    if (!accessToken) return;
+    if (!accessToken || !canDeactivate) return;
     setMenuId(null);
     if (isLastSuperadmin(row)) {
       showToast(LAST_SUPERADMIN_HINT, "danger");
@@ -785,7 +807,7 @@ export function Usuarios() {
   }
 
   async function onUnlock(row: AdminUser) {
-    if (!accessToken) return;
+    if (!accessToken || !canUpdate) return;
     setMenuId(null);
     try {
       await unlockUserRequest(accessToken, row.id);
@@ -804,11 +826,13 @@ export function Usuarios() {
 
   const menuRow = menuId ? items.find((row) => row.id === menuId) : undefined;
   const menuLocked = menuRow ? isLastSuperadmin(menuRow) : false;
+  /** Fila del usuario logueado: no desactivar ni cambiar rol. */
+  const menuIsSelf = Boolean(menuRow && menuRow.id === user?.id);
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#f9fafc]">
       <Topbar
-        breadcrumb={isSuperadmin ? "Sistema / Usuarios" : "Configuración / Usuarios"}
+        breadcrumb="Sistema / Usuarios"
         breadcrumbIcon={Users}
         actions={<UserMenu />}
       />
@@ -817,7 +841,7 @@ export function Usuarios() {
         <div className="flex shrink-0 items-center gap-2">
           <div className="min-w-0 flex-1">
             <h1 className="text-[20px] font-semibold leading-[26px] text-[var(--color-nachipa-title)]">
-              {isSuperadmin ? "Usuarios del sistema" : "Usuarios"}
+              Usuarios del sistema
             </h1>
             <p className="mt-1 text-[13px] leading-[19px] text-[var(--color-nachipa-secondary)]">
               {isSuperadmin
@@ -825,10 +849,16 @@ export function Usuarios() {
                 : `${countPhrase(statusCounts.active, "activo", "activos")} y ${countPhrase(statusCounts.invited, "invitado", "invitados")}. Los tripulantes sin acceso al portal igual reciben avisos por correo.`}
             </p>
           </div>
-          <Button type="button" className="!w-auto shrink-0 !font-medium" onClick={openInvite}>
-            <Plus className="size-4" strokeWidth={1.5} aria-hidden />
-            Invitar usuario
-          </Button>
+          {canCreate ? (
+            <Button
+              type="button"
+              className="!w-auto shrink-0 !font-medium"
+              onClick={openInvite}
+            >
+              <Plus className="size-4" strokeWidth={1.5} aria-hidden />
+              Invitar usuario
+            </Button>
+          ) : null}
         </div>
 
         {/* Tarjeta DataTable Figma: toolbar con search + filtros, pie con paginación. */}
@@ -991,19 +1021,21 @@ export function Usuarios() {
                           {lastAccessLabel(row)}
                         </td>
                         <td className="h-14 px-1 text-right">
-                          <button
-                            type="button"
-                            className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
-                            aria-label={`Acciones de ${fullName(row)}`}
-                            aria-expanded={menuId === row.id}
-                            onClick={(event) => toggleMenu(row.id, event)}
-                          >
-                            <MoreVertical
-                              className="size-[18px]"
-                              strokeWidth={1.5}
-                              aria-hidden
-                            />
-                          </button>
+                          {canShowRowMenu ? (
+                            <button
+                              type="button"
+                              className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
+                              aria-label={`Acciones de ${fullName(row)}`}
+                              aria-expanded={menuId === row.id}
+                              onClick={(event) => toggleMenu(row.id, event)}
+                            >
+                              <MoreVertical
+                                className="size-[18px]"
+                                strokeWidth={1.5}
+                                aria-hidden
+                              />
+                            </button>
+                          ) : null}
                         </td>
                       </tr>
                     );
@@ -1039,49 +1071,73 @@ export function Usuarios() {
           }}
         />
       ) : null}
-      {menuRow && menuPos ? (
+      {menuRow && menuPos && canShowRowMenu ? (
         <div
           className="fixed z-30 w-[260px] rounded-[10px] border border-[var(--color-tremor-border)] bg-white p-1.5 shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]"
           style={{ top: menuPos.top, right: menuPos.right }}
           role="menu"
         >
-          <MenuItem
-            title="Editar datos"
-            hint="Nombre y correo"
-            onClick={() => openEdit(menuRow)}
-          />
-          <MenuItem
-            title="Restablecer contraseña"
-            hint="Envía un link por correo"
-            onClick={() => void onResetPassword(menuRow)}
-          />
-          {isLocked(menuRow) ? (
+          {canUpdate ? (
+            <MenuItem
+              title="Editar datos"
+              hint="Nombre y correo"
+              onClick={() => openEdit(menuRow)}
+            />
+          ) : null}
+          {canUpdate ? (
+            <MenuItem
+              title="Restablecer contraseña"
+              hint="Envía un link por correo"
+              onClick={() => void onResetPassword(menuRow)}
+            />
+          ) : null}
+          {canUpdate && isLocked(menuRow) ? (
             <MenuItem
               title="Desbloquear"
               hint="Limpia el bloqueo por intentos"
               onClick={() => void onUnlock(menuRow)}
             />
           ) : null}
-          <MenuItem
-            title="Cambiar rol"
-            hint={menuLocked ? "Único Superadmin activo" : roleLabel(menuRow)}
-            disabled={menuLocked}
-            disabledReason={LAST_SUPERADMIN_HINT}
-            onClick={() => openRole(menuRow)}
-          />
-          <MenuItem
-            title={menuRow.state ? "Desactivar usuario" : "Activar usuario"}
-            hint={
-              menuLocked
-                ? "Único Superadmin activo"
-                : menuRow.state
-                  ? "Deja de tener acceso"
-                  : "Vuelve a tener acceso"
-            }
-            disabled={menuLocked}
-            disabledReason={LAST_SUPERADMIN_HINT}
-            onClick={() => void onToggleActive(menuRow)}
-          />
+          {canUpdate ? (
+            <MenuItem
+              title="Cambiar rol"
+              hint={
+                menuIsSelf
+                  ? "No puedes cambiar tu propio rol"
+                  : menuLocked
+                    ? "Único Superadmin activo"
+                    : roleLabel(menuRow)
+              }
+              disabled={menuLocked || menuIsSelf}
+              disabledReason={
+                menuIsSelf
+                  ? "No puedes cambiar tu propio rol."
+                  : LAST_SUPERADMIN_HINT
+              }
+              onClick={() => openRole(menuRow)}
+            />
+          ) : null}
+          {canDeactivate ? (
+            <MenuItem
+              title={menuRow.state ? "Desactivar usuario" : "Activar usuario"}
+              hint={
+                menuIsSelf && menuRow.state
+                  ? "No puedes desactivar tu propia cuenta"
+                  : menuLocked
+                    ? "Único Superadmin activo"
+                    : menuRow.state
+                      ? "Deja de tener acceso"
+                      : "Vuelve a tener acceso"
+              }
+              disabled={menuLocked || (menuIsSelf && menuRow.state)}
+              disabledReason={
+                menuIsSelf && menuRow.state
+                  ? "No puedes desactivar tu propia cuenta."
+                  : LAST_SUPERADMIN_HINT
+              }
+              onClick={() => void onToggleActive(menuRow)}
+            />
+          ) : null}
         </div>
       ) : null}
 

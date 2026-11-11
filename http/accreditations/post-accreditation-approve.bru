@@ -1,0 +1,38 @@
+meta {
+  name: Post accreditation approve
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/accreditations/{{accreditationId}}/approve
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  in_review → approved. Correr submit antes.
+  Estricto: pack empresa 100% validado y vigente; si no → 422 company_pack_incomplete.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const id = bru.getEnvVar("accreditationId");
+  if (!token || !id) {
+    throw new Error("Definí accessToken y accreditationId");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq approved
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

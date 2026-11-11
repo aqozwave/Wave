@@ -7,6 +7,11 @@ export const notificationOutboxTypeSchema = z.enum([
   "course_expired",
   "boarding_book_admin_digest",
   "course_admin_digest",
+  "training_expiring",
+  "training_expired",
+  "training_admin_digest",
+  "work_notice_created",
+  "work_permit_created",
 ]);
 
 /** Estados del worker. */
@@ -122,6 +127,13 @@ export const processBoardingBookExpiryResponseSchema = z
     warningDays: z.number().int(),
   })
   .openapi("ProcessBoardingBookExpiryResponse");
+
+/**
+ * Resultado del generador manual de avisos de capacitaciones.
+ * Misma forma que cursos (tripulante + digest admin/prevencionista).
+ */
+export const processTrainingExpiryResponseSchema =
+  processCourseExpiryResponseSchema.openapi("ProcessTrainingExpiryResponse");
 
 /** Query opcional del worker manual. */
 export const processOutboxQuerySchema = z.object({

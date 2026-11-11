@@ -7,6 +7,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Button } from "../../components/Button/Button";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import {
   DataTableCard,
   DataTableOutlineButton,
@@ -25,17 +26,41 @@ import { Toggle } from "../../components/Toggle/Toggle";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
+import { userHasPermission } from "../../lib/api/auth";
 import {
   createBusinessRequest,
   deleteBusinessRequest,
   listBusinessesRequest,
+  listBusinessModulesRequest,
+  patchBusinessModuleRequest,
   updateBusinessRequest,
   type Business,
+  type BusinessModule,
+  type BusinessModuleKey,
   type BusinessWriteBody,
 } from "../../lib/api/businesses";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { downloadXls } from "../../lib/exportXls";
 import { isRutValid, normalizeRut } from "../../lib/rut";
+
+/** Etiquetas S6 de submódulos Prevención. */
+const MODULE_LABELS: Record<
+  BusinessModuleKey,
+  { title: string; hint: string }
+> = {
+  contractors: {
+    title: "Contratistas",
+    hint: "Empresas externas, habilitación y documentos",
+  },
+  work_permits: {
+    title: "Permisos de trabajo",
+    hint: "Avisos, tipos y PT (requiere Contratistas)",
+  },
+  trainings: {
+    title: "Capacitaciones",
+    hint: "Capacitaciones del módulo Prevención",
+  },
+};
 
 /** Form create (Figma 1 paso) + edit extendido. */
 type FormState = {
@@ -90,6 +115,18 @@ export function Empresas() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const isSuperadmin = user?.internalRol === "superadmin";
+  /** Alta de empresa según RBAC. */
+  const canCreate = userHasPermission(user, "maestros.businesses", "create");
+  /** Editar empresa según RBAC. */
+  const canUpdate = userHasPermission(user, "maestros.businesses", "update");
+  /** Desactivar / eliminar empresa según RBAC. */
+  const canDeactivate = userHasPermission(
+    user,
+    "maestros.businesses",
+    "deactivate",
+  );
+  /** Menú de fila si hay al menos una mutación. */
+  const canShowRowMenu = canUpdate || canDeactivate;
 
   const [items, setItems] = useState<Business[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,8 +135,17 @@ export function Empresas() {
   const [editing, setEditing] = useState<Business | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
+  /** Interruptores Prevención (solo al editar como superadmin). */
+  const [modules, setModules] = useState<BusinessModule[]>([]);
+  const [modulesLoading, setModulesLoading] = useState(false);
+  const [moduleSavingKey, setModuleSavingKey] = useState<BusinessModuleKey | null>(
+    null,
+  );
   /** Menú kebab abierto por fila. */
   const [menuId, setMenuId] = useState<string | null>(null);
+  /** Empresa pendiente de confirmar eliminación (modal del sistema). */
+  const [pendingDelete, setPendingDelete] = useState<Business | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -140,12 +186,15 @@ export function Empresas() {
     useClientTablePagination(filtered);
 
   function openCreate() {
+    if (!canCreate) return;
     setEditing(null);
     setForm(EMPTY_FORM);
+    setModules([]);
     setModalOpen(true);
   }
 
   function openEdit(row: Business) {
+    if (!canUpdate) return;
     setEditing(row);
     setMenuId(null);
     setForm({
@@ -161,13 +210,80 @@ export function Empresas() {
       state: row.state,
       adminEmail: "",
     });
+    setModules([]);
     setModalOpen(true);
+    if (isSuperadmin && accessToken) {
+      setModulesLoading(true);
+      void listBusinessModulesRequest(accessToken, row.id)
+        .then((result) => setModules(result.items))
+        .catch((err) => {
+          showToast(
+            err instanceof ApiError
+              ? err.message
+              : "No se pudieron cargar los módulos.",
+            "danger",
+          );
+        })
+        .finally(() => setModulesLoading(false));
+    }
   }
 
   function closeModal() {
     setModalOpen(false);
     setEditing(null);
     setForm(EMPTY_FORM);
+    setModules([]);
+    setModuleSavingKey(null);
+  }
+
+  /** S6: prende/apaga un submódulo Prevención (inmediato, fuera del form). */
+  async function onToggleModule(key: BusinessModuleKey, enabled: boolean) {
+    if (!accessToken || !editing) return;
+    setModuleSavingKey(key);
+    try {
+      const result = await patchBusinessModuleRequest(
+        accessToken,
+        editing.id,
+        key,
+        enabled,
+      );
+      setModules((prev) => {
+        const next = prev.map((row) =>
+          row.key === result.item.key ? result.item : row,
+        );
+        /** R-02: contractors off también apaga work_permits en UI. */
+        if (result.cascadedOff.length > 0) {
+          return next.map((row) =>
+            result.cascadedOff.includes(row.key)
+              ? {
+                  ...row,
+                  enabled: false,
+                  enabledAt: null,
+                  enabledById: null,
+                }
+              : row,
+          );
+        }
+        return next;
+      });
+      const cascade =
+        result.cascadedOff.length > 0
+          ? ` También se apagó: ${result.cascadedOff.join(", ")}.`
+          : "";
+      showToast(
+        enabled
+          ? `Módulo ${MODULE_LABELS[key].title} activado.`
+          : `Módulo ${MODULE_LABELS[key].title} desactivado.${cascade}`,
+        "success",
+      );
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? err.message : "No se pudo cambiar el módulo.",
+        "danger",
+      );
+    } finally {
+      setModuleSavingKey(null);
+    }
   }
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -202,7 +318,7 @@ export function Empresas() {
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!accessToken) return;
+    if (!accessToken || !(editing ? canUpdate : canCreate)) return;
     if (!form.name.trim()) {
       showToast("El nombre es requerido.", "danger");
       return;
@@ -246,22 +362,29 @@ export function Empresas() {
     }
   }
 
-  async function onDelete(row: Business) {
-    if (!accessToken || !isSuperadmin) return;
+  /** Abre modal de confirmación de eliminación. */
+  function requestDelete(row: Business) {
+    if (!canDeactivate) return;
     setMenuId(null);
-    const ok = window.confirm(
-      `¿Eliminar la empresa «${displayName(row.name)}»? Quedará desactivada.`,
-    );
-    if (!ok) return;
+    setPendingDelete(row);
+  }
+
+  /** Soft-delete confirmado. */
+  async function confirmDelete() {
+    if (!accessToken || !canDeactivate || !pendingDelete) return;
+    setDeleting(true);
     try {
-      await deleteBusinessRequest(accessToken, row.id);
+      await deleteBusinessRequest(accessToken, pendingDelete.id);
       showToast("Empresa eliminada.", "success");
+      setPendingDelete(null);
       await load();
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo eliminar.",
         "danger",
       );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -313,7 +436,7 @@ export function Empresas() {
               : "Administra la información de tu empresa."
           }
           actions={
-            isSuperadmin ? (
+            canCreate ? (
               <Button type="button" className="!w-auto shrink-0" onClick={openCreate}>
                 <Plus className="size-4" strokeWidth={1.5} aria-hidden />
                 Nueva empresa
@@ -409,40 +532,50 @@ export function Empresas() {
                     </StatusChip>
                   </td>
                   <td className="relative h-[52px] px-3 text-right">
-                    <button
-                      type="button"
-                      className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
-                      aria-label="Acciones"
-                      onClick={() =>
-                        setMenuId((id) => (id === row.id ? null : row.id))
-                      }
-                    >
-                      <MoreVertical
-                        className="size-[18px]"
-                        strokeWidth={1.5}
-                        aria-hidden
-                      />
-                    </button>
-                    {menuId === row.id ? (
-                      <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
+                    {canShowRowMenu ? (
+                      <>
                         <button
                           type="button"
-                          className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                          onClick={() => openEdit(row)}
+                          className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-icon-default)] hover:bg-[var(--color-nachipa-bg-page)]"
+                          aria-label="Acciones"
+                          onClick={() =>
+                            setMenuId((id) => (id === row.id ? null : row.id))
+                          }
                         >
-                          Editar
+                          <MoreVertical
+                            className="size-[18px]"
+                            strokeWidth={1.5}
+                            aria-hidden
+                          />
                         </button>
-                        {isSuperadmin ? (
-                          <button
-                            type="button"
-                            className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                            onClick={() => void onDelete(row)}
-                          >
-                            Eliminar
-                          </button>
+                        {menuId === row.id ? (
+                          <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
+                            {canUpdate ? (
+                              <button
+                                type="button"
+                                className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                onClick={() => openEdit(row)}
+                              >
+                                Editar
+                              </button>
+                            ) : null}
+                            {canDeactivate ? (
+                              <button
+                                type="button"
+                                className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
+                                onClick={() => requestDelete(row)}
+                              >
+                                Eliminar
+                              </button>
+                            ) : null}
+                          </div>
                         ) : null}
-                      </div>
-                    ) : null}
+                      </>
+                    ) : (
+                      <span className="text-[var(--color-nachipa-secondary)]">
+                        —
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -639,6 +772,53 @@ export function Empresas() {
                   />
                 </div>
               ) : null}
+              {isSuperadmin ? (
+                <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] px-3.5 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                      Módulos Prevención
+                    </p>
+                    <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                      Se guardan al instante. Sin módulo activo no aparecen en
+                      Roles ni en el menú del tenant.
+                    </p>
+                  </div>
+                  {modulesLoading ? (
+                    <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                      Cargando módulos…
+                    </p>
+                  ) : (
+                    <ul className="m-0 flex list-none flex-col gap-2 p-0">
+                      {modules.map((mod) => {
+                        const meta = MODULE_LABELS[mod.key];
+                        return (
+                          <li
+                            key={mod.key}
+                            className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] bg-[var(--color-nachipa-bg-page)] px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                                {meta.title}
+                              </p>
+                              <p className="m-0 text-[11px] text-[var(--color-nachipa-secondary)]">
+                                {meta.hint}
+                              </p>
+                            </div>
+                            <Toggle
+                              checked={mod.enabled}
+                              disabled={moduleSavingKey === mod.key}
+                              onChange={(next) =>
+                                void onToggleModule(mod.key, next)
+                              }
+                              aria-label={meta.title}
+                            />
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
             </>
           ) : (
             <div>
@@ -657,6 +837,26 @@ export function Empresas() {
           )}
         </form>
       </Modal>
+
+      <ConfirmModal
+        open={pendingDelete !== null}
+        title="Eliminar empresa"
+        message={
+          pendingDelete
+            ? `¿Eliminar la empresa «${displayName(pendingDelete.name)}»?`
+            : "¿Eliminar esta empresa?"
+        }
+        detail="Quedará desactivada."
+        confirmLabel="Eliminar"
+        busyLabel="Eliminando…"
+        busy={deleting}
+        onClose={() => {
+          if (!deleting) setPendingDelete(null);
+        }}
+        onConfirm={() => {
+          void confirmDelete();
+        }}
+      />
     </div>
   );
 }

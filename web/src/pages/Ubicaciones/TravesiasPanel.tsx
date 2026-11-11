@@ -14,6 +14,7 @@ import {
   DataTableOutlineButton,
   DataTableSearch,
 } from "../../components/DataTableCard/DataTableCard";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import { Modal } from "../../components/Modal/Modal";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
 import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
@@ -24,6 +25,7 @@ import {
 import { TextField } from "../../components/TextField/TextField";
 import { Toggle } from "../../components/Toggle/Toggle";
 import { useToast } from "../../components/Toast/ToastProvider";
+import { userHasPermission } from "../../lib/api/auth";
 import {
   listBusinessesRequest,
   type Business,
@@ -80,8 +82,14 @@ export const TravesiasPanel = forwardRef<TravesiasPanelHandle>(
     const { accessToken, user } = useAuth();
     const { showToast } = useToast();
     const isSuperadmin = user?.internalRol === "superadmin";
-    const canManage =
-      user?.internalRol === "admin" || user?.internalRol === "superadmin";
+    /** Alta de travesía según RBAC. */
+    const canCreate = userHasPermission(user, "maestros.travesias", "create");
+    /** Editar travesía según RBAC. */
+    const canUpdate = userHasPermission(user, "maestros.travesias", "update");
+    /** Desactivar / eliminar travesía según RBAC. */
+    const canDeactivate = userHasPermission(user, "maestros.travesias", "deactivate");
+    /** Alta / editar / desactivar según RBAC (no internalRol). */
+    const canManage = canCreate || canUpdate || canDeactivate;
 
     const [items, setItems] = useState<Travesia[]>([]);
     const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -92,6 +100,9 @@ export const TravesiasPanel = forwardRef<TravesiasPanelHandle>(
     const [form, setForm] = useState<FormState>(EMPTY_FORM);
     const [submitting, setSubmitting] = useState(false);
     const [menuId, setMenuId] = useState<string | null>(null);
+    /** Fila pendiente de confirmar eliminación (modal del sistema). */
+    const [pendingDelete, setPendingDelete] = useState<Travesia | null>(null);
+    const [deleting, setDeleting] = useState(false);
     /** Dirección de orden por nombre; null = sin ordenar. */
     const [nameSort, setNameSort] = useState<"asc" | "desc" | null>(null);
 
@@ -199,7 +210,7 @@ export const TravesiasPanel = forwardRef<TravesiasPanelHandle>(
 
     async function onSubmit(event: FormEvent) {
       event.preventDefault();
-      if (!accessToken || !canManage) return;
+      if (!accessToken || !(editing ? canUpdate : canCreate)) return;
       if (!form.name.trim()) {
         showToast("El nombre es requerido.", "danger");
         return;
@@ -249,22 +260,28 @@ export const TravesiasPanel = forwardRef<TravesiasPanelHandle>(
       }
     }
 
-    async function onDelete(row: Travesia) {
-      if (!accessToken || !canManage) return;
+    function requestDelete(row: Travesia) {
+      if (!canDeactivate) return;
       setMenuId(null);
-      const ok = window.confirm(
-        `¿Eliminar la travesía «${displayName(row.name)}»? Quedará desactivada.`,
-      );
-      if (!ok) return;
+      setPendingDelete(row);
+    }
+
+    /** Soft-delete confirmado vía modal del sistema. */
+    async function confirmDelete() {
+      if (!accessToken || !canDeactivate || !pendingDelete) return;
+      setDeleting(true);
       try {
-        await deleteTravesiaRequest(accessToken, row.id);
+        await deleteTravesiaRequest(accessToken, pendingDelete.id);
         showToast("Travesía eliminada.", "success");
+        setPendingDelete(null);
         await load();
       } catch (err) {
         showToast(
           err instanceof ApiError ? err.message : "No se pudo eliminar.",
           "danger",
         );
+      } finally {
+        setDeleting(false);
       }
     }
 
@@ -421,20 +438,24 @@ export const TravesiasPanel = forwardRef<TravesiasPanelHandle>(
                         </button>
                         {menuId === row.id ? (
                           <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
-                            <button
-                              type="button"
-                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                              onClick={() => openEdit(row)}
-                            >
-                              Editar
-                            </button>
-                            <button
-                              type="button"
-                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                              onClick={() => void onDelete(row)}
-                            >
-                              Eliminar
-                            </button>
+                            {canUpdate ? (
+                              <button
+                                type="button"
+                                className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                onClick={() => openEdit(row)}
+                              >
+                                Editar
+                              </button>
+                            ) : null}
+                            {canDeactivate ? (
+                              <button
+                                type="button"
+                                className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
+                                onClick={() => requestDelete(row)}
+                              >
+                                Eliminar
+                              </button>
+                            ) : null}
                           </div>
                         ) : null}
                       </>
@@ -560,6 +581,26 @@ export const TravesiasPanel = forwardRef<TravesiasPanelHandle>(
             </div>
           </form>
         </Modal>
+
+        <ConfirmModal
+          open={pendingDelete !== null}
+          title="Eliminar travesía"
+          message={
+            pendingDelete
+              ? `¿Eliminar la travesía «${displayName(pendingDelete.name)}»?`
+              : "¿Eliminar esta travesía?"
+          }
+          detail="Quedará desactivada."
+          confirmLabel="Eliminar"
+          busyLabel="Eliminando…"
+          busy={deleting}
+          onClose={() => {
+            if (!deleting) setPendingDelete(null);
+          }}
+          onConfirm={() => {
+            void confirmDelete();
+          }}
+        />
       </>
     );
   },

@@ -1,0 +1,62 @@
+meta {
+  name: Post permit type
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/v1/permit-types
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "code": "TST",
+    "name": "Tipo de prueba",
+    "criticality": "medium",
+    "requiresAst": false,
+    "description": "Solo para Bruno",
+    "active": true,
+    "businessId": "{{businessId}}"
+  }
+}
+
+docs {
+  Admin o superadmin + permit_types.create.
+  Superadmin: businessId obligatorio.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const businessId = bru.getEnvVar("businessId");
+  if (!token || !businessId) {
+    throw new Error("Definí accessToken y businessId en el entorno local");
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body && body.id) {
+    bru.setEnvVar("permitTypeId", body.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.code: eq TST
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

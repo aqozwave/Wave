@@ -171,6 +171,7 @@ export async function getDashboardSummary(
     crewCount: number;
     compliantCrewCount: number;
     compliancePercent: number | null;
+    completedTrainingSessionsCount: number;
   }>;
 }> {
   const resolved = resolveDashboardScope(actor);
@@ -475,6 +476,25 @@ export async function getDashboardSummary(
     vesselAggs.set(loc.id, agg);
   }
 
+  // Sesiones Prevención cerradas por nave (mismo alcance de crewWhere).
+  const sessionCountWhere: {
+    deletedAt: null;
+    status: "completed";
+    businessId?: string;
+    locationId?: string;
+  } = { deletedAt: null, status: "completed" };
+  if (crewWhere.businessId) sessionCountWhere.businessId = crewWhere.businessId;
+  if (crewWhere.locationId) sessionCountWhere.locationId = crewWhere.locationId;
+
+  const completedSessionGroups = await prisma.trainingSession.groupBy({
+    by: ["locationId"],
+    where: sessionCountWhere,
+    _count: { _all: true },
+  });
+  const completedByLocation = new Map(
+    completedSessionGroups.map((g) => [g.locationId, g._count._all]),
+  );
+
   const vessels = [...vesselAggs.values()]
     .map((agg) => ({
       locationId: agg.locationId,
@@ -485,6 +505,8 @@ export async function getDashboardSummary(
         agg.pctCount === 0
           ? null
           : Math.round(agg.pctSum / agg.pctCount),
+      completedTrainingSessionsCount:
+        completedByLocation.get(agg.locationId) ?? 0,
     }))
     // Peor cumplimiento primero; sin dato al final; empate por nombre.
     .sort((a, b) => {

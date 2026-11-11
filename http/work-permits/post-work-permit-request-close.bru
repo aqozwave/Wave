@@ -1,0 +1,47 @@
+meta {
+  name: Post work permit request-close
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{baseUrl}}/api/v1/work-permits/{{workPermitId}}/request-close
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "observation": "Trabajo terminado; equipos retirados. Favor verificar a bordo."
+  }
+}
+
+docs {
+  P6a: contratista o staff (update) pide cierre.
+  active → to_verify. observation opcional (comentario al capitán).
+  Variable workPermitId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken.");
+  if (!bru.getEnvVar("workPermitId")) throw new Error("Sin workPermitId.");
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq to_verify
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

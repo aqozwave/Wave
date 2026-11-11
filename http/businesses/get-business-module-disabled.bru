@@ -1,0 +1,37 @@
+meta {
+  name: Get business module (disabled → 403)
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/api/v1/businesses/{{businessId}}/modules/contractors
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  P0 · requireModule: con contractors apagado (o sin fila) → 403 MODULE_DISABLED.
+  Variable businessId = UUID de una empresa local.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+  const businessId = bru.getVar("businessId") || bru.getEnvVar("businessId");
+  if (!businessId) throw new Error("Definí businessId en el entorno Bruno");
+}
+
+assert {
+  res.status: eq 403
+  res.body.code: eq MODULE_DISABLED
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

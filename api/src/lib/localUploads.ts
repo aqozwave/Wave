@@ -221,3 +221,187 @@ export async function unlinkUserPhotoFile(
     // ya borrado
   }
 }
+
+/** Reusa límites MIME/tamaño de docs de crew para docs de org contratista. */
+export const MAX_CONTRACTOR_ORG_DOC_BYTES = MAX_CREW_DOC_BYTES;
+export const ALLOWED_CONTRACTOR_ORG_DOC_MIMES = ALLOWED_CREW_DOC_MIMES;
+
+/**
+ * Ruta relativa de documento de org en una HAB.
+ * /uploads/{businessId}/contractors/{orgId}/accreditations/{habId}/{code}/{rand}.ext
+ */
+export function buildContractorOrgDocumentRelativePath(input: {
+  businessId: string;
+  organizationId: string;
+  accreditationId: string;
+  type: string;
+  mimeType: string;
+}): string {
+  const sub = folderForDocType(input.type);
+  const rand = crypto.randomBytes(8).toString("hex");
+  const ext = extensionForMime(input.mimeType);
+  return `${RELATIVE_PREFIX}/${input.businessId}/contractors/${input.organizationId}/accreditations/${input.accreditationId}/${sub}/${rand}${ext}`;
+}
+
+/** True si la ruta es de docs de org contratista bajo /uploads/. */
+export function isContractorOrgDocumentRelativePath(
+  relativePath: string,
+): boolean {
+  return (
+    relativePath.startsWith(`${RELATIVE_PREFIX}/`) &&
+    relativePath.includes("/contractors/") &&
+    relativePath.includes("/accreditations/")
+  );
+}
+
+/** Escribe buffer de doc de org contratista. */
+export async function writeContractorOrgDocumentFile(input: {
+  businessId: string;
+  organizationId: string;
+  accreditationId: string;
+  type: string;
+  mimeType: string;
+  buffer: Buffer;
+}): Promise<{ relativePath: string; fullPath: string; size: number }> {
+  const relativePath = buildContractorOrgDocumentRelativePath(input);
+  const fullPath = resolveUploadFullPath(relativePath);
+  if (!fullPath) {
+    throw new Error("Ruta de upload inválida");
+  }
+  await fs.mkdir(path.dirname(fullPath), { recursive: true });
+  await fs.writeFile(fullPath, input.buffer);
+  return { relativePath, fullPath, size: input.buffer.length };
+}
+
+/** Borra archivo de doc de org si la ruta es válida. */
+export async function unlinkContractorOrgDocumentFile(
+  relativePath: string,
+): Promise<void> {
+  if (!isContractorOrgDocumentRelativePath(relativePath)) return;
+  const fullPath = resolveUploadFullPath(relativePath);
+  if (!fullPath) return;
+  try {
+    await fs.unlink(fullPath);
+  } catch {
+    // ya borrado
+  }
+}
+
+/**
+ * Ruta relativa de documento de persona en una HAB.
+ * /uploads/{businessId}/contractors/{orgId}/people/{personId}/accreditations/{habId}/{code}/{rand}.ext
+ */
+export function buildContractorPersonDocumentRelativePath(input: {
+  businessId: string;
+  organizationId: string;
+  personId: string;
+  accreditationId: string;
+  type: string;
+  mimeType: string;
+}): string {
+  const sub = folderForDocType(input.type);
+  const rand = crypto.randomBytes(8).toString("hex");
+  const ext = extensionForMime(input.mimeType);
+  return `${RELATIVE_PREFIX}/${input.businessId}/contractors/${input.organizationId}/people/${input.personId}/accreditations/${input.accreditationId}/${sub}/${rand}${ext}`;
+}
+
+/** True si la ruta es de docs de persona bajo /uploads/. */
+export function isContractorPersonDocumentRelativePath(
+  relativePath: string,
+): boolean {
+  return (
+    relativePath.startsWith(`${RELATIVE_PREFIX}/`) &&
+    relativePath.includes("/contractors/") &&
+    relativePath.includes("/people/") &&
+    relativePath.includes("/accreditations/")
+  );
+}
+
+/** Escribe buffer de doc de persona. */
+export async function writeContractorPersonDocumentFile(input: {
+  businessId: string;
+  organizationId: string;
+  personId: string;
+  accreditationId: string;
+  type: string;
+  mimeType: string;
+  buffer: Buffer;
+}): Promise<{ relativePath: string; fullPath: string; size: number }> {
+  const relativePath = buildContractorPersonDocumentRelativePath(input);
+  const fullPath = resolveUploadFullPath(relativePath);
+  if (!fullPath) {
+    throw new Error("Ruta de upload inválida");
+  }
+  await fs.mkdir(path.dirname(fullPath), { recursive: true });
+  await fs.writeFile(fullPath, input.buffer);
+  return { relativePath, fullPath, size: input.buffer.length };
+}
+
+/** Borra archivo de doc de persona si la ruta es válida. */
+export async function unlinkContractorPersonDocumentFile(
+  relativePath: string,
+): Promise<void> {
+  if (!isContractorPersonDocumentRelativePath(relativePath)) return;
+  const fullPath = resolveUploadFullPath(relativePath);
+  if (!fullPath) return;
+  try {
+    await fs.unlink(fullPath);
+  } catch {
+    // ya borrado
+  }
+}
+
+/**
+ * Ruta relativa del acta de una sesión de capacitación.
+ * /uploads/{businessId}/training-sessions/{sessionId}/{rand}.ext
+ */
+export function buildTrainingSessionFileRelativePath(input: {
+  businessId: string;
+  sessionId: string;
+  mimeType: string;
+}): string {
+  const rand = crypto.randomBytes(8).toString("hex");
+  const ext = extensionForMime(input.mimeType);
+  return `${RELATIVE_PREFIX}/${input.businessId}/training-sessions/${input.sessionId}/${rand}${ext}`;
+}
+
+/** True si la ruta es de acta de sesión bajo /uploads/. */
+export function isTrainingSessionFileRelativePath(
+  relativePath: string,
+): boolean {
+  return (
+    relativePath.startsWith(`${RELATIVE_PREFIX}/`) &&
+    relativePath.includes("/training-sessions/")
+  );
+}
+
+/** Escribe el PDF/acta de la sesión en disco. */
+export async function writeTrainingSessionFile(input: {
+  businessId: string;
+  sessionId: string;
+  mimeType: string;
+  buffer: Buffer;
+}): Promise<{ relativePath: string; fullPath: string; size: number }> {
+  const relativePath = buildTrainingSessionFileRelativePath(input);
+  const fullPath = resolveUploadFullPath(relativePath);
+  if (!fullPath) {
+    throw new Error("Ruta de upload inválida");
+  }
+  await fs.mkdir(path.dirname(fullPath), { recursive: true });
+  await fs.writeFile(fullPath, input.buffer);
+  return { relativePath, fullPath, size: input.buffer.length };
+}
+
+/** Borra el acta de sesión si la ruta es válida. */
+export async function unlinkTrainingSessionFile(
+  relativePath: string,
+): Promise<void> {
+  if (!isTrainingSessionFileRelativePath(relativePath)) return;
+  const fullPath = resolveUploadFullPath(relativePath);
+  if (!fullPath) return;
+  try {
+    await fs.unlink(fullPath);
+  } catch {
+    // ya borrado
+  }
+}

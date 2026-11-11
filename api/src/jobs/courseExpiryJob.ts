@@ -1,6 +1,7 @@
 import { processBoardingBookExpiryNotifications } from "../modules/notificationOutbox/boardingBookExpiryNotification.service.js";
 import { processCourseExpiryNotifications } from "../modules/notificationOutbox/courseExpiryNotification.service.js";
 import { processOutbox } from "../modules/notificationOutbox/notificationOutboxWorker.service.js";
+import { processTrainingExpiryNotifications } from "../modules/notificationOutbox/trainingExpiryNotification.service.js";
 
 /** Zona horaria del disparo diario (Chile). */
 const DEFAULT_TIMEZONE = "America/Santiago";
@@ -101,6 +102,7 @@ export function startCourseExpiryNotificationJob(): void {
     try {
       await processCourseExpiryNotifications();
       await processBoardingBookExpiryNotifications();
+      await processTrainingExpiryNotifications();
       // Tras generar, vacía un lote (con override si está configurado).
       await processOutbox();
     } catch (error) {

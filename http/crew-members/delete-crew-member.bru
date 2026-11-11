@@ -16,6 +16,7 @@ auth:bearer {
 
 docs {
   Soft delete. Desvincula userId.
+  Si el usuario vinculado es User/Colaborador, lo desactiva (state=false + invalida tokens); no lo borra.
 }
 
 script:pre-request {

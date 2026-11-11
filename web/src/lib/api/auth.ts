@@ -4,6 +4,12 @@ export type AuthPermission = {
   actions: string[];
 };
 
+/** Interruptor de submódulo Prevención en la empresa del usuario. */
+export type AuthBusinessModule = {
+  key: "contractors" | "work_permits" | "trainings";
+  enabled: boolean;
+};
+
 /** Perfil público del usuario (sin passwordHash). */
 export type AuthUser = {
   id: string;
@@ -20,12 +26,18 @@ export type AuthUser = {
   locationId: string | null;
   /** Nombre de la nave para el Panel C1. */
   locationName: string | null;
+  /** Org contratista si es usuario externo (portal E*). */
+  organizationId: string | null;
+  /** Resumen de la org (login/me). */
+  organization: { id: string; name: string; rut: string } | null;
   /** Alcance del rol: all | business | location | area | self. */
   dataScope: "all" | "business" | "location" | "area" | "self" | null;
   confirmed: boolean;
   state: boolean;
-  /** Snapshot RBAC para la UI (login / me). */
+  /** Permisos efectivos (rol ∩ módulos activos). */
   permissions: AuthPermission[];
+  /** Submódulos Prevención del tenant (ausente/apagado = enabled false). */
+  modules: AuthBusinessModule[];
 };
 
 /**
@@ -74,18 +86,43 @@ export type MeSuccess = {
 export type ApiErrorBody = {
   code: string;
   message: string;
+  /** Zod flatten / issues cuando code = validation_error. */
+  details?: unknown;
 };
 
-/** Error HTTP tipado para que la UI muestre `message` / `code`. */
+/** Error HTTP tipado para que la UI muestre `message` / `code` / `details`. */
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly code: string,
     message: string,
+    public readonly details?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/**
+ * Mensaje de toast a partir del ApiError.
+ * Si viene lista de issues de validación, las une (ej. «RUN inválido»).
+ */
+export function formatApiErrorMessage(err: ApiError): string {
+  const details = err.details;
+  if (details && typeof details === "object" && details !== null) {
+    const issues = (details as { issues?: Array<{ message?: string }> }).issues;
+    if (Array.isArray(issues) && issues.length > 0) {
+      const msgs = [
+        ...new Set(
+          issues
+            .map((i) => (typeof i.message === "string" ? i.message : ""))
+            .filter(Boolean),
+        ),
+      ];
+      if (msgs.length > 0) return msgs.join(" · ");
+    }
+  }
+  return err.message || "Error desconocido";
 }
 
 /** Parsea JSON de error o arma uno genérico si el body no sirve. */
@@ -95,6 +132,7 @@ function toApiError(res: Response, body: unknown): ApiError {
     res.status,
     err?.code ?? "request_failed",
     err?.message ?? `HTTP ${res.status}`,
+    err?.details,
   );
 }
 

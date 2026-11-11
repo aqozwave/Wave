@@ -5,6 +5,7 @@ import { Button } from "../../components/Button/Button";
 import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
+import { userHasPermission } from "../../lib/api/auth";
 import { useAuth } from "../../lib/auth/AuthContext";
 import {
   CertificatesPanel,
@@ -51,11 +52,20 @@ function tabFromSearch(raw: string | null): CatalogTab {
 export function Catalogos() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const canManage =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
   const [tab, setTab] = useState<CatalogTab>(() =>
     tabFromSearch(searchParams.get("tab")),
   );
+  /** Alta del catálogo del tab activo (botón Nuevo del header). */
+  const canCreate =
+    tab === "ranks"
+      ? userHasPermission(user, "maestros.ranks", "create")
+      : tab === "degrees"
+        ? userHasPermission(user, "maestros.degrees", "create")
+        : tab === "certificates"
+          ? userHasPermission(user, "maestros.certificates", "create")
+          : tab === "courses"
+            ? userHasPermission(user, "cursos.catalog", "create")
+            : userHasPermission(user, "maestros.document_types", "create");
 
   /** Sincroniza tab si cambia la URL (link desde /cursos). */
   useEffect(() => {
@@ -112,7 +122,7 @@ export function Catalogos() {
           title="Catálogos maestros"
           description="Rangos, títulos, cursos y tipos de documento del expediente. Datos de referencia por empresa."
           actions={
-            canManage ? (
+            canCreate ? (
               <Button
                 type="button"
                 className="!w-auto shrink-0"

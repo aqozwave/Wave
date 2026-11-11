@@ -14,9 +14,12 @@ type AppShellProps = {
  */
 export function AppShell({ children }: AppShellProps) {
   return (
-    <div className="flex h-full min-h-0 overflow-hidden bg-[var(--color-nachipa-bg-page)]">
-      <Sidebar />
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 overflow-hidden bg-[var(--color-nachipa-bg-page)] print:h-auto print:min-h-0 print:overflow-visible">
+      {/* Sidebar fuera del papel al imprimir (p. ej. documento de PT). */}
+      <div className="print:hidden">
+        <Sidebar />
+      </div>
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden print:overflow-visible">
         {children}
       </main>
     </div>

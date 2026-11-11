@@ -1,0 +1,38 @@
+meta {
+  name: Get business module (enabled → 200)
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{baseUrl}}/api/v1/businesses/{{businessId}}/modules/contractors
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  P0 · requireModule: con contractors enabled=true → 200 { enabled: true }.
+  Activar antes en Studio o con el PATCH de módulos (paso E).
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken");
+  const businessId = bru.getVar("businessId") || bru.getEnvVar("businessId");
+  if (!businessId) throw new Error("Definí businessId en el entorno Bruno");
+}
+
+assert {
+  res.status: eq 200
+  res.body.enabled: eq true
+  res.body.key: eq contractors
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

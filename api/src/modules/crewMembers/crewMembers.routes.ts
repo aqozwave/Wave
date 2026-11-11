@@ -34,6 +34,22 @@ import {
   updateCrewMemberCourseRequestSchema,
 } from "../crewMemberCourses/crewMemberCourses.schemas.js";
 import {
+  createCrewMemberTrainingHandler,
+  deleteCrewMemberTrainingHandler,
+  getCrewMemberTrainingHandler,
+  listCrewMemberTrainingsHandler,
+  updateCrewMemberTrainingHandler,
+  uploadCrewMemberTrainingEvidenceHandler,
+} from "../crewMemberTrainings/crewMemberTrainings.controller.js";
+import {
+  createCrewMemberTrainingRequestSchema,
+  deleteCrewMemberTrainingRequestSchema,
+  getCrewMemberTrainingRequestSchema,
+  listCrewMemberTrainingsRequestSchema,
+  updateCrewMemberTrainingRequestSchema,
+  uploadCrewMemberTrainingEvidenceRequestSchema,
+} from "../crewMemberTrainings/crewMemberTrainings.schemas.js";
+import {
   createCrewMemberDocumentHandler,
   deleteCrewMemberDocumentHandler,
   downloadCrewMemberDocumentHandler,
@@ -46,24 +62,38 @@ import {
   listCrewMemberDocumentsRequestSchema,
 } from "../crewMemberDocuments/crewMemberDocuments.schemas.js";
 import {
+  changeCrewMemberAccessRoleHandler,
   createCrewMemberHandler,
+  createCrewMemberLogEntryHandler,
   deleteCrewMemberHandler,
+  deleteCrewMemberLogEntryHandler,
+  getCrewMemberAccessHandler,
   getCrewMemberHandler,
+  grantCrewMemberAccessHandler,
+  listCrewMemberHistoryHandler,
   listCrewMembersHandler,
+  revokeCrewMemberAccessHandler,
   updateCrewMemberHandler,
 } from "./crewMembers.controller.js";
 import {
+  changeCrewMemberAccessRoleRequestSchema,
+  createCrewMemberLogEntryRequestSchema,
   createCrewMemberRequestSchema,
+  deleteCrewMemberLogEntryRequestSchema,
   deleteCrewMemberRequestSchema,
+  getCrewMemberAccessRequestSchema,
   getCrewMemberRequestSchema,
+  grantCrewMemberAccessRequestSchema,
+  listCrewMemberHistoryRequestSchema,
   listCrewMembersRequestSchema,
+  revokeCrewMemberAccessRequestSchema,
   updateCrewMemberRequestSchema,
 } from "./crewMembers.schemas.js";
 
 /**
  * Rutas de tripulantes bajo /api/v1/crew-members.
  * RBAC: embarcados.*; superadmin bypass.
- * Anidados: /:id/documents, /:id/courses, muelles, travesías.
+ * Anidados: /:id/documents, /:id/courses, muelles, travesías, access.
  */
 export const crewMembersRouter = Router();
 
@@ -81,6 +111,30 @@ crewMembersRouter.post(
   requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.CREATE),
   validate(createCrewMemberRequestSchema),
   createCrewMemberHandler,
+);
+
+crewMembersRouter.get(
+  "/:id/history",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.READ),
+  validate(listCrewMemberHistoryRequestSchema),
+  listCrewMemberHistoryHandler,
+);
+
+crewMembersRouter.post(
+  "/:id/log-entries",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.UPDATE),
+  validate(createCrewMemberLogEntryRequestSchema),
+  createCrewMemberLogEntryHandler,
+);
+
+crewMembersRouter.delete(
+  "/:id/log-entries/:entryId",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.UPDATE),
+  validate(deleteCrewMemberLogEntryRequestSchema),
+  deleteCrewMemberLogEntryHandler,
 );
 
 crewMembersRouter.get(
@@ -183,6 +237,57 @@ crewMembersRouter.delete(
 );
 
 crewMembersRouter.get(
+  "/:id/trainings",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.READ),
+  validate(listCrewMemberTrainingsRequestSchema),
+  listCrewMemberTrainingsHandler,
+);
+
+crewMembersRouter.post(
+  "/:id/trainings",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.CREATE),
+  validate(createCrewMemberTrainingRequestSchema),
+  createCrewMemberTrainingHandler,
+);
+
+crewMembersRouter.get(
+  "/:id/trainings/:assignmentId",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.READ),
+  validate(getCrewMemberTrainingRequestSchema),
+  getCrewMemberTrainingHandler,
+);
+
+crewMembersRouter.patch(
+  "/:id/trainings/:assignmentId",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.UPDATE),
+  validate(updateCrewMemberTrainingRequestSchema),
+  updateCrewMemberTrainingHandler,
+);
+
+crewMembersRouter.delete(
+  "/:id/trainings/:assignmentId",
+  authenticate,
+  requirePermission(
+    PERMISSION_RESOURCE.TRAININGS,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
+  validate(deleteCrewMemberTrainingRequestSchema),
+  deleteCrewMemberTrainingHandler,
+);
+
+crewMembersRouter.post(
+  "/:id/trainings/:assignmentId/evidence",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.UPDATE),
+  validate(uploadCrewMemberTrainingEvidenceRequestSchema),
+  uploadCrewMemberTrainingEvidenceHandler,
+);
+
+crewMembersRouter.get(
   "/:id/muelles",
   authenticate,
   requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.READ),
@@ -234,6 +339,39 @@ crewMembersRouter.delete(
   ),
   validate(deleteCrewMemberTravesiaRequestSchema),
   deleteCrewMemberTravesiaHandler,
+);
+
+/** Acceso portal (P7 · Figma D44–D46): estado / otorgar / rol / desvincular. */
+crewMembersRouter.get(
+  "/:id/access",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.READ),
+  validate(getCrewMemberAccessRequestSchema),
+  getCrewMemberAccessHandler,
+);
+
+crewMembersRouter.post(
+  "/:id/access",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.UPDATE),
+  validate(grantCrewMemberAccessRequestSchema),
+  grantCrewMemberAccessHandler,
+);
+
+crewMembersRouter.patch(
+  "/:id/access",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.UPDATE),
+  validate(changeCrewMemberAccessRoleRequestSchema),
+  changeCrewMemberAccessRoleHandler,
+);
+
+crewMembersRouter.delete(
+  "/:id/access",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.UPDATE),
+  validate(revokeCrewMemberAccessRequestSchema),
+  revokeCrewMemberAccessHandler,
 );
 
 crewMembersRouter.get(

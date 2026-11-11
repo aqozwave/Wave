@@ -7,15 +7,18 @@ import {
   isAllowedPublicUploadPhotoPath,
 } from "./lib/localUploads.js";
 import { buildOpenApiDocument } from "./lib/openapi.js";
-import { startRateLimitCleanup } from "./lib/rateLimit.js";
+import { apiRateLimit, startRateLimitCleanup } from "./lib/rateLimit.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { notFoundHandler } from "./middlewares/notFound.js";
 import { academicDegreesRouter } from "./modules/academicDegrees/academicDegrees.routes.js";
+import { accreditationsRouter } from "./modules/accreditations/accreditations.routes.js";
 import { activityLogsRouter } from "./modules/activityLogs/activityLogs.routes.js";
+import { approvalFlowsRouter } from "./modules/approvalFlows/approvalFlows.routes.js";
 import { areasRouter } from "./modules/areas/areas.routes.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { businessesRouter } from "./modules/businesses/businesses.routes.js";
 import { competencyCertificatesRouter } from "./modules/competencyCertificates/competencyCertificates.routes.js";
+import { contractorsRouter } from "./modules/contractors/contractors.routes.js";
 import { coursesRouter } from "./modules/courses/courses.routes.js";
 import { crewMemberCoursesGlobalRouter } from "./modules/crewMemberCourses/crewMemberCourses.global.routes.js";
 import { crewMembersRouter } from "./modules/crewMembers/crewMembers.routes.js";
@@ -26,7 +29,12 @@ import { locationsRouter } from "./modules/locations/locations.routes.js";
 import { muellesRouter } from "./modules/muelles/muelles.routes.js";
 import { notificationOutboxRouter } from "./modules/notificationOutbox/notificationOutbox.routes.js";
 import { notificationSettingsRouter } from "./modules/notificationSettings/notificationSettings.routes.js";
+import { permitTypesRouter } from "./modules/permitTypes/permitTypes.routes.js";
+import { workNoticesRouter } from "./modules/workNotices/workNotices.routes.js";
+import { workPermitsRouter } from "./modules/workPermits/workPermits.routes.js";
 import { portsRouter } from "./modules/ports/ports.routes.js";
+import { trainingsRouter } from "./modules/trainings/trainings.routes.js";
+import { trainingSessionsRouter } from "./modules/trainingSessions/trainingSessions.routes.js";
 import { ranksRouter } from "./modules/ranks/ranks.routes.js";
 import { rolesRouter } from "./modules/roles/roles.routes.js";
 import { systemAnnouncementsRouter } from "./modules/systemAnnouncements/systemAnnouncements.routes.js";
@@ -107,6 +115,12 @@ export function createApp() {
     }),
   );
 
+  /**
+   * Tope de /api antes de leer el body: un flood no parsea JSON de 12 MB
+   * ni llega a Prisma. Auth sigue con su límite más estricto encima de este.
+   */
+  app.use("/api", apiRateLimit);
+
   // 12 MB: fotos y documentos en JSON+base64 (crew docs hasta 10 MB).
   app.use(express.json({ limit: "12mb" }));
 
@@ -147,6 +161,14 @@ export function createApp() {
   app.use("/api/v1/academic-degrees", academicDegreesRouter);
   app.use("/api/v1/competency-certificates", competencyCertificatesRouter);
   app.use("/api/v1/document-types", documentTypesRouter);
+  app.use("/api/v1/permit-types", permitTypesRouter);
+  app.use("/api/v1/approval-flows", approvalFlowsRouter);
+  app.use("/api/v1/trainings", trainingsRouter);
+  app.use("/api/v1/training-sessions", trainingSessionsRouter);
+  app.use("/api/v1/contractors", contractorsRouter);
+  app.use("/api/v1/accreditations", accreditationsRouter);
+  app.use("/api/v1/work-notices", workNoticesRouter);
+  app.use("/api/v1/work-permits", workPermitsRouter);
   app.use("/api/v1/courses", coursesRouter);
   app.use("/api/v1/ports", portsRouter);
   app.use("/api/v1/muelles", muellesRouter);

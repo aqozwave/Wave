@@ -1,0 +1,43 @@
+meta {
+  name: Patch business module enable
+  type: http
+  seq: 13
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/businesses/{{businessId}}/modules/contractors
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "enabled": true
+  }
+}
+
+docs {
+  S6 · Solo superadmin. Prende contractors.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) throw new Error("Sin accessToken (superadmin)");
+  const businessId = bru.getVar("businessId") || bru.getEnvVar("businessId");
+  if (!businessId) throw new Error("Definí businessId");
+}
+
+assert {
+  res.status: eq 200
+  res.body.item.enabled: eq true
+  res.body.item.key: eq contractors
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
