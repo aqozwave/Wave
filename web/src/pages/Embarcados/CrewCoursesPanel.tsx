@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "../../components/Button/Button";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import { Modal } from "../../components/Modal/Modal";
 import { StatusChip, type StatusChipTone } from "../../components/StatusChip/StatusChip";
 import {
@@ -132,6 +133,9 @@ export function CrewCoursesPanel({
   const [editExpiresAt, setEditExpiresAt] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  /** Curso pendiente de confirmar quitar (modal del sistema). */
+  const [pendingDelete, setPendingDelete] =
+    useState<CrewMemberCourse | null>(null);
 
   /** Paginación cliente; 5 por página por defecto (ficha). */
   const { page, setPage, pageSize, setPageSize, pageCount, pageItems } =
@@ -296,19 +300,24 @@ export function CrewCoursesPanel({
     }
   }
 
-  /** Soft-delete. */
-  async function onDelete(row: CrewMemberCourse) {
-    if (!accessToken || !canDelete) return;
-    const name = row.course ? displayName(row.course.name) : "este curso";
-    if (!window.confirm(`¿Quitar ${name} de la ficha?`)) return;
-    setDeletingId(row.id);
+  /** Abre modal de confirmación para soft-delete. */
+  function requestDelete(row: CrewMemberCourse) {
+    if (!canDelete) return;
+    setPendingDelete(row);
+  }
+
+  /** Soft-delete confirmado. */
+  async function confirmDelete() {
+    if (!accessToken || !canDelete || !pendingDelete) return;
+    setDeletingId(pendingDelete.id);
     try {
       await deleteCrewMemberCourseRequest(
         accessToken,
         crewMemberId,
-        row.id,
+        pendingDelete.id,
       );
       showToast("Curso quitado.", "success");
+      setPendingDelete(null);
       await load();
     } catch (err) {
       showToast(
@@ -485,7 +494,7 @@ export function CrewCoursesPanel({
                                 title="Quitar curso"
                                 disabled={deletingId === row.id}
                                 onClick={() => {
-                                  void onDelete(row);
+                                  requestDelete(row);
                                 }}
                               >
                                 <Trash2
@@ -641,6 +650,25 @@ export function CrewCoursesPanel({
           </form>
         ) : null}
       </Modal>
+
+      <ConfirmModal
+        open={pendingDelete !== null}
+        title="Quitar curso"
+        message={
+          pendingDelete?.course
+            ? `¿Quitar ${displayName(pendingDelete.course.name)} de la ficha?`
+            : "¿Quitar este curso de la ficha?"
+        }
+        confirmLabel="Quitar"
+        busyLabel="Quitando…"
+        busy={deletingId !== null}
+        onClose={() => {
+          if (deletingId === null) setPendingDelete(null);
+        }}
+        onConfirm={() => {
+          void confirmDelete();
+        }}
+      />
     </>
   );
 }

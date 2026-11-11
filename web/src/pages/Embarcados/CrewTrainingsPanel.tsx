@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "../../components/Button/Button";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import { Modal } from "../../components/Modal/Modal";
 import { StatusChip, type StatusChipTone } from "../../components/StatusChip/StatusChip";
 import {
@@ -146,6 +147,9 @@ export function CrewTrainingsPanel({
   const [editExpiresAt, setEditExpiresAt] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  /** Capacitación pendiente de confirmar quitar (modal del sistema). */
+  const [pendingDelete, setPendingDelete] =
+    useState<CrewMemberTraining | null>(null);
 
   const [evidenceRow, setEvidenceRow] = useState<CrewMemberTraining | null>(
     null,
@@ -364,20 +368,24 @@ export function CrewTrainingsPanel({
     }
   }
 
-  async function onDelete(row: CrewMemberTraining) {
-    if (!accessToken || !canDelete) return;
-    const name = row.training
-      ? `${row.training.code} · ${displayName(row.training.name)}`
-      : "esta capacitación";
-    if (!window.confirm(`¿Quitar ${name} de la ficha?`)) return;
-    setDeletingId(row.id);
+  /** Abre modal de confirmación para soft-delete. */
+  function requestDelete(row: CrewMemberTraining) {
+    if (!canDelete) return;
+    setPendingDelete(row);
+  }
+
+  /** Soft-delete confirmado. */
+  async function confirmDelete() {
+    if (!accessToken || !canDelete || !pendingDelete) return;
+    setDeletingId(pendingDelete.id);
     try {
       await deleteCrewMemberTrainingRequest(
         accessToken,
         crewMemberId,
-        row.id,
+        pendingDelete.id,
       );
       showToast("Capacitación quitada.", "success");
+      setPendingDelete(null);
       await load();
     } catch (err) {
       showToast(
@@ -569,7 +577,7 @@ export function CrewTrainingsPanel({
                                 title="Quitar capacitación"
                                 disabled={deletingId === row.id}
                                 onClick={() => {
-                                  void onDelete(row);
+                                  requestDelete(row);
                                 }}
                               >
                                 <Trash2
@@ -805,6 +813,25 @@ export function CrewTrainingsPanel({
           </form>
         ) : null}
       </Modal>
+
+      <ConfirmModal
+        open={pendingDelete !== null}
+        title="Quitar capacitación"
+        message={
+          pendingDelete?.training
+            ? `¿Quitar ${pendingDelete.training.code} · ${displayName(pendingDelete.training.name)} de la ficha?`
+            : "¿Quitar esta capacitación de la ficha?"
+        }
+        confirmLabel="Quitar"
+        busyLabel="Quitando…"
+        busy={deletingId !== null}
+        onClose={() => {
+          if (deletingId === null) setPendingDelete(null);
+        }}
+        onConfirm={() => {
+          void confirmDelete();
+        }}
+      />
     </>
   );
 }

@@ -1,0 +1,58 @@
+meta {
+  name: Post crew member log entry
+  type: http
+  seq: 40
+}
+
+post {
+  url: {{baseUrl}}/api/v1/crew-members/{{crewMemberId}}/log-entries
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "kind": "sanction",
+    "note": "Amonestación de prueba con adjunto opcional",
+    "occurredAt": "2026-11-11T12:00:00.000Z"
+  }
+}
+
+docs {
+  Alta de observación / amonestación / embarque (kind: observation | sanction | boarding).
+  Para amonestación con archivo, agregar attachment: { documentTypeId, fileName, mimeType, contentBase64 }.
+  Variables: accessToken, crewMemberId.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  const crewMemberId = bru.getEnvVar("crewMemberId");
+  if (!token) throw new Error("Sin accessToken");
+  if (!crewMemberId) throw new Error("Sin crewMemberId");
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body && body.id) {
+    bru.setEnvVar("crewLogEntryId", body.id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+  res.body.kind: eq sanction
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

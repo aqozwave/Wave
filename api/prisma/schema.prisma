@@ -157,6 +157,16 @@ enum CrewTrainingStatus {
  * Origen de la asignación (portal viejo CREW_COURSE_SOURCE).
  * rank = legacy (ya no se auto-crea); certificate = por título; manual = a mano.
  */
+/**
+ * Tipo de entrada manual en bitácora del tripulante (D31).
+ * observation / sanction / boarding = filtros de la timeline.
+ */
+enum CrewLogEntryKind {
+  observation
+  sanction
+  boarding
+}
+
 enum CrewCourseSource {
   rank
   certificate
@@ -478,6 +488,8 @@ model User {
   crewMember      CrewMember?
   /// Documentos de tripulante subidos por este usuario.
   uploadedCrewDocuments CrewMemberDocument[]
+  /// Entradas de bitácora (observación / amonestación / embarque) creadas por este usuario.
+  crewMemberLogEntriesCreated CrewMemberLogEntry[]
   /// Filas de auditoría donde este usuario es el actor.
   activityLogs ActivityLog[]
   /// Avisos de sistema marcados como leídos.
@@ -877,6 +889,8 @@ model CrewMember {
   courseAssignments          CrewMemberCourse[]
   /// Capacitaciones Prevención asignadas a este tripulante (ficha).
   trainingAssignments        CrewMemberTraining[]
+  /// Entradas manuales de bitácora (observaciones, amonestaciones, embarques).
+  logEntries                 CrewMemberLogEntry[]
   /// Avisos de vencimiento dirigidos a este tripulante.
   notificationOutbox         NotificationOutbox[]
 
@@ -889,6 +903,35 @@ model CrewMember {
   @@index([run, businessId])
   @@index([email, businessId])
   @@map("crew_members")
+}
+
+/**
+ * Entrada manual de bitácora del tripulante (observación, amonestación o embarque).
+ * Nota + fecha; soft delete. Se muestra en GET …/history.
+ * documentId: adjunto opcional (p. ej. carta de amonestación) → tab Documentos.
+ */
+model CrewMemberLogEntry {
+  id           String              @id @default(uuid()) @db.Uuid
+  crewMemberId String              @map("crew_member_id") @db.Uuid
+  crewMember   CrewMember          @relation(fields: [crewMemberId], references: [id])
+  kind         CrewLogEntryKind
+  /// Texto libre del evento.
+  note         String
+  /// Cuándo ocurrió el hecho (editable; puede diferir de createdAt).
+  occurredAt   DateTime            @map("occurred_at") @db.Timestamptz
+  /// Documento del expediente vinculado (1:1 opcional; típico en amonestación).
+  documentId   String?             @unique @map("document_id") @db.Uuid
+  document     CrewMemberDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  createdById  String?             @map("created_by_id") @db.Uuid
+  createdBy    User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  deletedAt    DateTime?           @map("deleted_at") @db.Timestamptz
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([crewMemberId])
+  @@index([kind])
+  @@index([occurredAt])
+  @@map("crew_member_log_entries")
 }
 
 /**
@@ -1019,6 +1062,8 @@ model CrewMemberDocument {
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz
   /// Asignaciones de capacitación que usan este archivo como evidencia.
   trainingEvidenceFor CrewMemberTraining[]
+  /// Entrada de bitácora que apunta a este documento (amonestación, etc.).
+  logEntry            CrewMemberLogEntry?
 
   @@index([crewMemberId])
   @@index([documentTypeId])

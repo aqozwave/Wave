@@ -282,6 +282,9 @@ export type CrewHistoryCategory =
   | "sanction"
   | "boarding";
 
+/** Origen del ítem en timeline (solo log_entry se puede borrar en UI). */
+export type CrewHistorySource = "audit" | "document" | "log_entry";
+
 /** Ítem de timeline de bitácora. */
 export type CrewHistoryItem = {
   id: string;
@@ -300,6 +303,40 @@ export type CrewHistoryItem = {
   statusTone: "success" | "warning" | "danger" | "info" | "neutral";
   actor: string | null;
   attachmentName: string | null;
+  source: CrewHistorySource;
+};
+
+/** kind de entrada manual de bitácora. */
+export type CrewLogEntryKind = "observation" | "sanction" | "boarding";
+
+/** Adjunto opcional (solo amonestación). */
+export type CreateCrewMemberLogEntryAttachment = {
+  documentTypeId: string;
+  fileName: string;
+  mimeType: string;
+  contentBase64: string;
+  expiresAt?: string | null;
+};
+
+/** Body POST /crew-members/:id/log-entries. */
+export type CreateCrewMemberLogEntryBody = {
+  kind: CrewLogEntryKind;
+  note: string;
+  occurredAt?: string;
+  attachment?: CreateCrewMemberLogEntryAttachment;
+};
+
+/** Respuesta de entrada de bitácora. */
+export type CrewMemberLogEntry = {
+  id: string;
+  crewMemberId: string;
+  kind: CrewLogEntryKind;
+  note: string;
+  occurredAt: string;
+  documentId: string | null;
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 /** Conteos del resumen lateral D31. */
@@ -350,4 +387,44 @@ export async function listCrewMemberHistoryRequest(
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw toApiError(res, body);
   return body as ListCrewMemberHistoryResult;
+}
+
+/** POST /api/v1/crew-members/:id/log-entries. */
+export async function createCrewMemberLogEntryRequest(
+  accessToken: string,
+  crewMemberId: string,
+  payload: CreateCrewMemberLogEntryBody,
+): Promise<CrewMemberLogEntry> {
+  const res = await fetch(
+    `/api/v1/crew-members/${crewMemberId}/log-entries`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as CrewMemberLogEntry;
+}
+
+/** DELETE /api/v1/crew-members/:id/log-entries/:entryId — soft delete. */
+export async function deleteCrewMemberLogEntryRequest(
+  accessToken: string,
+  crewMemberId: string,
+  entryId: string,
+): Promise<CrewMemberLogEntry> {
+  const res = await fetch(
+    `/api/v1/crew-members/${crewMemberId}/log-entries/${entryId}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as CrewMemberLogEntry;
 }

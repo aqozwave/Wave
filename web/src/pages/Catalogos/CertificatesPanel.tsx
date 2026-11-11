@@ -14,6 +14,7 @@ import {
   DataTableOutlineButton,
   DataTableSearch,
 } from "../../components/DataTableCard/DataTableCard";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import { Modal } from "../../components/Modal/Modal";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
 import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
@@ -120,6 +121,10 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
     const [form, setForm] = useState<FormState>(EMPTY_FORM);
     const [submitting, setSubmitting] = useState(false);
     const [menuId, setMenuId] = useState<string | null>(null);
+    /** Fila pendiente de confirmar eliminación (modal del sistema). */
+    const [pendingDelete, setPendingDelete] =
+      useState<CompetencyCertificate | null>(null);
+    const [deleting, setDeleting] = useState(false);
 
     const businessNameById = useMemo(() => {
       const map = new Map<string, string>();
@@ -389,22 +394,31 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
       }
     }
 
-    async function onDelete(row: CompetencyCertificate) {
-      if (!accessToken || !canManage) return;
+    function requestDelete(row: CompetencyCertificate) {
+      if (!canManage) return;
       setMenuId(null);
-      const ok = window.confirm(
-        `¿Eliminar el título marítimo «${displayName(row.name)}»? Quedará desactivado.`,
-      );
-      if (!ok) return;
+      setPendingDelete(row);
+    }
+
+    /** Soft-delete confirmado vía modal del sistema. */
+    async function confirmDelete() {
+      if (!accessToken || !canManage || !pendingDelete) return;
+      setDeleting(true);
       try {
-        await deleteCompetencyCertificateRequest(accessToken, row.id);
+        await deleteCompetencyCertificateRequest(
+          accessToken,
+          pendingDelete.id,
+        );
         showToast("Título marítimo eliminado.", "success");
+        setPendingDelete(null);
         await load();
       } catch (err) {
         showToast(
           err instanceof ApiError ? err.message : "No se pudo eliminar.",
           "danger",
         );
+      } finally {
+        setDeleting(false);
       }
     }
 
@@ -580,7 +594,7 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
                             <button
                               type="button"
                               className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                              onClick={() => void onDelete(row)}
+                              onClick={() => requestDelete(row)}
                             >
                               Eliminar
                             </button>
@@ -802,6 +816,26 @@ export const CertificatesPanel = forwardRef<CertificatesPanelHandle>(
             </div>
           </form>
         </Modal>
+
+        <ConfirmModal
+          open={pendingDelete !== null}
+          title="Eliminar título marítimo"
+          message={
+            pendingDelete
+              ? `¿Eliminar el título marítimo «${displayName(pendingDelete.name)}»?`
+              : "¿Eliminar este título marítimo?"
+          }
+          detail="Quedará desactivado."
+          confirmLabel="Eliminar"
+          busyLabel="Eliminando…"
+          busy={deleting}
+          onClose={() => {
+            if (!deleting) setPendingDelete(null);
+          }}
+          onConfirm={() => {
+            void confirmDelete();
+          }}
+        />
       </>
     );
   },

@@ -15,6 +15,7 @@ import {
   DataTableSearch,
   DataTableSelect,
 } from "../../components/DataTableCard/DataTableCard";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import { Modal } from "../../components/Modal/Modal";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
 import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
@@ -97,6 +98,9 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
+  /** Fila pendiente de confirmar eliminación (modal del sistema). */
+  const [pendingDelete, setPendingDelete] = useState<Muelle | null>(null);
+  const [deleting, setDeleting] = useState(false);
   /** Dirección de orden por nombre; null = sin ordenar. */
   const [nameSort, setNameSort] = useState<"asc" | "desc" | null>(null);
   /** Filtro por puerto seleccionado en la toolbar; "all" = todos. */
@@ -320,22 +324,28 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
     }
   }
 
-  async function onDelete(row: Muelle) {
-    if (!accessToken || !canManage) return;
+  function requestDelete(row: Muelle) {
+    if (!canManage) return;
     setMenuId(null);
-    const ok = window.confirm(
-      `¿Eliminar el muelle «${displayName(row.name)}»? Quedará desactivado.`,
-    );
-    if (!ok) return;
+    setPendingDelete(row);
+  }
+
+  /** Soft-delete confirmado vía modal del sistema. */
+  async function confirmDelete() {
+    if (!accessToken || !canManage || !pendingDelete) return;
+    setDeleting(true);
     try {
-      await deleteMuelleRequest(accessToken, row.id);
+      await deleteMuelleRequest(accessToken, pendingDelete.id);
       showToast("Muelle eliminado.", "success");
+      setPendingDelete(null);
       await load();
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo eliminar.",
         "danger",
       );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -514,7 +524,7 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
                           <button
                             type="button"
                             className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                            onClick={() => void onDelete(row)}
+                            onClick={() => requestDelete(row)}
                           >
                             Eliminar
                           </button>
@@ -707,6 +717,27 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
           />
         </form>
       </Modal>
+
+  <ConfirmModal
+    open={pendingDelete !== null}
+    title="Eliminar muelle"
+    message={
+      pendingDelete
+            ? `¿Eliminar el muelle «${displayName(pendingDelete.name)}»?`
+            : "¿Eliminar este muelle?"
+    }
+    detail="Quedará desactivado."
+    confirmLabel="Eliminar"
+    busyLabel="Eliminando…"
+    busy={deleting}
+    onClose={() => {
+      if (!deleting) setPendingDelete(null);
+    }}
+    onConfirm={() => {
+      void confirmDelete();
+    }}
+  />
+
     </>
   );
 });

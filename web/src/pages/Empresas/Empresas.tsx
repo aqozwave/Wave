@@ -7,6 +7,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Button } from "../../components/Button/Button";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import {
   DataTableCard,
   DataTableOutlineButton,
@@ -129,6 +130,9 @@ export function Empresas() {
   );
   /** Menú kebab abierto por fila. */
   const [menuId, setMenuId] = useState<string | null>(null);
+  /** Empresa pendiente de confirmar eliminación (modal del sistema). */
+  const [pendingDelete, setPendingDelete] = useState<Business | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -343,22 +347,29 @@ export function Empresas() {
     }
   }
 
-  async function onDelete(row: Business) {
-    if (!accessToken || !isSuperadmin) return;
+  /** Abre modal de confirmación de eliminación. */
+  function requestDelete(row: Business) {
+    if (!isSuperadmin) return;
     setMenuId(null);
-    const ok = window.confirm(
-      `¿Eliminar la empresa «${displayName(row.name)}»? Quedará desactivada.`,
-    );
-    if (!ok) return;
+    setPendingDelete(row);
+  }
+
+  /** Soft-delete confirmado. */
+  async function confirmDelete() {
+    if (!accessToken || !isSuperadmin || !pendingDelete) return;
+    setDeleting(true);
     try {
-      await deleteBusinessRequest(accessToken, row.id);
+      await deleteBusinessRequest(accessToken, pendingDelete.id);
       showToast("Empresa eliminada.", "success");
+      setPendingDelete(null);
       await load();
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo eliminar.",
         "danger",
       );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -533,7 +544,7 @@ export function Empresas() {
                           <button
                             type="button"
                             className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                            onClick={() => void onDelete(row)}
+                            onClick={() => requestDelete(row)}
                           >
                             Eliminar
                           </button>
@@ -801,6 +812,26 @@ export function Empresas() {
           )}
         </form>
       </Modal>
+
+      <ConfirmModal
+        open={pendingDelete !== null}
+        title="Eliminar empresa"
+        message={
+          pendingDelete
+            ? `¿Eliminar la empresa «${displayName(pendingDelete.name)}»?`
+            : "¿Eliminar esta empresa?"
+        }
+        detail="Quedará desactivada."
+        confirmLabel="Eliminar"
+        busyLabel="Eliminando…"
+        busy={deleting}
+        onClose={() => {
+          if (!deleting) setPendingDelete(null);
+        }}
+        onConfirm={() => {
+          void confirmDelete();
+        }}
+      />
     </div>
   );
 }

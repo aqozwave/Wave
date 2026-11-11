@@ -14,6 +14,7 @@ import {
   DataTableOutlineButton,
   DataTableSearch,
 } from "../../components/DataTableCard/DataTableCard";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import { Modal } from "../../components/Modal/Modal";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
 import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
@@ -191,6 +192,11 @@ export const DocumentTypesPanel = forwardRef<DocumentTypesPanelHandle>(
     const [form, setForm] = useState<FormState>(EMPTY_FORM);
     const [submitting, setSubmitting] = useState(false);
     const [menuId, setMenuId] = useState<string | null>(null);
+    /** Fila pendiente de confirmar eliminación (modal del sistema). */
+    const [pendingDelete, setPendingDelete] = useState<DocumentType | null>(
+      null,
+    );
+    const [deleting, setDeleting] = useState(false);
 
     const businessNameById = useMemo(() => {
       const map = new Map<string, string>();
@@ -340,22 +346,28 @@ export const DocumentTypesPanel = forwardRef<DocumentTypesPanelHandle>(
       }
     }
 
-    async function onDelete(row: DocumentType) {
-      if (!accessToken || !canManage) return;
+    function requestDelete(row: DocumentType) {
+      if (!canManage) return;
       setMenuId(null);
-      const ok = window.confirm(
-        `¿Eliminar el tipo «${row.code} — ${displayName(row.name)}»? Quedará desactivado.`,
-      );
-      if (!ok) return;
+      setPendingDelete(row);
+    }
+
+    /** Soft-delete confirmado vía modal del sistema. */
+    async function confirmDelete() {
+      if (!accessToken || !canManage || !pendingDelete) return;
+      setDeleting(true);
       try {
-        await deleteDocumentTypeRequest(accessToken, row.id);
+        await deleteDocumentTypeRequest(accessToken, pendingDelete.id);
         showToast("Tipo de documento eliminado.", "success");
+        setPendingDelete(null);
         await load();
       } catch (err) {
         showToast(
           err instanceof ApiError ? err.message : "No se pudo eliminar.",
           "danger",
         );
+      } finally {
+        setDeleting(false);
       }
     }
 
@@ -537,7 +549,7 @@ export const DocumentTypesPanel = forwardRef<DocumentTypesPanelHandle>(
                             <button
                               type="button"
                               className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                              onClick={() => void onDelete(row)}
+                              onClick={() => requestDelete(row)}
                             >
                               Eliminar
                             </button>
@@ -789,6 +801,26 @@ export const DocumentTypesPanel = forwardRef<DocumentTypesPanelHandle>(
             />
           </form>
         </Modal>
+
+        <ConfirmModal
+          open={pendingDelete !== null}
+          title="Eliminar tipo de documento"
+          message={
+            pendingDelete
+              ? `¿Eliminar el tipo «${pendingDelete.code} — ${displayName(pendingDelete.name)}»?`
+              : "¿Eliminar este tipo de documento?"
+          }
+          detail="Quedará desactivado."
+          confirmLabel="Eliminar"
+          busyLabel="Eliminando…"
+          busy={deleting}
+          onClose={() => {
+            if (!deleting) setPendingDelete(null);
+          }}
+          onConfirm={() => {
+            void confirmDelete();
+          }}
+        />
       </>
     );
   },

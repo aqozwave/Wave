@@ -10,11 +10,14 @@ import {
   computeCourseCompliancePercents,
   reconcileCrewMemberCertificateCourses,
 } from "../crewMemberCourses/crewMemberCourses.service.js";
+import { createCrewMemberDocument } from "../crewMemberDocuments/crewMemberDocuments.service.js";
 import type {
   ChangeCrewMemberAccessRoleBody,
   CreateCrewMemberBody,
+  CreateCrewMemberLogEntryBody,
   CrewAccessResponse,
   CrewHistoryItem,
+  CrewMemberLogEntryResponse,
   CrewMemberResponse,
   GrantCrewMemberAccessBody,
   ListCrewMemberHistoryQuery,
@@ -22,8 +25,8 @@ import type {
   UpdateCrewMemberBody,
 } from "./crewMembers.schemas.js";
 
-/** Actor mínimo para reglas de tenant. */
-type Actor = Pick<AuthUser, "internalRol" | "businessId">;
+/** Actor mínimo para reglas de tenant (+ id/roleId para docs y createdBy). */
+type Actor = Pick<AuthUser, "id" | "internalRol" | "businessId" | "roleId">;
 
 /** Claves de rol permitidas en Acceso (capitán / tripulante de nave). */
 const ACCESS_ROLE_KEYS = ["user", "colaborador"] as const;
@@ -453,12 +456,32 @@ export async function createCrewMember(
   }
 }
 
+/**
+ * Compara dos fechas opcionales por instante (ISO / Date / null).
+ * Evita marcar boardingBookValidUntil como cambiado por reenvío del form.
+ */
+function sameOptionalInstant(
+  a: Date | null,
+  bIso: string | null | undefined,
+): boolean {
+  if (bIso === undefined) return true;
+  if (a === null && (bIso === null || bIso === "")) return true;
+  if (a === null || bIso === null || bIso === "") return false;
+  return a.getTime() === new Date(bIso).getTime();
+}
+
+/** Resultado de PATCH ficha: crew + campos que realmente cambiaron (auditoría). */
+export type UpdateCrewMemberResult = {
+  crew: CrewMemberResponse;
+  changedFields: string[];
+};
+
 /** Actualiza ficha; admin no mueve a otra empresa. */
 export async function updateCrewMember(
   actor: Actor,
   id: string,
   body: UpdateCrewMemberBody,
-): Promise<CrewMemberResponse> {
+): Promise<UpdateCrewMemberResult> {
   const existing = await prisma.crewMember.findFirst({
     where: { id, deletedAt: null },
   });
@@ -510,64 +533,140 @@ export async function updateCrewMember(
   });
 
   const data: Prisma.CrewMemberUpdateInput = {};
-  if (body.run !== undefined) data.run = body.run.trim();
-  if (body.firstName !== undefined) data.firstName = body.firstName;
-  if (body.lastName !== undefined) data.lastName = body.lastName;
-  if (body.email !== undefined) data.email = body.email;
+  /** Solo claves cuyo valor efectivo difiere (no el body completo). */
+  const changedFields: string[] = [];
+
+  if (body.run !== undefined) {
+    const next = body.run.trim();
+    if (next !== existing.run) {
+      data.run = next;
+      changedFields.push("run");
+    }
+  }
+  if (body.firstName !== undefined && body.firstName !== existing.firstName) {
+    data.firstName = body.firstName;
+    changedFields.push("firstName");
+  }
+  if (body.lastName !== undefined && body.lastName !== existing.lastName) {
+    data.lastName = body.lastName;
+    changedFields.push("lastName");
+  }
+  if (body.email !== undefined && body.email !== existing.email) {
+    data.email = body.email;
+    changedFields.push("email");
+  }
   if (body.birthDate !== undefined) {
-    data.birthDate = body.birthDate ? new Date(body.birthDate) : null;
+    const next = body.birthDate ? new Date(body.birthDate) : null;
+    if (!sameOptionalInstant(existing.birthDate, body.birthDate)) {
+      data.birthDate = next;
+      changedFields.push("birthDate");
+    }
   }
-  if (body.nationality !== undefined) data.nationality = body.nationality;
-  if (body.phone !== undefined) data.phone = body.phone;
-  if (body.direction !== undefined) data.direction = body.direction;
-  if (body.observation !== undefined) data.observation = body.observation;
+  if (
+    body.nationality !== undefined &&
+    (body.nationality ?? null) !== (existing.nationality ?? null)
+  ) {
+    data.nationality = body.nationality;
+    changedFields.push("nationality");
+  }
+  if (
+    body.phone !== undefined &&
+    (body.phone ?? null) !== (existing.phone ?? null)
+  ) {
+    data.phone = body.phone;
+    changedFields.push("phone");
+  }
+  if (
+    body.direction !== undefined &&
+    (body.direction ?? null) !== (existing.direction ?? null)
+  ) {
+    data.direction = body.direction;
+    changedFields.push("direction");
+  }
+  if (
+    body.observation !== undefined &&
+    (body.observation ?? null) !== (existing.observation ?? null)
+  ) {
+    data.observation = body.observation;
+    changedFields.push("observation");
+  }
   if (body.boardingBookValidUntil !== undefined) {
-    data.boardingBookValidUntil = new Date(body.boardingBookValidUntil);
+    if (
+      !sameOptionalInstant(
+        existing.boardingBookValidUntil,
+        body.boardingBookValidUntil,
+      )
+    ) {
+      data.boardingBookValidUntil = new Date(body.boardingBookValidUntil);
+      changedFields.push("boardingBookValidUntil");
+    }
   }
-  if (body.state !== undefined) data.state = body.state;
+  if (body.state !== undefined && body.state !== existing.state) {
+    data.state = body.state;
+    changedFields.push("state");
+  }
 
   if (nextBusinessId !== existing.businessId) {
     data.business = { connect: { id: nextBusinessId } };
+    changedFields.push("businessId");
   }
   if (nextLocationId !== existing.locationId) {
     data.location = { connect: { id: nextLocationId } };
+    changedFields.push("locationId");
   }
-  if (body.areaId !== undefined) {
+  if (body.areaId !== undefined && (body.areaId ?? null) !== (existing.areaId ?? null)) {
     data.area =
       body.areaId === null
         ? { disconnect: true }
         : { connect: { id: body.areaId } };
+    changedFields.push("areaId");
   }
-  if (body.rankId !== undefined) {
+  if (body.rankId !== undefined && (body.rankId ?? null) !== (existing.rankId ?? null)) {
     data.rank =
       body.rankId === null
         ? { disconnect: true }
         : { connect: { id: body.rankId } };
+    changedFields.push("rankId");
   }
-  if (body.academicDegreeId !== undefined) {
+  if (
+    body.academicDegreeId !== undefined &&
+    (body.academicDegreeId ?? null) !== (existing.academicDegreeId ?? null)
+  ) {
     data.academicDegree =
       body.academicDegreeId === null
         ? { disconnect: true }
         : { connect: { id: body.academicDegreeId } };
+    changedFields.push("academicDegreeId");
   }
-  if (body.competencyCertificateId !== undefined) {
+  if (
+    body.competencyCertificateId !== undefined &&
+    (body.competencyCertificateId ?? null) !==
+      (existing.competencyCertificateId ?? null)
+  ) {
     data.competencyCertificate =
       body.competencyCertificateId === null
         ? { disconnect: true }
         : { connect: { id: body.competencyCertificateId } };
+    changedFields.push("competencyCertificateId");
   }
-  if (body.userId !== undefined) {
+  if (body.userId !== undefined && (body.userId ?? null) !== (existing.userId ?? null)) {
     data.user =
       body.userId === null
         ? { disconnect: true }
         : { connect: { id: body.userId } };
+    changedFields.push("userId");
   }
 
-  const certificateChanged =
-    body.competencyCertificateId !== undefined &&
-    (existing.competencyCertificateId ?? null) !== (nextCertId ?? null);
+  const certificateChanged = changedFields.includes("competencyCertificateId");
 
   try {
+    // Sin cambios efectivos: no escribe ni dispara reconcile.
+    if (changedFields.length === 0) {
+      return {
+        crew: await toCrewMemberResponseWithCompliance(existing),
+        changedFields: [],
+      };
+    }
     const updated = await prisma.crewMember.update({
       where: { id },
       data,
@@ -576,7 +675,10 @@ export async function updateCrewMember(
     if (certificateChanged) {
       await reconcileCrewMemberCertificateCourses(updated.id, nextCertId);
     }
-    return toCrewMemberResponseWithCompliance(updated);
+    return {
+      crew: await toCrewMemberResponseWithCompliance(updated),
+      changedFields,
+    };
   } catch (err) {
     mapUniqueViolation(err);
   }
@@ -1028,7 +1130,7 @@ function mapCrewAuditEvent(row: {
   success: boolean;
   metadata: unknown;
   createdAt: Date;
-}): CrewHistoryItem {
+}): CrewHistoryItem | null {
   const meta =
     row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
       ? (row.metadata as Record<string, unknown>)
@@ -1047,6 +1149,11 @@ function mapCrewAuditEvent(row: {
     : "danger";
 
   const metaKind = typeof meta.kind === "string" ? meta.kind : null;
+
+  // Alta/baja de log entries ya viven en crew_member_log_entries (evitar duplicar).
+  if (metaKind === "crew_member_log_entry") {
+    return null;
+  }
 
   // Capacitaciones Prevención asignadas a la ficha (audit con kind en metadata).
   if (
@@ -1123,12 +1230,130 @@ function mapCrewAuditEvent(row: {
     statusTone,
     actor,
     attachmentName: null,
+    source: "audit",
   };
+}
+
+/** Etiquetas UI por kind de entrada manual. */
+const LOG_ENTRY_LABELS: Record<
+  "observation" | "sanction" | "boarding",
+  { categoryLabel: string; title: string; statusLabel: string; statusTone: CrewHistoryItem["statusTone"] }
+> = {
+  observation: {
+    categoryLabel: "Observación",
+    title: "Observación",
+    statusLabel: "Observación",
+    statusTone: "warning",
+  },
+  sanction: {
+    categoryLabel: "Amonestación",
+    title: "Amonestación",
+    statusLabel: "Amonestación",
+    statusTone: "warning",
+  },
+  boarding: {
+    categoryLabel: "Embarque",
+    title: "Embarque",
+    statusLabel: "Embarque",
+    statusTone: "info",
+  },
+};
+
+/** Serializa fila de log entry → contrato API. */
+function toLogEntryResponse(row: {
+  id: string;
+  crewMemberId: string;
+  kind: "observation" | "sanction" | "boarding";
+  note: string;
+  occurredAt: Date;
+  documentId: string | null;
+  createdById: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): CrewMemberLogEntryResponse {
+  return {
+    id: row.id,
+    crewMemberId: row.crewMemberId,
+    kind: row.kind,
+    note: row.note,
+    occurredAt: row.occurredAt.toISOString(),
+    documentId: row.documentId,
+    createdById: row.createdById,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/** POST entrada manual de bitácora (observación / amonestación / embarque). */
+export async function createCrewMemberLogEntry(
+  actor: Actor,
+  crewMemberId: string,
+  body: CreateCrewMemberLogEntryBody,
+): Promise<CrewMemberLogEntryResponse> {
+  await getCrewMemberById(actor, crewMemberId);
+
+  const occurredAt = body.occurredAt
+    ? new Date(body.occurredAt)
+    : new Date();
+
+  /** Adjunto: crea doc del expediente y lo vincula (solo sanction, validado en Zod). */
+  let documentId: string | null = null;
+  if (body.attachment && body.kind === "sanction") {
+    const doc = await createCrewMemberDocument(actor, crewMemberId, {
+      documentTypeId: body.attachment.documentTypeId,
+      fileName: body.attachment.fileName,
+      mimeType: body.attachment.mimeType,
+      contentBase64: body.attachment.contentBase64,
+      expiresAt: body.attachment.expiresAt,
+      sourceModule: "crew",
+    });
+    documentId = doc.id;
+  }
+
+  const row = await prisma.crewMemberLogEntry.create({
+    data: {
+      crewMemberId,
+      kind: body.kind,
+      note: body.note.trim(),
+      occurredAt,
+      createdById: actor.id,
+      documentId,
+    },
+  });
+
+  return toLogEntryResponse(row);
+}
+
+/** Soft delete de una entrada manual de bitácora. */
+export async function deleteCrewMemberLogEntry(
+  actor: Actor,
+  crewMemberId: string,
+  entryId: string,
+): Promise<CrewMemberLogEntryResponse> {
+  await getCrewMemberById(actor, crewMemberId);
+
+  const existing = await prisma.crewMemberLogEntry.findFirst({
+    where: { id: entryId, crewMemberId, deletedAt: null },
+  });
+  if (!existing) {
+    throw new AppError(
+      404,
+      "log_entry_not_found",
+      "Entrada de bitácora no encontrada",
+    );
+  }
+
+  const row = await prisma.crewMemberLogEntry.update({
+    where: { id: existing.id },
+    data: { deletedAt: new Date() },
+  });
+
+  return toLogEntryResponse(row);
 }
 
 /**
  * Bitácora del tripulante (Figma D31 / AQO-68).
- * Une activity_logs (ficha + cursos) con altas de documentos.
+ * Une activity_logs, documentos y entradas manuales (log entries).
  */
 export async function listCrewMemberHistory(
   actor: Actor,
@@ -1171,7 +1396,7 @@ export async function listCrewMemberHistory(
     });
   }
 
-  const [documents, auditRows] = await Promise.all([
+  const [documents, auditRows, logEntries] = await Promise.all([
     prisma.crewMemberDocument.findMany({
       where: { crewMemberId, deletedAt: null },
       include: {
@@ -1183,6 +1408,17 @@ export async function listCrewMemberHistory(
     prisma.activityLog.findMany({
       where: { OR: orFilters },
       orderBy: { createdAt: "desc" },
+      take: 200,
+    }),
+    prisma.crewMemberLogEntry.findMany({
+      where: { crewMemberId, deletedAt: null },
+      include: {
+        createdBy: { select: { username: true, email: true } },
+        document: {
+          select: { originalName: true, deletedAt: true },
+        },
+      },
+      orderBy: { occurredAt: "desc" },
       take: 200,
     }),
   ]);
@@ -1198,12 +1434,36 @@ export async function listCrewMemberHistory(
     statusTone: "info" as const,
     actor: null,
     attachmentName: doc.originalName,
+    source: "document" as const,
   }));
 
-  const auditEvents = auditRows.map(mapCrewAuditEvent);
+  const auditEvents = auditRows
+    .map(mapCrewAuditEvent)
+    .filter((e): e is CrewHistoryItem => e !== null);
+
+  const logEvents: CrewHistoryItem[] = logEntries.map((entry) => {
+    const labels = LOG_ENTRY_LABELS[entry.kind];
+    const attachmentName =
+      entry.document && !entry.document.deletedAt
+        ? entry.document.originalName
+        : null;
+    return {
+      id: entry.id,
+      createdAt: entry.occurredAt.toISOString(),
+      title: labels.title,
+      detail: entry.note,
+      category: entry.kind,
+      categoryLabel: labels.categoryLabel,
+      statusLabel: labels.statusLabel,
+      statusTone: labels.statusTone,
+      actor: entry.createdBy?.username || entry.createdBy?.email || null,
+      attachmentName,
+      source: "log_entry" as const,
+    };
+  });
 
   /** Merge + orden cronológico desc. */
-  let merged = [...docEvents, ...auditEvents].sort(
+  let merged = [...docEvents, ...auditEvents, ...logEvents].sort(
     (a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );

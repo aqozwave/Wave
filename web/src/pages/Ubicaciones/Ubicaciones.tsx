@@ -13,6 +13,7 @@ import {
   DataTableOutlineButton,
   DataTableSearch,
 } from "../../components/DataTableCard/DataTableCard";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import { Modal } from "../../components/Modal/Modal";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
 import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
@@ -132,6 +133,9 @@ export function Ubicaciones() {
   const [submitting, setSubmitting] = useState(false);
   /** Menú kebab abierto por fila. */
   const [menuId, setMenuId] = useState<string | null>(null);
+  /** Fila pendiente de confirmar eliminación (modal del sistema). */
+  const [pendingDelete, setPendingDelete] = useState<Location | null>(null);
+  const [deleting, setDeleting] = useState(false);
   /** Dirección de orden por nombre en la tabla de lugares; null = sin ordenar. */
   const [nameSort, setNameSort] = useState<"asc" | "desc" | null>(null);
 
@@ -292,22 +296,28 @@ export function Ubicaciones() {
     }
   }
 
-  async function onDelete(row: Location) {
-    if (!accessToken || !canManage) return;
+  function requestDelete(row: Location) {
+    if (!canManage) return;
     setMenuId(null);
-    const ok = window.confirm(
-      `¿Eliminar «${displayName(row.name)}»? Quedará desactivado.`,
-    );
-    if (!ok) return;
+    setPendingDelete(row);
+  }
+
+  /** Soft-delete confirmado vía modal del sistema. */
+  async function confirmDelete() {
+    if (!accessToken || !canManage || !pendingDelete) return;
+    setDeleting(true);
     try {
-      await deleteLocationRequest(accessToken, row.id);
+      await deleteLocationRequest(accessToken, pendingDelete.id);
       showToast("Lugar de trabajo eliminado.", "success");
+      setPendingDelete(null);
       await load();
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo eliminar.",
         "danger",
       );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -585,7 +595,7 @@ export function Ubicaciones() {
                               <button
                                 type="button"
                                 className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                                onClick={() => void onDelete(row)}
+                                onClick={() => requestDelete(row)}
                               >
                                 Eliminar
                               </button>
@@ -777,6 +787,27 @@ export function Ubicaciones() {
           ) : null}
         </form>
       </Modal>
+
+  <ConfirmModal
+    open={pendingDelete !== null}
+    title="Eliminar lugar"
+    message={
+      pendingDelete
+            ? `¿Eliminar «${displayName(pendingDelete.name)}»?`
+            : "¿Eliminar este lugar?"
+    }
+    detail="Quedará desactivado."
+    confirmLabel="Eliminar"
+    busyLabel="Eliminando…"
+    busy={deleting}
+    onClose={() => {
+      if (!deleting) setPendingDelete(null);
+    }}
+    onConfirm={() => {
+      void confirmDelete();
+    }}
+  />
+
     </div>
   );
 }

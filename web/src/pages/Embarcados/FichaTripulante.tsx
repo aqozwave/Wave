@@ -562,7 +562,13 @@ export function FichaTripulante() {
         actions={<UserMenu />}
       />
 
-      <div className="animate-enter flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-y-auto px-8 py-7">
+      <div
+        className={[
+          "animate-enter flex min-h-0 min-w-0 flex-1 flex-col gap-5 px-8 py-7",
+          // Bitácora: sin scroll de página; el timeline scrollea adentro.
+          tab === "historial" ? "overflow-hidden" : "overflow-y-auto",
+        ].join(" ")}
+      >
         {loading ? (
           <p className="text-[13px] text-[var(--color-nachipa-secondary)]">
             Cargando ficha…
@@ -582,7 +588,7 @@ export function FichaTripulante() {
         ) : (
           <>
             {/* Card · Tripulante (header Figma). */}
-            <div className="rounded-2xl border border-[var(--color-tremor-border)] bg-white p-5">
+            <div className="shrink-0 rounded-2xl border border-[var(--color-tremor-border)] bg-white p-5">
               <div className="flex flex-wrap items-start gap-4">
                 <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-[var(--color-status-info-bg)] text-[15px] font-semibold text-[var(--color-status-info-fg)]">
                   {initialsOf(crew)}
@@ -647,7 +653,7 @@ export function FichaTripulante() {
             </div>
 
             {/* Tabs + volver arriba a la derecha. */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap gap-2">
                 {tabs.map((t) => {
                   const active = tab === t.id;
@@ -760,10 +766,13 @@ export function FichaTripulante() {
               />
             ) : null}
             {tab === "historial" && id ? (
-              <CrewBitacoraPanel
-                crewMemberId={id}
-                onOpenDocuments={() => setTab("documentos")}
-              />
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <CrewBitacoraPanel
+                  crewMemberId={id}
+                  businessId={crew.businessId}
+                  onOpenDocuments={() => setTab("documentos")}
+                />
+              </div>
             ) : null}
           </>
         )}

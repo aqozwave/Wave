@@ -15,6 +15,7 @@ import {
   DataTableSearch,
   DataTableSelect,
 } from "../../components/DataTableCard/DataTableCard";
+import { ConfirmModal } from "../../components/ConfirmModal/ConfirmModal";
 import { Modal } from "../../components/Modal/Modal";
 import { StatusChip } from "../../components/StatusChip/StatusChip";
 import { TableHeaderCell } from "../../components/TableHeaderCell/TableHeaderCell";
@@ -88,6 +89,9 @@ export const AreasPanel = forwardRef<AreasPanelHandle>(function AreasPanel(
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
+  /** Fila pendiente de confirmar eliminación (modal del sistema). */
+  const [pendingDelete, setPendingDelete] = useState<Area | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const locationNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -221,22 +225,28 @@ export const AreasPanel = forwardRef<AreasPanelHandle>(function AreasPanel(
     }
   }
 
-  async function onDelete(row: Area) {
-    if (!accessToken || !canManage) return;
+  function requestDelete(row: Area) {
+    if (!canManage) return;
     setMenuId(null);
-    const ok = window.confirm(
-      `¿Eliminar el área «${displayName(row.name)}»? Quedará desactivada.`,
-    );
-    if (!ok) return;
+    setPendingDelete(row);
+  }
+
+  /** Soft-delete confirmado vía modal del sistema. */
+  async function confirmDelete() {
+    if (!accessToken || !canManage || !pendingDelete) return;
+    setDeleting(true);
     try {
-      await deleteAreaRequest(accessToken, row.id);
+      await deleteAreaRequest(accessToken, pendingDelete.id);
       showToast("Área eliminada.", "success");
+      setPendingDelete(null);
       await load();
     } catch (err) {
       showToast(
         err instanceof ApiError ? err.message : "No se pudo eliminar.",
         "danger",
       );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -399,7 +409,7 @@ export const AreasPanel = forwardRef<AreasPanelHandle>(function AreasPanel(
                           <button
                             type="button"
                             className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                            onClick={() => void onDelete(row)}
+                            onClick={() => requestDelete(row)}
                           >
                             Eliminar
                           </button>
@@ -501,6 +511,27 @@ export const AreasPanel = forwardRef<AreasPanelHandle>(function AreasPanel(
           </div>
         </form>
       </Modal>
+
+  <ConfirmModal
+    open={pendingDelete !== null}
+    title="Eliminar área"
+    message={
+      pendingDelete
+            ? `¿Eliminar el área «${displayName(pendingDelete.name)}»?`
+            : "¿Eliminar esta área?"
+    }
+    detail="Quedará desactivada."
+    confirmLabel="Eliminar"
+    busyLabel="Eliminando…"
+    busy={deleting}
+    onClose={() => {
+      if (!deleting) setPendingDelete(null);
+    }}
+    onConfirm={() => {
+      void confirmDelete();
+    }}
+  />
+
     </>
   );
 });

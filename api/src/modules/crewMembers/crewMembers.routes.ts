@@ -65,7 +65,9 @@ import {
 import {
   changeCrewMemberAccessRoleHandler,
   createCrewMemberHandler,
+  createCrewMemberLogEntryHandler,
   deleteCrewMemberHandler,
+  deleteCrewMemberLogEntryHandler,
   getCrewMemberAccessHandler,
   getCrewMemberHandler,
   grantCrewMemberAccessHandler,
@@ -76,7 +78,9 @@ import {
 } from "./crewMembers.controller.js";
 import {
   changeCrewMemberAccessRoleRequestSchema,
+  createCrewMemberLogEntryRequestSchema,
   createCrewMemberRequestSchema,
+  deleteCrewMemberLogEntryRequestSchema,
   deleteCrewMemberRequestSchema,
   getCrewMemberAccessRequestSchema,
   getCrewMemberRequestSchema,
@@ -116,6 +120,22 @@ crewMembersRouter.get(
   requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.READ),
   validate(listCrewMemberHistoryRequestSchema),
   listCrewMemberHistoryHandler,
+);
+
+crewMembersRouter.post(
+  "/:id/log-entries",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.UPDATE),
+  validate(createCrewMemberLogEntryRequestSchema),
+  createCrewMemberLogEntryHandler,
+);
+
+crewMembersRouter.delete(
+  "/:id/log-entries/:entryId",
+  authenticate,
+  requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.UPDATE),
+  validate(deleteCrewMemberLogEntryRequestSchema),
+  deleteCrewMemberLogEntryHandler,
 );
 
 crewMembersRouter.get(

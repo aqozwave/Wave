@@ -224,7 +224,7 @@ export type CrewAccessResponse = z.infer<typeof crewAccessResponseSchema>;
 
 /**
  * Categoría de evento en bitácora (Figma D31 filtros).
- * observation/sanction reservados; hoy no hay tabla dedicada.
+ * observation / sanction / boarding también salen de CrewMemberLogEntry.
  */
 export const crewHistoryCategorySchema = z.enum([
   "all",
@@ -248,6 +248,13 @@ export const listCrewMemberHistoryRequestSchema = z.object({
   query: listCrewMemberHistoryQuerySchema,
 });
 
+/** Origen del ítem en la timeline (para UI: solo log_entry se puede borrar). */
+export const crewHistorySourceSchema = z.enum([
+  "audit",
+  "document",
+  "log_entry",
+]);
+
 /** Ítem timeline de bitácora. */
 export const crewHistoryItemSchema = z
   .object({
@@ -269,6 +276,8 @@ export const crewHistoryItemSchema = z
     actor: z.string().nullable(),
     /** Nombre de archivo adjunto si aplica (docs). */
     attachmentName: z.string().nullable(),
+    /** De dónde salió el evento. */
+    source: crewHistorySourceSchema,
   })
   .openapi("CrewHistoryItem");
 
@@ -294,7 +303,91 @@ export const listCrewMemberHistoryResponseSchema = z
   })
   .openapi("ListCrewMemberHistoryResponse");
 
+/** kind de entrada manual de bitácora. */
+export const crewLogEntryKindSchema = z.enum([
+  "observation",
+  "sanction",
+  "boarding",
+]);
+
+/**
+ * Adjunto opcional al crear entrada (solo amonestación).
+ * Crea CrewMemberDocument y lo vincula; aparece en tab Documentos.
+ */
+export const createCrewMemberLogEntryAttachmentSchema = z.object({
+  documentTypeId: z.uuid(),
+  fileName: z.string().trim().min(1).max(255),
+  mimeType: z.string().trim().min(1),
+  contentBase64: z.string().min(1),
+  expiresAt: z.string().datetime().nullable().optional(),
+});
+
+/** Body POST /crew-members/:id/log-entries. */
+export const createCrewMemberLogEntryBodySchema = z
+  .object({
+    kind: crewLogEntryKindSchema,
+    note: z
+      .string({ error: "La nota es requerida" })
+      .trim()
+      .min(1, "La nota es requerida")
+      .max(2000),
+    /** ISO 8601; si falta, la API usa ahora. */
+    occurredAt: z.string().datetime().optional(),
+    /** Solo permitido si kind = sanction. */
+    attachment: createCrewMemberLogEntryAttachmentSchema.optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.attachment && val.kind !== "sanction") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["attachment"],
+        message: "El adjunto solo aplica a amonestaciones",
+      });
+    }
+  });
+
+export const createCrewMemberLogEntryRequestSchema = z.object({
+  params: crewMemberIdParamsSchema,
+  body: createCrewMemberLogEntryBodySchema,
+});
+
+/** Respuesta de una entrada de bitácora. */
+export const crewMemberLogEntryResponseSchema = z
+  .object({
+    id: z.uuid(),
+    crewMemberId: z.uuid(),
+    kind: crewLogEntryKindSchema,
+    note: z.string(),
+    occurredAt: z.string().datetime(),
+    documentId: z.uuid().nullable(),
+    createdById: z.uuid().nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi("CrewMemberLogEntry");
+
+export const createCrewMemberLogEntryResponseSchema =
+  crewMemberLogEntryResponseSchema;
+
+export const deleteCrewMemberLogEntryParamsSchema = z.object({
+  id: z.uuid(),
+  entryId: z.uuid(),
+});
+
+export const deleteCrewMemberLogEntryRequestSchema = z.object({
+  params: deleteCrewMemberLogEntryParamsSchema,
+});
+
+export const deleteCrewMemberLogEntryResponseSchema =
+  crewMemberLogEntryResponseSchema;
+
 export type ListCrewMemberHistoryQuery = z.infer<
   typeof listCrewMemberHistoryQuerySchema
 >;
 export type CrewHistoryItem = z.infer<typeof crewHistoryItemSchema>;
+export type CreateCrewMemberLogEntryBody = z.infer<
+  typeof createCrewMemberLogEntryBodySchema
+>;
+export type CrewMemberLogEntryResponse = z.infer<
+  typeof crewMemberLogEntryResponseSchema
+>;
