@@ -2,11 +2,9 @@ import { useMemo } from "react";
 import {
   Anchor,
   ArrowRight,
-  Bell,
   BookOpen,
   ClipboardList,
   GraduationCap,
-  Inbox,
   Ship,
   type LucideIcon,
 } from "lucide-react";
@@ -84,26 +82,6 @@ const HUB_GROUPS: HubGroup[] = [
         icon: GraduationCap,
         to: "/cursos/vencimientos",
         canShow: (u) => userHasPermission(u, "cursos.libretas", "read"),
-      },
-    ],
-  },
-  {
-    title: "Avisos",
-    legend: "Hitos y cola de envío (override de prueba activo).",
-    items: [
-      {
-        label: "Notificaciones de vencimiento",
-        legend: "Días de aviso al tripulante y resumen admin.",
-        icon: Bell,
-        to: "/notificaciones",
-        canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
-      },
-      {
-        label: "Outbox",
-        legend: "Cola pending / sent / failed y reintentos.",
-        icon: Inbox,
-        to: "/notificaciones/outbox",
-        canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
       },
     ],
   },

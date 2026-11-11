@@ -125,6 +125,8 @@ export function TrainingSessionsPage() {
   const canCreate = userHasPermission(user, "training_sessions", "create");
   const canUpdate = userHasPermission(user, "training_sessions", "update");
   const canCancel = userHasPermission(user, "training_sessions", "deactivate");
+  /** Link a ficha solo si el rol puede entrar a Embarcados. */
+  const canOpenCrewFicha = userHasPermission(user, "embarcados", "read");
 
   const [items, setItems] = useState<TrainingSession[]>([]);
   const [trainings, setTrainings] = useState<Training[]>([]);
@@ -974,23 +976,36 @@ export function TrainingSessionsPage() {
             <ul className="m-0 flex max-h-[360px] list-none flex-col gap-1 overflow-y-auto p-0">
               {viewAttendees.attendees.map((a) => (
                 <li key={a.id}>
-                  <Link
-                    to={`/embarcados/${a.crewMemberId}`}
-                    className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] px-2.5 py-2 hover:bg-[var(--color-nachipa-bg-page)]"
-                    onClick={() => setViewAttendees(null)}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                        {a.crewMemberName}
+                  {canOpenCrewFicha ? (
+                    <Link
+                      to={`/embarcados/${a.crewMemberId}`}
+                      className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] px-2.5 py-2 hover:bg-[var(--color-nachipa-bg-page)]"
+                      onClick={() => setViewAttendees(null)}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                          {a.crewMemberName}
+                        </span>
+                        <span className="block truncate text-[12px] text-[var(--color-nachipa-secondary)]">
+                          {a.crewMemberRun}
+                        </span>
                       </span>
-                      <span className="block truncate text-[12px] text-[var(--color-nachipa-secondary)]">
-                        {a.crewMemberRun}
+                      <span className="shrink-0 text-[12px] font-medium text-[var(--color-nachipa-primary)]">
+                        Ver ficha
                       </span>
-                    </span>
-                    <span className="shrink-0 text-[12px] font-medium text-[var(--color-nachipa-primary)]">
-                      Ver ficha
-                    </span>
-                  </Link>
+                    </Link>
+                  ) : (
+                    <div className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] px-2.5 py-2">
+                      <span className="min-w-0">
+                        <span className="block truncate text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                          {a.crewMemberName}
+                        </span>
+                        <span className="block truncate text-[12px] text-[var(--color-nachipa-secondary)]">
+                          {a.crewMemberRun}
+                        </span>
+                      </span>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

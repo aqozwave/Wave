@@ -77,18 +77,6 @@ const CURSOS_LINKS: ReadonlyArray<NavLink> = [
     icon: AlertTriangle,
     canShow: (u) => userHasPermission(u, "cursos.libretas", "read"),
   },
-  {
-    label: "Notificaciones",
-    to: "/notificaciones",
-    icon: Bell,
-    canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
-  },
-  {
-    label: "Outbox",
-    to: "/notificaciones/outbox",
-    icon: Inbox,
-    canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
-  },
 ];
 
 /** ¿Puede abrir el módulo Cursos (alguno de sus recursos)? */
@@ -96,7 +84,6 @@ function canSeeCursosModule(user: AuthUser | null): boolean {
   return (
     userHasPermission(user, "cursos.assignments", "read") ||
     userHasPermission(user, "cursos.libretas", "read") ||
-    userHasPermission(user, "cursos.notifications", "read") ||
     userHasPermission(user, "cursos.catalog", "read")
   );
 }
@@ -216,7 +203,7 @@ function isContractorsConfigPath(pathname: string): boolean {
   );
 }
 
-/** Subítems de Configuración (sin Notificaciones: viven bajo Cursos). */
+/** Subítems de Configuración. */
 const CONFIG_LINKS: ReadonlyArray<NavLink> = [
   {
     label: "Resumen",
@@ -259,8 +246,8 @@ const CONFIG_LINKS: ReadonlyArray<NavLink> = [
 ];
 
 /**
- * Subítems de Sistema: cuentas internas (+ roles/bitácora solo superadmin).
- * Los invitados del portal contratista no viven acá (van en Contratistas).
+ * Subítems de Sistema: cuentas, avisos y auditoría.
+ * Notificaciones / Outbox van acá (no bajo Cursos).
  */
 const SYSTEM_LINKS: ReadonlyArray<NavLink> = [
   {
@@ -276,12 +263,33 @@ const SYSTEM_LINKS: ReadonlyArray<NavLink> = [
     canShow: (u) => u?.internalRol === "superadmin",
   },
   {
+    label: "Notificaciones",
+    to: "/notificaciones",
+    icon: Bell,
+    canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
+  },
+  {
+    label: "Outbox",
+    to: "/notificaciones/outbox",
+    icon: Inbox,
+    canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
+  },
+  {
     label: "Bitácora",
     to: "/sistema/actividad",
     icon: ClipboardList,
     canShow: (u) => u?.internalRol === "superadmin",
   },
 ];
+
+/**
+ * Activo del subítem Sistema.
+ * /notificaciones no debe marcarse activo en /notificaciones/outbox.
+ */
+function isSystemNavActive(to: string, pathname: string): boolean {
+  if (to === "/notificaciones") return pathname === "/notificaciones";
+  return pathname === to || pathname.startsWith(`${to}/`);
+}
 
 /** Iniciales a partir de nombre y apellido. */
 function initialsOf(firstName: string, lastName: string): string {
@@ -335,18 +343,17 @@ export function Sidebar() {
     isContractorsConfigPath(location.pathname);
   /** Rutas bajo Tripulación (lista + ficha). */
   const onCrewSection = location.pathname.startsWith("/embarcados");
-  /** Grupo Cursos: /cursos/* y avisos (no catálogos). */
-  const onCursosSection =
-    location.pathname.startsWith("/cursos") ||
-    location.pathname.startsWith("/notificaciones");
+  /** Grupo Cursos: solo /cursos/* (avisos viven en Sistema). */
+  const onCursosSection = location.pathname.startsWith("/cursos");
   /** Grupo Prevención: operación HAB/avisos/PT (Contratistas va en Configuración). */
   const onPrevencionSection =
     location.pathname.startsWith("/prevencion") &&
     !isContractorsConfigPath(location.pathname);
-  /** Rutas bajo Sistema (usuarios internos + roles/bitácora). */
+  /** Rutas bajo Sistema (usuarios, roles, notificaciones, bitácora). */
   const onSystemSection =
     location.pathname.startsWith("/usuarios") ||
     location.pathname.startsWith("/roles") ||
+    location.pathname.startsWith("/notificaciones") ||
     location.pathname.startsWith("/sistema");
   const onPanel = location.pathname === "/";
   /** Habilitación del portal contratista (E4). */
@@ -1067,9 +1074,10 @@ export function Sidebar() {
                   {visibleSystemLinks.map((item) => {
                     if (!item.to) return null;
                     const Icon = item.icon;
-                    const active =
-                      location.pathname === item.to ||
-                      location.pathname.startsWith(`${item.to}/`);
+                    const active = isSystemNavActive(
+                      item.to,
+                      location.pathname,
+                    );
                     return (
                       <Link
                         key={item.to}

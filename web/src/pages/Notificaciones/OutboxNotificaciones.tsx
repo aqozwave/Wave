@@ -243,7 +243,7 @@ export function OutboxNotificaciones() {
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
         <PageHeader
           crumbs={[
-            { label: "Configuración" },
+            { label: "Sistema" },
             { label: "Notificaciones", to: "/notificaciones" },
             { label: "Outbox" },
           ]}

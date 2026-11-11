@@ -9,6 +9,7 @@ import {
 } from "react-router";
 import { AppShell } from "./components/AppShell/AppShell";
 import { PanelSkeleton } from "./components/PanelSkeleton/PanelSkeleton";
+import { RequirePermission } from "./components/RequirePermission/RequirePermission";
 import { useAuth } from "./lib/auth/AuthContext";
 import { useIdleTimeout } from "./lib/auth/useIdleTimeout";
 import { ConfirmEmail } from "./pages/ConfirmEmail/ConfirmEmail";
@@ -175,8 +176,15 @@ export function App() {
             path="portal/permisos/:id"
             element={<WorkPermitDetailPage />}
           />
-          <Route path="embarcados" element={<Embarcados />} />
-          <Route path="embarcados/:id" element={<FichaTripulante />} />
+          {/* Sin embarcados.read → Panel (no listado vacío ni ficha 403). */}
+          <Route
+            element={
+              <RequirePermission resource="embarcados" action="read" />
+            }
+          >
+            <Route path="embarcados" element={<Embarcados />} />
+            <Route path="embarcados/:id" element={<FichaTripulante />} />
+          </Route>
           <Route
             path="tripulantes"
             element={<Navigate to="/embarcados" replace />}

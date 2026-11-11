@@ -198,7 +198,7 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
   {
     id: "notificaciones",
     label: "Notificaciones de vencimiento",
-    group: "Cursos",
+    group: "Sistema",
     to: "/notificaciones",
     keywords: ["avisos", "hitos", "digest"],
     canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
@@ -206,7 +206,7 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
   {
     id: "outbox",
     label: "Outbox de notificaciones",
-    group: "Cursos",
+    group: "Sistema",
     to: "/notificaciones/outbox",
     keywords: ["cola", "correos", "envíos"],
     canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
