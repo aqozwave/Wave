@@ -215,8 +215,7 @@ const CONFIG_LINKS: ReadonlyArray<NavLink> = [
     label: "Empresas",
     to: "/empresas",
     icon: Building2,
-    canShow: (u) =>
-      u?.internalRol === "superadmin" || u?.internalRol === "admin",
+    canShow: (u) => userHasPermission(u, "maestros.businesses", "read"),
   },
   {
     label: "Contratistas",
@@ -228,7 +227,12 @@ const CONFIG_LINKS: ReadonlyArray<NavLink> = [
     label: "Flota y operación",
     to: "/ubicaciones",
     icon: MapPin,
-    canShow: (u) => userHasPermission(u, "maestros.locations", "read"),
+    canShow: (u) =>
+      userHasPermission(u, "maestros.locations", "read") ||
+      userHasPermission(u, "maestros.areas", "read") ||
+      userHasPermission(u, "maestros.ports", "read") ||
+      userHasPermission(u, "maestros.muelles", "read") ||
+      userHasPermission(u, "maestros.travesias", "read"),
   },
   {
     label: "Catálogos maestros",
@@ -278,7 +282,7 @@ const SYSTEM_LINKS: ReadonlyArray<NavLink> = [
     label: "Bitácora",
     to: "/sistema/actividad",
     icon: ClipboardList,
-    canShow: (u) => u?.internalRol === "superadmin",
+    canShow: (u) => userHasPermission(u, "sistema.activity_logs", "read"),
   },
 ];
 
@@ -410,7 +414,7 @@ export function Sidebar() {
   const showCursosGroup = !isContractorPortal && visibleCursosLinks.length > 0;
   const showConfigGroup = !isContractorPortal && visibleConfigLinks.length > 0;
   const showPrevencion = !isContractorPortal && canSeePrevencion(user);
-  /** Sistema: Usuarios/Roles por permiso; Bitácora (superadmin). */
+  /** Sistema: Usuarios / Roles / avisos / Bitácora por permiso. */
   const showSystemGroup =
     !isContractorPortal && visibleSystemLinks.length > 0;
   /** Etiqueta del home según rol (Figma C1 / T* / E3). */

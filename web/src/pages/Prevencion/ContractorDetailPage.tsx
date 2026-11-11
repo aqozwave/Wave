@@ -298,17 +298,18 @@ export function ContractorDetailPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const canRead = userHasPermission(user, "contractors", "read");
-  const canInvite =
-    (user?.internalRol === "admin" || user?.internalRol === "superadmin") &&
-    userHasPermission(user, "contractors", "create");
+  const canInvite = userHasPermission(user, "contractors", "create");
+  /** Editar org / menús de escritura (ya no admin||superadmin). */
   const canManage =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
-  const canCreatePeople =
-    canManage && userHasPermission(user, "contractors", "create");
-  const canUpdatePeople =
-    canManage && userHasPermission(user, "contractors", "update");
-  const canDeactivatePeople =
-    canManage && userHasPermission(user, "contractors", "deactivate");
+    userHasPermission(user, "contractors", "update") ||
+    userHasPermission(user, "contractors", "deactivate");
+  const canCreatePeople = userHasPermission(user, "contractors", "create");
+  const canUpdatePeople = userHasPermission(user, "contractors", "update");
+  const canDeactivatePeople = userHasPermission(
+    user,
+    "contractors",
+    "deactivate",
+  );
   const canReadHab = userHasPermission(user, "accreditations", "read");
   const canCreateHab = userHasPermission(user, "accreditations", "create");
   const canReadPermits = userHasPermission(user, "work_permits", "read");

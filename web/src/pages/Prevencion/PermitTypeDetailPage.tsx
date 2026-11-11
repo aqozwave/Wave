@@ -31,6 +31,7 @@ import {
   type PermitType,
   type PermitTypeRequirement,
 } from "../../lib/api/permitTypes";
+import { userHasPermission } from "../../lib/api/auth";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { PermitTypeChecklistPanel } from "./PermitTypeChecklistPanel";
 import { PermitTypeRequirementsPanel } from "./PermitTypeRequirementsPanel";
@@ -60,15 +61,19 @@ const selectClass =
 
 /**
  * Ficha de tipo: datos + exigencias (P15) + checklist.
- * Encabezado y nested editables (admin/superadmin).
+ * Encabezado y nested editables según permit_types.*.
  */
 export function PermitTypeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
-  const canManage =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
+  /** Alta de exigencias / ítems checklist. */
+  const canCreate = userHasPermission(user, "permit_types", "create");
+  /** Editar encabezado, exigencias e ítems. */
+  const canUpdate = userHasPermission(user, "permit_types", "update");
+  /** Desactivar tipo / exigencias / ítems. */
+  const canDeactivate = userHasPermission(user, "permit_types", "deactivate");
 
   const [permitType, setPermitType] = useState<PermitType | null>(null);
   const [requirements, setRequirements] = useState<PermitTypeRequirement[]>(
@@ -113,20 +118,20 @@ export function PermitTypeDetailPage() {
     void load();
   }, [load]);
 
-  /** Carga flujos activos del tenant del tipo para el select. */
+  /** Carga flujos activos del tenant del tipo para el select de edición. */
   useEffect(() => {
-    if (!accessToken || !permitType || !canManage) return;
+    if (!accessToken || !permitType || !canUpdate) return;
     void listApprovalFlowsRequest(accessToken, 1, 100, {
       businessId: permitType.businessId,
       active: true,
     })
       .then((res) => setFlows(res.items))
       .catch(() => setFlows([]));
-  }, [accessToken, permitType, canManage]);
+  }, [accessToken, permitType, canUpdate]);
 
   /** Abre modal con datos actuales. */
   function openEdit() {
-    if (!permitType) return;
+    if (!permitType || !canUpdate) return;
     setForm({
       name: permitType.name,
       criticality: permitType.criticality,
@@ -142,7 +147,7 @@ export function PermitTypeDetailPage() {
   /** Guarda PATCH del encabezado. */
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!accessToken || !id || !form || submitting) return;
+    if (!accessToken || !id || !form || submitting || !canUpdate) return;
     if (!form.name.trim()) {
       showToast("El nombre es requerido.", "danger");
       return;
@@ -177,7 +182,9 @@ export function PermitTypeDetailPage() {
 
   /** Soft-delete y vuelve al listado (tras Modal). */
   async function confirmDeactivate() {
-    if (!accessToken || !id || !permitType || deactivating) return;
+    if (!accessToken || !id || !permitType || deactivating || !canDeactivate) {
+      return;
+    }
     setDeactivating(true);
     try {
       await deletePermitTypeRequest(accessToken, id);
@@ -222,24 +229,28 @@ export function PermitTypeDetailPage() {
             "Exigencias y checklist del tipo."
           }
           actions={
-            canManage && permitType ? (
+            permitType && (canUpdate || canDeactivate) ? (
               <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="medium"
-                  className="!w-auto"
-                  onClick={openEdit}
-                >
-                  <Pencil className="size-4" strokeWidth={1.5} aria-hidden />
-                  Editar
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => setDeactivateOpen(true)}
-                  className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                >
-                  Desactivar
-                </button>
+                {canUpdate ? (
+                  <Button
+                    type="button"
+                    size="medium"
+                    className="!w-auto"
+                    onClick={openEdit}
+                  >
+                    <Pencil className="size-4" strokeWidth={1.5} aria-hidden />
+                    Editar
+                  </Button>
+                ) : null}
+                {canDeactivate ? (
+                  <button
+                    type="button"
+                    onClick={() => setDeactivateOpen(true)}
+                    className="inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                  >
+                    Desactivar
+                  </button>
+                ) : null}
               </div>
             ) : null
           }
@@ -314,7 +325,9 @@ export function PermitTypeDetailPage() {
               permitTypeCode={permitType.code}
               businessId={permitType.businessId}
               items={requirements}
-              canManage={canManage}
+              canCreate={canCreate}
+              canUpdate={canUpdate}
+              canDeactivate={canDeactivate}
               onChanged={() => {
                 void load();
               }}
@@ -323,7 +336,9 @@ export function PermitTypeDetailPage() {
             <PermitTypeChecklistPanel
               permitTypeId={permitType.id}
               items={checklist}
-              canManage={canManage}
+              canCreate={canCreate}
+              canUpdate={canUpdate}
+              canDeactivate={canDeactivate}
               onChanged={() => {
                 void load();
               }}

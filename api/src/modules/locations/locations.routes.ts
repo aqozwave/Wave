@@ -1,6 +1,7 @@
 import { Router } from "express";
+import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
+import { requirePermission } from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createLocationHandler,
@@ -39,11 +40,14 @@ locationsRouter.get(
   listLocationsHandler,
 );
 
-// Alta: admin o superadmin.
+// Alta: permiso create sobre maestros.locations.
 locationsRouter.post(
   "/",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_LOCATIONS,
+    PERMISSION_ACTION.CREATE,
+  ),
   validate(createLocationRequestSchema),
   createLocationHandler,
 );
@@ -86,20 +90,26 @@ locationsRouter.get(
   getLocationHandler,
 );
 
-// Edición: admin o superadmin.
+// Edición: permiso update sobre maestros.locations.
 locationsRouter.patch(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_LOCATIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(updateLocationRequestSchema),
   updateLocationHandler,
 );
 
-// Soft delete: admin o superadmin.
+// Soft delete: permiso deactivate sobre maestros.locations.
 locationsRouter.delete(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_LOCATIONS,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
   validate(deleteLocationRequestSchema),
   deleteLocationHandler,
 );

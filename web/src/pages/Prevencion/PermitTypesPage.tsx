@@ -86,20 +86,26 @@ const selectClass =
 
 /**
  * Listado de tipos de permiso (P1 / P14) con CRUD de encabezado.
- * Click en código → ficha exigencias/checklist. Mutaciones: admin/superadmin.
+ * Click en código → ficha exigencias/checklist. Mutaciones: permit_types.*.
  */
 export function PermitTypesPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
+  /** Solo para filtro/columna multi-empresa (alcance de datos). */
   const isSuperadmin = user?.internalRol === "superadmin";
   /**
    * Catálogo en menú: update (no basta read).
    * read solo sirve para selects al crear avisos (solicitante).
    */
   const canViewCatalog = userHasPermission(user, "permit_types", "update");
-  /** API exige requireTenantManager (admin/superadmin). */
-  const canManage =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
+  /** Alta de tipo según RBAC. */
+  const canCreate = userHasPermission(user, "permit_types", "create");
+  /** Editar encabezado según RBAC. */
+  const canUpdate = userHasPermission(user, "permit_types", "update");
+  /** Soft-delete / desactivar según RBAC. */
+  const canDeactivate = userHasPermission(user, "permit_types", "deactivate");
+  /** Menú kebab si hay al menos una mutación de fila. */
+  const canShowRowMenu = canUpdate || canDeactivate;
 
   const [items, setItems] = useState<PermitType[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -178,6 +184,7 @@ export function PermitTypesPage() {
 
   /** Abre modal de alta. */
   function openCreate() {
+    if (!canCreate) return;
     setEditing(null);
     setForm({
       ...EMPTY_FORM,
@@ -188,6 +195,7 @@ export function PermitTypesPage() {
 
   /** Abre modal de edición con el tipo. */
   function openEdit(row: PermitType) {
+    if (!canUpdate) return;
     setMenuId(null);
     setEditing(row);
     setForm({
@@ -214,6 +222,7 @@ export function PermitTypesPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!accessToken || submitting) return;
+    if (editing ? !canUpdate : !canCreate) return;
 
     const code = form.code.trim().toUpperCase();
     if (!/^[A-Z]{2,4}$/.test(code)) {
@@ -273,13 +282,14 @@ export function PermitTypesPage() {
 
   /** Abre Modal de confirmación para desactivar. */
   function askDeactivate(row: PermitType) {
+    if (!canDeactivate) return;
     setMenuId(null);
     setPendingDeactivate(row);
   }
 
   /** Soft-delete del tipo (tras Modal). */
   async function confirmDeactivate() {
-    if (!accessToken || !canManage || !pendingDeactivate || deactivating) {
+    if (!accessToken || !canDeactivate || !pendingDeactivate || deactivating) {
       return;
     }
     setDeactivating(true);
@@ -331,7 +341,7 @@ export function PermitTypesPage() {
           title="Tipos de permiso"
           description="Catálogo por empresa. Abrí un tipo para ver exigencias y checklist."
           actions={
-            canManage ? (
+            canCreate ? (
               <Button
                 type="button"
                 size="medium"
@@ -470,7 +480,7 @@ export function PermitTypesPage() {
                       </StatusChip>
                     </td>
                     <td className="relative px-3 py-2.5 text-right">
-                      {canManage ? (
+                      {canShowRowMenu ? (
                         <>
                           <button
                             type="button"
@@ -488,20 +498,24 @@ export function PermitTypesPage() {
                           </button>
                           {menuId === row.id ? (
                             <div className="absolute right-3 z-10 mt-1 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-sm">
-                              <button
-                                type="button"
-                                className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                                onClick={() => openEdit(row)}
-                              >
-                                Editar
-                              </button>
-                              <button
-                                type="button"
-                                className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-nachipa-bg-page)]"
-                                onClick={() => askDeactivate(row)}
-                              >
-                                Desactivar
-                              </button>
+                              {canUpdate ? (
+                                <button
+                                  type="button"
+                                  className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                  onClick={() => openEdit(row)}
+                                >
+                                  Editar
+                                </button>
+                              ) : null}
+                              {canDeactivate ? (
+                                <button
+                                  type="button"
+                                  className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                  onClick={() => askDeactivate(row)}
+                                >
+                                  Desactivar
+                                </button>
+                              ) : null}
                             </div>
                           ) : null}
                         </>

@@ -40,6 +40,7 @@ import {
   type LocationKind,
   type LocationWriteBody,
 } from "../../lib/api/locations";
+import { userHasPermission } from "../../lib/api/auth";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 import { downloadXls } from "../../lib/exportXls";
 import { AreasPanel, type AreasPanelHandle } from "./AreasPanel";
@@ -110,12 +111,36 @@ export function Ubicaciones() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const isSuperadmin = user?.internalRol === "superadmin";
-  /** Admin o superadmin pueden CRUD (mismo criterio que la API). */
-  const canManage =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
+  /** Alta de lugar de trabajo según RBAC. */
+  const canCreateLocations = userHasPermission(
+    user,
+    "maestros.locations",
+    "create",
+  );
+  /** Editar lugar de trabajo según RBAC. */
+  const canUpdate = userHasPermission(user, "maestros.locations", "update");
+  /** Desactivar / eliminar lugar de trabajo según RBAC. */
+  const canDeactivate = userHasPermission(
+    user,
+    "maestros.locations",
+    "deactivate",
+  );
+  /** Alta / editar / desactivar lugares según RBAC (no internalRol). */
+  const canManage = canCreateLocations || canUpdate || canDeactivate;
 
   /** Tab activo de Flota. */
   const [tab, setTab] = useState<FlotaTab>("locations");
+  /** Alta del recurso del tab activo (botón Nuevo del header). */
+  const canCreate =
+    tab === "locations"
+      ? canCreateLocations
+      : tab === "areas"
+        ? userHasPermission(user, "maestros.areas", "create")
+        : tab === "ports"
+          ? userHasPermission(user, "maestros.ports", "create")
+          : tab === "muelles"
+            ? userHasPermission(user, "maestros.muelles", "create")
+            : userHasPermission(user, "maestros.travesias", "create");
   /** Abre el modal de alta de áreas desde el PageHeader. */
   const areasPanelRef = useRef<AreasPanelHandle>(null);
   /** Abre el modal de alta de puertos desde el PageHeader. */
@@ -264,7 +289,7 @@ export function Ubicaciones() {
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!accessToken || !canManage) return;
+    if (!accessToken || !(editing ? canUpdate : canCreateLocations)) return;
     if (!form.name.trim()) {
       showToast("El nombre es requerido.", "danger");
       return;
@@ -297,14 +322,14 @@ export function Ubicaciones() {
   }
 
   function requestDelete(row: Location) {
-    if (!canManage) return;
+    if (!canDeactivate) return;
     setMenuId(null);
     setPendingDelete(row);
   }
 
   /** Soft-delete confirmado vía modal del sistema. */
   async function confirmDelete() {
-    if (!accessToken || !canManage || !pendingDelete) return;
+    if (!accessToken || !canDeactivate || !pendingDelete) return;
     setDeleting(true);
     try {
       await deleteLocationRequest(accessToken, pendingDelete.id);
@@ -371,7 +396,7 @@ export function Ubicaciones() {
           title="Flota y operación"
           description="Naves y oficinas, áreas, muelles y travesías. Las áreas dependen del lugar de trabajo."
           actions={
-            canManage ? (
+            canCreate ? (
               <Button
                 type="button"
                 className="!w-auto shrink-0"
@@ -585,20 +610,24 @@ export function Ubicaciones() {
                           </button>
                           {menuId === row.id ? (
                             <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
-                              <button
-                                type="button"
-                                className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                                onClick={() => openEdit(row)}
-                              >
-                                Editar
-                              </button>
-                              <button
-                                type="button"
-                                className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                                onClick={() => requestDelete(row)}
-                              >
-                                Eliminar
-                              </button>
+                              {canUpdate ? (
+                                <button
+                                  type="button"
+                                  className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                  onClick={() => openEdit(row)}
+                                >
+                                  Editar
+                                </button>
+                              ) : null}
+                              {canDeactivate ? (
+                                <button
+                                  type="button"
+                                  className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
+                                  onClick={() => requestDelete(row)}
+                                >
+                                  Eliminar
+                                </button>
+                              ) : null}
                             </div>
                           ) : null}
                         </>

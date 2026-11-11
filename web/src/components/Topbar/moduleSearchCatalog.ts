@@ -218,7 +218,7 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     to: "/empresas",
     keywords: ["tenants", "compañías"],
     canShow: (u) =>
-      u?.internalRol === "superadmin" || u?.internalRol === "admin",
+      userHasPermission(u, "maestros.businesses", "read"),
   },
   {
     id: "flota",
@@ -266,7 +266,7 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     group: "Sistema",
     to: "/sistema/actividad",
     keywords: ["auditoría", "logs", "registro de actividad"],
-    canShow: (u) => u?.internalRol === "superadmin",
+    canShow: (u) => userHasPermission(u, "sistema.activity_logs", "read"),
   },
 ];
 

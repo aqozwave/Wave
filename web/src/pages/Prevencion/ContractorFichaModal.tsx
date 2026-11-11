@@ -279,10 +279,11 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const open = Boolean(organizationId);
+  /** Acciones de escritura sobre la organización (no por internalRol). */
   const canManage =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
-  const canInvite =
-    canManage && userHasPermission(user, "contractors", "create");
+    userHasPermission(user, "contractors", "update") ||
+    userHasPermission(user, "contractors", "deactivate");
+  const canInvite = userHasPermission(user, "contractors", "create");
   const canReadHab = userHasPermission(user, "accreditations", "read");
   const canCreateHab = userHasPermission(user, "accreditations", "create");
   const canReadPermits = userHasPermission(user, "work_permits", "read");

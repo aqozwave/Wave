@@ -20,8 +20,12 @@ type Props = {
   items: PermitChecklistItem[];
   /** Tras mutar, recargar. */
   onChanged: () => void;
-  /** Si false, solo lectura. */
-  canManage: boolean;
+  /** Alta de ítem (permit_types.create). */
+  canCreate: boolean;
+  /** Editar ítem (permit_types.update). */
+  canUpdate: boolean;
+  /** Desactivar ítem (permit_types.deactivate). */
+  canDeactivate: boolean;
 };
 
 /** Form ítem checklist. */
@@ -39,7 +43,9 @@ export function PermitTypeChecklistPanel({
   permitTypeId,
   items,
   onChanged,
-  canManage,
+  canCreate,
+  canUpdate,
+  canDeactivate,
 }: Props) {
   const { accessToken } = useAuth();
   const { showToast } = useToast();
@@ -59,6 +65,7 @@ export function PermitTypeChecklistPanel({
 
   /** Abre alta. */
   function openCreate() {
+    if (!canCreate) return;
     setEditing(null);
     setForm({ text: "", order: "", active: true });
     setOpen(true);
@@ -66,6 +73,7 @@ export function PermitTypeChecklistPanel({
 
   /** Abre edición. */
   function openEdit(row: PermitChecklistItem) {
+    if (!canUpdate) return;
     setEditing(row);
     setForm({
       text: row.text,
@@ -86,6 +94,7 @@ export function PermitTypeChecklistPanel({
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!accessToken || submitting) return;
+    if (editing ? !canUpdate : !canCreate) return;
     if (!form.text.trim()) {
       showToast("El texto es requerido.", "danger");
       return;
@@ -136,7 +145,7 @@ export function PermitTypeChecklistPanel({
 
   /** Confirma desactivar ítem (Modal del sistema). */
   async function confirmDeactivate() {
-    if (!accessToken || !canManage || !pendingDeactivate || deactivating) {
+    if (!accessToken || !canDeactivate || !pendingDeactivate || deactivating) {
       return;
     }
     setDeactivating(true);
@@ -166,7 +175,7 @@ export function PermitTypeChecklistPanel({
           <h2 className="m-0 text-[14px] font-semibold text-[var(--color-nachipa-title)]">
             Checklist ({items.length})
           </h2>
-          {canManage ? (
+          {canCreate ? (
             <Button
               type="button"
               size="small"
@@ -191,22 +200,26 @@ export function PermitTypeChecklistPanel({
                     {item.text}
                     {!item.active ? " (inactivo)" : ""}
                   </span>
-                  {canManage ? (
+                  {canUpdate || canDeactivate ? (
                     <span className="flex gap-2 text-[12px]">
-                      <button
-                        type="button"
-                        className="font-medium text-[var(--color-nachipa-primary)] hover:underline"
-                        onClick={() => openEdit(item)}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        className="font-medium text-[var(--color-status-danger-fg)] hover:underline"
-                        onClick={() => setPendingDeactivate(item)}
-                      >
-                        Desactivar
-                      </button>
+                      {canUpdate ? (
+                        <button
+                          type="button"
+                          className="font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                          onClick={() => openEdit(item)}
+                        >
+                          Editar
+                        </button>
+                      ) : null}
+                      {canDeactivate ? (
+                        <button
+                          type="button"
+                          className="font-medium text-[var(--color-status-danger-fg)] hover:underline"
+                          onClick={() => setPendingDeactivate(item)}
+                        >
+                          Desactivar
+                        </button>
+                      ) : null}
                     </span>
                   ) : null}
                 </div>

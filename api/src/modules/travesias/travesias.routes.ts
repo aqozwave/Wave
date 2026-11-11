@@ -1,6 +1,7 @@
 import { Router } from "express";
+import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
+import { requirePermission } from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createTravesiaHandler,
@@ -33,7 +34,10 @@ travesiasRouter.get(
 travesiasRouter.post(
   "/",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_TRAVESIAS,
+    PERMISSION_ACTION.CREATE,
+  ),
   validate(createTravesiaRequestSchema),
   createTravesiaHandler,
 );
@@ -48,7 +52,10 @@ travesiasRouter.get(
 travesiasRouter.patch(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_TRAVESIAS,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(updateTravesiaRequestSchema),
   updateTravesiaHandler,
 );
@@ -56,7 +63,10 @@ travesiasRouter.patch(
 travesiasRouter.delete(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_TRAVESIAS,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
   validate(deleteTravesiaRequestSchema),
   deleteTravesiaHandler,
 );

@@ -2,7 +2,6 @@ import { Router } from "express";
 import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { requirePermission } from "../../middlewares/requirePermission.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createRankHandler,
@@ -37,7 +36,6 @@ ranksRouter.get(
 ranksRouter.post(
   "/",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.MAESTROS_RANKS,
     PERMISSION_ACTION.CREATE,
@@ -49,6 +47,7 @@ ranksRouter.post(
 ranksRouter.get(
   "/:id",
   authenticate,
+  requirePermission(PERMISSION_RESOURCE.MAESTROS_RANKS, PERMISSION_ACTION.READ),
   validate(getRankRequestSchema),
   getRankHandler,
 );
@@ -56,7 +55,10 @@ ranksRouter.get(
 ranksRouter.patch(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_RANKS,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(updateRankRequestSchema),
   updateRankHandler,
 );
@@ -64,7 +66,10 @@ ranksRouter.patch(
 ranksRouter.delete(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_RANKS,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
   validate(deleteRankRequestSchema),
   deleteRankHandler,
 );

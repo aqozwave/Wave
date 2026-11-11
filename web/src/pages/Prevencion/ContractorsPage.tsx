@@ -218,8 +218,14 @@ export function ContractorsPage() {
   const isSuperadmin = user?.internalRol === "superadmin";
   const canRead = userHasPermission(user, "contractors", "read");
   const canReadHab = userHasPermission(user, "accreditations", "read");
-  const canManage =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
+  /** Alta de organización (y invitación de contacto). */
+  const canCreate = userHasPermission(user, "contractors", "create");
+  /** Editar datos de organización. */
+  const canUpdate = userHasPermission(user, "contractors", "update");
+  /** Soft-delete / desactivar. */
+  const canDeactivate = userHasPermission(user, "contractors", "deactivate");
+  /** Menú kebab si hay alguna acción de escritura. */
+  const canShowRowMenu = canUpdate || canDeactivate;
 
   const [items, setItems] = useState<ContractorOrganization[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -356,6 +362,7 @@ export function ContractorsPage() {
   }
 
   function openCreate() {
+    if (!canCreate) return;
     setEditing(null);
     setForm({ ...EMPTY_FORM, businessId: user?.businessId ?? "" });
     setInviteNow(true);
@@ -363,6 +370,7 @@ export function ContractorsPage() {
   }
 
   function openEdit(row: ContractorOrganization) {
+    if (!canUpdate) return;
     setMenuId(null);
     setEditing(row);
     setForm({
@@ -394,6 +402,7 @@ export function ContractorsPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!accessToken || submitting) return;
+    if (editing ? !canUpdate : !canCreate) return;
     if (!form.name.trim()) {
       showToast("El nombre es requerido.", "danger");
       return;
@@ -464,7 +473,7 @@ export function ContractorsPage() {
   }
 
   async function confirmDeactivate() {
-    if (!accessToken || !canManage || !pendingDeactivate || deactivating) {
+    if (!accessToken || !canDeactivate || !pendingDeactivate || deactivating) {
       return;
     }
     setDeactivating(true);
@@ -525,7 +534,7 @@ export function ContractorsPage() {
               >
                 Importar
               </DataTableOutlineButton>
-              {canManage ? (
+              {canCreate ? (
                 <Button
                   type="button"
                   size="medium"
@@ -744,7 +753,7 @@ export function ContractorsPage() {
                         </StatusChip>
                       </td>
                       <td className="relative px-3 py-2.5 text-right">
-                        {canManage ? (
+                        {canShowRowMenu ? (
                           <>
                             <button
                               type="button"
@@ -771,20 +780,24 @@ export function ContractorsPage() {
                                 >
                                   Ver ficha
                                 </button>
-                                <button
-                                  type="button"
-                                  className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                                  onClick={() => openEdit(row)}
-                                >
-                                  Editar
-                                </button>
-                                <button
-                                  type="button"
-                                  className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-nachipa-bg-page)]"
-                                  onClick={() => askDeactivate(row)}
-                                >
-                                  Desactivar
-                                </button>
+                                {canUpdate ? (
+                                  <button
+                                    type="button"
+                                    className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                    onClick={() => openEdit(row)}
+                                  >
+                                    Editar
+                                  </button>
+                                ) : null}
+                                {canDeactivate ? (
+                                  <button
+                                    type="button"
+                                    className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                    onClick={() => askDeactivate(row)}
+                                  >
+                                    Desactivar
+                                  </button>
+                                ) : null}
                               </div>
                             ) : null}
                           </>

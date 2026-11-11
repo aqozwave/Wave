@@ -37,8 +37,12 @@ type Props = {
   items: PermitTypeRequirement[];
   /** Tras mutar, recargar listado. */
   onChanged: () => void;
-  /** Si false, solo lectura. */
-  canManage: boolean;
+  /** Alta de exigencia (permit_types.create). */
+  canCreate: boolean;
+  /** Editar exigencia (permit_types.update). */
+  canUpdate: boolean;
+  /** Desactivar exigencia (permit_types.deactivate). */
+  canDeactivate: boolean;
 };
 
 /** Form exigencia (sin key: la genera el sistema al crear). */
@@ -164,7 +168,9 @@ export function PermitTypeRequirementsPanel({
   businessId,
   items,
   onChanged,
-  canManage,
+  canCreate,
+  canUpdate,
+  canDeactivate,
 }: Props) {
   const { accessToken } = useAuth();
   const { showToast } = useToast();
@@ -220,6 +226,7 @@ export function PermitTypeRequirementsPanel({
 
   /** Abre alta. */
   function openCreate() {
+    if (!canCreate) return;
     setEditing(null);
     setForm(emptyForm());
     setOpen(true);
@@ -227,6 +234,7 @@ export function PermitTypeRequirementsPanel({
 
   /** Abre edición (key no se toca: es id interno del sistema). */
   function openEdit(row: PermitTypeRequirement) {
+    if (!canUpdate) return;
     setEditing(row);
     setForm({
       kind: row.kind,
@@ -253,6 +261,7 @@ export function PermitTypeRequirementsPanel({
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!accessToken || submitting) return;
+    if (editing ? !canUpdate : !canCreate) return;
     if (!form.label.trim()) {
       showToast("El nombre es requerido.", "danger");
       return;
@@ -330,7 +339,7 @@ export function PermitTypeRequirementsPanel({
 
   /** Confirma desactivar exigencia (tras Modal). */
   async function confirmDeactivate() {
-    if (!accessToken || !canManage || !pendingDeactivate || deactivating) {
+    if (!accessToken || !canDeactivate || !pendingDeactivate || deactivating) {
       return;
     }
     setDeactivating(true);
@@ -365,7 +374,7 @@ export function PermitTypeRequirementsPanel({
               Documentos, capacitaciones y checklist requeridos.
             </p>
           </div>
-          {canManage ? (
+          {canCreate ? (
             <Button
               type="button"
               size="small"
@@ -424,22 +433,26 @@ export function PermitTypeRequirementsPanel({
                   ) : (
                     <StatusChip tone="neutral">Opcional</StatusChip>
                   )}
-                  {canManage ? (
+                  {canUpdate || canDeactivate ? (
                     <>
-                      <button
-                        type="button"
-                        className="ml-1 text-[12px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
-                        onClick={() => openEdit(req)}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        className="text-[12px] font-medium text-[var(--color-status-danger-fg)] hover:underline"
-                        onClick={() => setPendingDeactivate(req)}
-                      >
-                        Desactivar
-                      </button>
+                      {canUpdate ? (
+                        <button
+                          type="button"
+                          className="ml-1 text-[12px] font-medium text-[var(--color-nachipa-primary)] hover:underline"
+                          onClick={() => openEdit(req)}
+                        >
+                          Editar
+                        </button>
+                      ) : null}
+                      {canDeactivate ? (
+                        <button
+                          type="button"
+                          className="text-[12px] font-medium text-[var(--color-status-danger-fg)] hover:underline"
+                          onClick={() => setPendingDeactivate(req)}
+                        >
+                          Desactivar
+                        </button>
+                      ) : null}
                     </>
                   ) : null}
                 </div>

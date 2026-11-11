@@ -12,6 +12,7 @@ import { PageHeader } from "../../components/PageHeader/PageHeader";
 import { Topbar } from "../../components/Topbar/Topbar";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
+import { userHasPermission } from "../../lib/api/auth";
 import {
   ALLOWED_EXPIRY_NOTICE_DAYS,
   COURSE_EXPIRED_MAX_REMINDER_OPTIONS,
@@ -130,8 +131,10 @@ function SettingsCard({
  * Ruta: /notificaciones
  */
 export function NotificacionesVencimiento() {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const { showToast } = useToast();
+  /** Guardar hitos: cursos.notifications:update. */
+  const canUpdate = userHasPermission(user, "cursos.notifications", "update");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<ExpiryNotificationSettings>({
@@ -161,6 +164,7 @@ export function NotificacionesVencimiento() {
 
   /** Alterna un hito en un canal. */
   function toggleDay(field: DaysField, day: number) {
+    if (!canUpdate) return;
     setSettings((prev) => {
       const current = prev[field] ?? [];
       const next = current.includes(day)
@@ -172,7 +176,7 @@ export function NotificacionesVencimiento() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!accessToken || saving) return;
+    if (!accessToken || saving || !canUpdate) return;
     setSaving(true);
     try {
       const saved = await updateExpiryNotificationSettingsRequest(
@@ -456,19 +460,30 @@ export function NotificacionesVencimiento() {
               </div>
             </SettingsCard>
 
-            <div className="mt-auto flex shrink-0 justify-end gap-2 pt-1">
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => void load()}
-                className="inline-flex h-[30px] items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[12px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60"
-              >
-                Descartar
-              </button>
-              <Button type="submit" size="small" className="!w-auto" disabled={saving}>
-                {saving ? "Guardando…" : "Guardar"}
-              </Button>
-            </div>
+            {canUpdate ? (
+              <div className="mt-auto flex shrink-0 justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void load()}
+                  className="inline-flex h-[30px] items-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[12px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60"
+                >
+                  Descartar
+                </button>
+                <Button
+                  type="submit"
+                  size="small"
+                  className="!w-auto"
+                  disabled={saving}
+                >
+                  {saving ? "Guardando…" : "Guardar"}
+                </Button>
+              </div>
+            ) : (
+              <p className="mt-auto shrink-0 pt-1 text-right text-[12px] text-[var(--color-nachipa-secondary)]">
+                Solo lectura · sin permiso para editar hitos
+              </p>
+            )}
           </form>
         )}
       </div>

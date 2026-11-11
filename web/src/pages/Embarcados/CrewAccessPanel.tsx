@@ -13,6 +13,7 @@ import {
   type CrewAccess,
   type CrewAccessRoleKey,
 } from "../../lib/api/crewMembers";
+import { userHasPermission } from "../../lib/api/auth";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
 
 type Props = {
@@ -43,7 +44,7 @@ function formatLastLogin(iso: string | null): string {
 /**
  * Pestaña Acceso (Figma D44 / D44b / D45 / D46 / D44m).
  * Empty → otorgar; vinculado → rol User/Colaborador + desvincular.
- * Mutaciones solo admin/superadmin.
+ * Mutaciones: embarcados.update (API grant/patch/revoke).
  */
 export function CrewAccessPanel({
   crewMemberId,
@@ -53,8 +54,12 @@ export function CrewAccessPanel({
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
 
-  const canManage =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
+  /**
+   * Otorgar / cambiar rol / desvincular: la API exige embarcados.update
+   * (no maestros.users — el recurso de la ficha es embarcados).
+   */
+  const canUpdate = userHasPermission(user, "embarcados", "update");
+  const canManage = canUpdate;
 
   const [access, setAccess] = useState<CrewAccess | null>(null);
   const [loading, setLoading] = useState(true);
@@ -212,7 +217,7 @@ export function CrewAccessPanel({
               </Button>
             ) : (
               <p className="mt-4 text-[12px] text-[var(--color-nachipa-secondary)]">
-                Solo un administrador puede otorgar acceso.
+                No tenés permiso para otorgar acceso (embarcados.update).
               </p>
             )}
           </div>

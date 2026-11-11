@@ -86,6 +86,8 @@ export const PERMISSION_RESOURCE = {
    */
   ACCREDITATION_PACKS: "accreditation_packs",
   ROLES: "roles",
+  /** Registro de actividad (Bitácora). Solo lectura. */
+  SISTEMA_ACTIVITY_LOGS: "sistema.activity_logs",
 } as const;
 
 export const PERMISSION_RESOURCES = Object.values(PERMISSION_RESOURCE);
@@ -344,6 +346,12 @@ export const PERMISSION_CATALOG: PermissionCatalogModule[] = [
         label: "Roles y permisos",
         actions: PERMISSION_ACTIONS,
       },
+      {
+        resource: PERMISSION_RESOURCE.SISTEMA_ACTIVITY_LOGS,
+        label: "Bitácora",
+        hint: "Registro de actividad del sistema.",
+        actions: [PERMISSION_ACTION.READ],
+      },
     ],
   },
 ];
@@ -468,6 +476,11 @@ export const SYSTEM_ROLE_DEFS = [
       allActions(PERMISSION_RESOURCE.TRAININGS),
       allActions(PERMISSION_RESOURCE.TRAINING_SESSIONS),
       allActions(PERMISSION_RESOURCE.ACCREDITATION_PACKS),
+      /** Empresas: ver y editar del tenant; crear/borrar sigue siendo superadmin en práctica. */
+      {
+        resource: PERMISSION_RESOURCE.MAESTROS_BUSINESSES,
+        actions: [PERMISSION_ACTION.READ, PERMISSION_ACTION.UPDATE],
+      },
     ],
   },
   {

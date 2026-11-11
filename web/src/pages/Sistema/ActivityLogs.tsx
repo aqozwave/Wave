@@ -14,6 +14,7 @@ import { TablePagination } from "../../components/TablePagination/TablePaginatio
 import { Topbar } from "../../components/Topbar/Topbar";
 import { useToast } from "../../components/Toast/ToastProvider";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
+import { userHasPermission } from "../../lib/api/auth";
 import {
   listActivityLogsRequest,
   type ActivityAction,
@@ -130,8 +131,8 @@ export function ActivityLogs() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(30);
 
-  /** ¿Este usuario puede ver la pantalla? */
-  const allowed = user?.internalRol === "superadmin";
+  /** ¿Este usuario puede ver la pantalla? (ruta ya exige el permiso). */
+  const allowed = userHasPermission(user, "sistema.activity_logs", "read");
 
   /** Sincroniza filtros en la URL. */
   function patchUrl(patch: {
@@ -207,7 +208,7 @@ export function ActivityLogs() {
           actions={<UserMenu />}
         />
         <div className="px-6 py-8 text-[13px] text-[var(--color-nachipa-secondary)]">
-          Solo el superadmin puede ver el registro de actividad.
+          No tienes permiso para ver el registro de actividad.
         </div>
       </div>
     );

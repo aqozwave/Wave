@@ -1,6 +1,7 @@
 import { Router } from "express";
+import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
+import { requirePermission } from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createPortHandler,
@@ -33,7 +34,10 @@ portsRouter.get(
 portsRouter.post(
   "/",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_PORTS,
+    PERMISSION_ACTION.CREATE,
+  ),
   validate(createPortRequestSchema),
   createPortHandler,
 );
@@ -48,7 +52,10 @@ portsRouter.get(
 portsRouter.patch(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_PORTS,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(updatePortRequestSchema),
   updatePortHandler,
 );
@@ -56,7 +63,10 @@ portsRouter.patch(
 portsRouter.delete(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_PORTS,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
   validate(deletePortRequestSchema),
   deletePortHandler,
 );

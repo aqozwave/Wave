@@ -9,6 +9,7 @@ import {
 } from "react-router";
 import { AppShell } from "./components/AppShell/AppShell";
 import { PanelSkeleton } from "./components/PanelSkeleton/PanelSkeleton";
+import { RequireAnyPermission } from "./components/RequirePermission/RequireAnyPermission";
 import { RequirePermission } from "./components/RequirePermission/RequirePermission";
 import { useAuth } from "./lib/auth/AuthContext";
 import { useIdleTimeout } from "./lib/auth/useIdleTimeout";
@@ -238,9 +239,47 @@ export function App() {
             path="prevencion/permisos/:id"
             element={<WorkPermitDetailPage />}
           />
-          <Route path="empresas" element={<Empresas />} />
-          <Route path="ubicaciones" element={<Ubicaciones />} />
-          <Route path="catalogos" element={<Catalogos />} />
+          <Route
+            element={
+              <RequirePermission
+                resource="maestros.businesses"
+                action="read"
+              />
+            }
+          >
+            <Route path="empresas" element={<Empresas />} />
+          </Route>
+          {/* Flota: locations u otros maestros de operación. */}
+          <Route
+            element={
+              <RequireAnyPermission
+                options={[
+                  { resource: "maestros.locations", action: "read" },
+                  { resource: "maestros.areas", action: "read" },
+                  { resource: "maestros.ports", action: "read" },
+                  { resource: "maestros.muelles", action: "read" },
+                  { resource: "maestros.travesias", action: "read" },
+                ]}
+              />
+            }
+          >
+            <Route path="ubicaciones" element={<Ubicaciones />} />
+          </Route>
+          <Route
+            element={
+              <RequireAnyPermission
+                options={[
+                  { resource: "maestros.ranks", action: "read" },
+                  { resource: "maestros.degrees", action: "read" },
+                  { resource: "maestros.certificates", action: "read" },
+                  { resource: "cursos.catalog", action: "read" },
+                  { resource: "maestros.document_types", action: "read" },
+                ]}
+              />
+            }
+          >
+            <Route path="catalogos" element={<Catalogos />} />
+          </Route>
           <Route
             path="configuracion/flujos"
             element={<ApprovalFlowsPage />}
@@ -257,18 +296,39 @@ export function App() {
           >
             <Route path="usuarios" element={<Usuarios />} />
           </Route>
-          <Route path="notificaciones" element={<NotificacionesVencimiento />} />
           <Route
-            path="notificaciones/outbox"
-            element={<OutboxNotificaciones />}
-          />
+            element={
+              <RequirePermission
+                resource="cursos.notifications"
+                action="read"
+              />
+            }
+          >
+            <Route
+              path="notificaciones"
+              element={<NotificacionesVencimiento />}
+            />
+            <Route
+              path="notificaciones/outbox"
+              element={<OutboxNotificaciones />}
+            />
+          </Route>
           {/* Sin roles:read → Panel. */}
           <Route
             element={<RequirePermission resource="roles" action="read" />}
           >
             <Route path="roles" element={<Roles />} />
           </Route>
-          <Route path="sistema/actividad" element={<ActivityLogs />} />
+          <Route
+            element={
+              <RequirePermission
+                resource="sistema.activity_logs"
+                action="read"
+              />
+            }
+          >
+            <Route path="sistema/actividad" element={<ActivityLogs />} />
+          </Route>
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

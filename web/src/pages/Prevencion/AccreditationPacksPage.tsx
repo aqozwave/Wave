@@ -68,13 +68,26 @@ const PACK_META: Record<
 export function AccreditationPacksPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
+  /** Solo para filtro multi-empresa (alcance de datos). */
   const isSuperadmin = user?.internalRol === "superadmin";
   /** Menú / página: permiso propio (no maestros.document_types). */
   const canRead = userHasPermission(user, "accreditation_packs", "read");
-  /** Editar membresía: update de packs + admin/superadmin (API: requireTenantManager). */
-  const canManage =
-    userHasPermission(user, "accreditation_packs", "update") &&
-    (user?.internalRol === "admin" || user?.internalRol === "superadmin");
+  /** Agregar documento al pack. */
+  const canCreate = userHasPermission(user, "accreditation_packs", "create");
+  /** Cambiar membresía vía PATCH (API). */
+  const canUpdate = userHasPermission(user, "accreditation_packs", "update");
+  /** Sacar documento del pack. */
+  const canDeactivate = userHasPermission(
+    user,
+    "accreditation_packs",
+    "deactivate",
+  );
+  /**
+   * Agregar: create o update (la API muta con PATCH update).
+   * Quitar: deactivate o update.
+   */
+  const canAdd = canCreate || canUpdate;
+  const canRemove = canDeactivate || canUpdate;
 
   const [businesses, setBusinesses] = useState<Business[]>([]);
   /** Empresa filtro (superadmin); vacío = tenant del usuario vía API. */
@@ -151,6 +164,7 @@ export function AccreditationPacksPage() {
 
   /** Abre modal para sumar un tipo al pack. */
   function openAdd(pack: DocumentAccreditationPack) {
+    if (!canAdd) return;
     setAddTarget(pack);
     setAddDocId("");
     setAddOpen(true);
@@ -159,7 +173,7 @@ export function AccreditationPacksPage() {
   /** Asigna el tipo al pack destino (pisa membership anterior). */
   async function handleAdd(e: FormEvent) {
     e.preventDefault();
-    if (!accessToken || !addTarget || !addDocId) return;
+    if (!accessToken || !addTarget || !addDocId || !canAdd) return;
     setSubmitting(true);
     try {
       await updateDocumentTypeRequest(accessToken, addDocId, {
@@ -180,7 +194,7 @@ export function AccreditationPacksPage() {
 
   /** Saca el tipo del pack (accreditationPack = null). */
   async function confirmRemove() {
-    if (!accessToken || !pendingRemove) return;
+    if (!accessToken || !pendingRemove || !canRemove) return;
     setRemoving(true);
     try {
       await updateDocumentTypeRequest(accessToken, pendingRemove.id, {
@@ -222,7 +236,7 @@ export function AccreditationPacksPage() {
               {items.length} documento(s)
             </p>
           </div>
-          {canManage ? (
+          {canAdd ? (
             <button
               type="button"
               className={outlineBtnClass}
@@ -257,7 +271,7 @@ export function AccreditationPacksPage() {
                 <StatusChip tone={doc.requiresExpiry ? "warning" : "neutral"}>
                   {doc.requiresExpiry ? "Con vencimiento" : "Sin venc."}
                 </StatusChip>
-                {canManage ? (
+                {canRemove ? (
                   <button
                     type="button"
                     className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-nachipa-secondary)] hover:bg-[var(--color-nachipa-bg-page)] hover:text-[var(--color-nachipa-title)]"

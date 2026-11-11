@@ -26,6 +26,7 @@ import {
 import { TextField } from "../../components/TextField/TextField";
 import { Toggle } from "../../components/Toggle/Toggle";
 import { useToast } from "../../components/Toast/ToastProvider";
+import { userHasPermission } from "../../lib/api/auth";
 import {
   listBusinessesRequest,
   type Business,
@@ -85,8 +86,16 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const isSuperadmin = user?.internalRol === "superadmin";
-  const canManage =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
+  /** Alta de muelle según RBAC. */
+  const canCreate = userHasPermission(user, "maestros.muelles", "create");
+  /** Editar muelle según RBAC. */
+  const canUpdate = userHasPermission(user, "maestros.muelles", "update");
+  /** Desactivar / eliminar muelle según RBAC. */
+  const canDeactivate = userHasPermission(user, "maestros.muelles", "deactivate");
+  /** Alta / editar / desactivar según RBAC (no internalRol). */
+  const canManage = canCreate || canUpdate || canDeactivate;
+  /** Alta de puerto desde el modal de muelle (recurso distinto). */
+  const canCreatePort = userHasPermission(user, "maestros.ports", "create");
 
   const [items, setItems] = useState<Muelle[]>([]);
   const [ports, setPorts] = useState<Port[]>([]);
@@ -237,7 +246,7 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!accessToken || !canManage) return;
+    if (!accessToken || !(editing ? canUpdate : canCreate)) return;
     if (!form.name.trim()) {
       showToast("El nombre es requerido.", "danger");
       return;
@@ -288,7 +297,7 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
 
   async function onCreatePort(event: FormEvent) {
     event.preventDefault();
-    if (!accessToken || !canManage) return;
+    if (!accessToken || !canCreatePort) return;
     if (!portNameDraft.trim()) {
       showToast("El nombre del puerto es requerido.", "danger");
       return;
@@ -325,14 +334,14 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
   }
 
   function requestDelete(row: Muelle) {
-    if (!canManage) return;
+    if (!canDeactivate) return;
     setMenuId(null);
     setPendingDelete(row);
   }
 
   /** Soft-delete confirmado vía modal del sistema. */
   async function confirmDelete() {
-    if (!accessToken || !canManage || !pendingDelete) return;
+    if (!accessToken || !canDeactivate || !pendingDelete) return;
     setDeleting(true);
     try {
       await deleteMuelleRequest(accessToken, pendingDelete.id);
@@ -514,20 +523,24 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
                       </button>
                       {menuId === row.id ? (
                         <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
-                          <button
-                            type="button"
-                            className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                            onClick={() => openEdit(row)}
-                          >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                            onClick={() => requestDelete(row)}
-                          >
-                            Eliminar
-                          </button>
+                          {canUpdate ? (
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                              onClick={() => openEdit(row)}
+                            >
+                              Editar
+                            </button>
+                          ) : null}
+                          {canDeactivate ? (
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
+                              onClick={() => requestDelete(row)}
+                            >
+                              Eliminar
+                            </button>
+                          ) : null}
                         </div>
                       ) : null}
                     </>
@@ -621,7 +634,7 @@ export const MuellesPanel = forwardRef<MuellesPanelHandle>(function MuellesPanel
                   </option>
                 ))}
               </select>
-              {canManage ? (
+              {canCreatePort ? (
                 <button
                   type="button"
                   className="inline-flex size-[42px] shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"

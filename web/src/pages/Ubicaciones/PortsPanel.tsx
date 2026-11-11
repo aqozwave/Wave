@@ -25,6 +25,7 @@ import {
 import { TextField } from "../../components/TextField/TextField";
 import { Toggle } from "../../components/Toggle/Toggle";
 import { useToast } from "../../components/Toast/ToastProvider";
+import { userHasPermission } from "../../lib/api/auth";
 import {
   listBusinessesRequest,
   type Business,
@@ -77,8 +78,14 @@ export const PortsPanel = forwardRef<PortsPanelHandle>(function PortsPanel(
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const isSuperadmin = user?.internalRol === "superadmin";
-  const canManage =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
+  /** Alta de puerto según RBAC. */
+  const canCreate = userHasPermission(user, "maestros.ports", "create");
+  /** Editar puerto según RBAC. */
+  const canUpdate = userHasPermission(user, "maestros.ports", "update");
+  /** Desactivar / eliminar puerto según RBAC. */
+  const canDeactivate = userHasPermission(user, "maestros.ports", "deactivate");
+  /** Alta / editar / desactivar según RBAC (no internalRol). */
+  const canManage = canCreate || canUpdate || canDeactivate;
 
   const [items, setItems] = useState<Port[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -191,7 +198,7 @@ export const PortsPanel = forwardRef<PortsPanelHandle>(function PortsPanel(
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!accessToken || !canManage) return;
+    if (!accessToken || !(editing ? canUpdate : canCreate)) return;
     if (!form.name.trim()) {
       showToast("El nombre es requerido.", "danger");
       return;
@@ -235,14 +242,14 @@ export const PortsPanel = forwardRef<PortsPanelHandle>(function PortsPanel(
   }
 
   function requestDelete(row: Port) {
-    if (!canManage) return;
+    if (!canDeactivate) return;
     setMenuId(null);
     setPendingDelete(row);
   }
 
   /** Soft-delete confirmado vía modal del sistema. */
   async function confirmDelete() {
-    if (!accessToken || !canManage || !pendingDelete) return;
+    if (!accessToken || !canDeactivate || !pendingDelete) return;
     setDeleting(true);
     try {
       await deletePortRequest(accessToken, pendingDelete.id);
@@ -402,20 +409,24 @@ export const PortsPanel = forwardRef<PortsPanelHandle>(function PortsPanel(
                       </button>
                       {menuId === row.id ? (
                         <div className="absolute right-3 top-11 z-10 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-lg">
-                          <button
-                            type="button"
-                            className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                            onClick={() => openEdit(row)}
-                          >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
-                            onClick={() => requestDelete(row)}
-                          >
-                            Eliminar
-                          </button>
+                          {canUpdate ? (
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                              onClick={() => openEdit(row)}
+                            >
+                              Editar
+                            </button>
+                          ) : null}
+                          {canDeactivate ? (
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-status-danger-bg)]"
+                              onClick={() => requestDelete(row)}
+                            >
+                              Eliminar
+                            </button>
+                          ) : null}
                         </div>
                       ) : null}
                     </>

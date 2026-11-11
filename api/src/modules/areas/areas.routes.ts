@@ -1,6 +1,7 @@
 import { Router } from "express";
+import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
+import { requirePermission } from "../../middlewares/requirePermission.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createAreaHandler,
@@ -33,7 +34,10 @@ areasRouter.get(
 areasRouter.post(
   "/",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_AREAS,
+    PERMISSION_ACTION.CREATE,
+  ),
   validate(createAreaRequestSchema),
   createAreaHandler,
 );
@@ -48,7 +52,10 @@ areasRouter.get(
 areasRouter.patch(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_AREAS,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(updateAreaRequestSchema),
   updateAreaHandler,
 );
@@ -56,7 +63,10 @@ areasRouter.patch(
 areasRouter.delete(
   "/:id",
   authenticate,
-  requireTenantManager,
+  requirePermission(
+    PERMISSION_RESOURCE.MAESTROS_AREAS,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
   validate(deleteAreaRequestSchema),
   deleteAreaHandler,
 );
