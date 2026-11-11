@@ -30,8 +30,8 @@ body:json {
 }
 
 docs {
-  Admin o superadmin + trainings.create.
-  Superadmin: businessId obligatorio.
+  Permiso trainings.create (el rol manda, no hace falta ser admin).
+  Superadmin: businessId obligatorio. Otro rol: se ignora y queda en su empresa.
 }
 
 script:pre-request {

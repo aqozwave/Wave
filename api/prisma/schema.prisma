@@ -828,6 +828,8 @@ model Location {
   workPermits   WorkPermit[]
   /// Lecturas de posición (navegador a bordo / futuro AIS).
   vesselPositions VesselPosition[]
+  /// Sesiones de capacitación Prevención dictadas en esta nave/lugar.
+  trainingSessions TrainingSession[]
 
   @@index([businessId])
   @@index([name, businessId])
@@ -1706,6 +1708,9 @@ model TrainingSession {
   id               String                @id @default(uuid()) @db.Uuid
   businessId       String                @map("business_id") @db.Uuid
   business         Business              @relation(fields: [businessId], references: [id])
+  /// Nave/lugar donde se dictó (filtra embarcados y contador del Panel).
+  locationId       String                @map("location_id") @db.Uuid
+  location         Location              @relation(fields: [locationId], references: [id])
   trainingId       String                @map("training_id") @db.Uuid
   training         Training              @relation(fields: [trainingId], references: [id])
   /// Día/hora en que se dictó la capacitación.
@@ -1728,6 +1733,7 @@ model TrainingSession {
   attendees        TrainingSessionAttendee[]
 
   @@index([businessId])
+  @@index([locationId])
   @@index([trainingId])
   @@index([status])
   @@index([heldAt])

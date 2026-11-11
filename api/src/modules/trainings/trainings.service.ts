@@ -99,32 +99,33 @@ function assertTrainingTenantAccess(
 }
 
 /**
- * Resuelve businessId de creación: admin → su empresa;
- * superadmin → body.businessId obligatorio.
+ * Empresa de la alta.
+ * Superadmin elige businessId. El resto (admin, prevencionista, etc.)
+ * queda en la suya: el permiso ya autorizó, el tenant no se elige.
  */
 function resolveCreateBusinessId(
   actor: Actor,
   body: CreateTrainingBody,
 ): string {
-  if (actor.internalRol === "admin") {
-    if (!actor.businessId) {
+  if (actor.internalRol === "superadmin") {
+    if (!body.businessId) {
       throw new AppError(
-        403,
-        "forbidden",
-        "Tu usuario no tiene una empresa asignada",
+        400,
+        "validation_error",
+        "businessId es requerido para crear una capacitación",
       );
     }
-    return actor.businessId;
+    return body.businessId;
   }
 
-  if (!body.businessId) {
+  if (!actor.businessId) {
     throw new AppError(
-      400,
-      "validation_error",
-      "businessId es requerido para crear una capacitación",
+      403,
+      "forbidden",
+      "Tu usuario no tiene una empresa asignada",
     );
   }
-  return body.businessId;
+  return actor.businessId;
 }
 
 /**
@@ -263,7 +264,7 @@ export async function updateTraining(
   let nextBusinessId = existing.businessId;
   if (payload.businessId !== undefined) {
     if (
-      actor.internalRol === "admin" &&
+      actor.internalRol !== "superadmin" &&
       payload.businessId !== actor.businessId
     ) {
       throw new AppError(

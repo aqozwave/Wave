@@ -16,6 +16,12 @@ export const trainingSessionTrainingEmbedSchema = z.object({
   documentTypeId: z.uuid().nullable(),
 });
 
+/** Nave/lugar embebido en la sesión. */
+export const trainingSessionLocationEmbedSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+});
+
 /** Asistente embebido. */
 export const trainingSessionAttendeeSchema = z.object({
   id: z.uuid(),
@@ -32,6 +38,8 @@ export const trainingSessionResponseSchema = z
   .object({
     id: z.uuid(),
     businessId: z.uuid(),
+    locationId: z.uuid(),
+    location: trainingSessionLocationEmbedSchema.nullable(),
     trainingId: z.uuid(),
     training: trainingSessionTrainingEmbedSchema.nullable(),
     heldAt: z.string().datetime(),
@@ -57,6 +65,7 @@ export const listTrainingSessionsQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
   businessId: z.uuid().optional(),
+  locationId: z.uuid().optional(),
   trainingId: z.uuid().optional(),
   status: trainingSessionStatusSchema.optional(),
 });
@@ -77,6 +86,8 @@ export const listTrainingSessionsResponseSchema = z
 /** Body POST: crea borrador con 1..N asistentes. */
 export const createTrainingSessionBodySchema = z.object({
   trainingId: z.uuid(),
+  /** Nave donde se dicta (debe coincidir con los embarcados). */
+  locationId: z.uuid(),
   heldAt: z.string().datetime(),
   notes: z.string().trim().max(2000).nullable().optional(),
   /** Superadmin: empresa destino. Admin/prevencionista usa la suya. */

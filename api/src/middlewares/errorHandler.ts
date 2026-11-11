@@ -48,6 +48,18 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
     return;
   }
 
+  // Pool de Prisma lleno (connection_limit): la query esperó pool_timeout.
+  if (
+    err instanceof Prisma.PrismaClientKnownRequestError &&
+    err.code === "P2024"
+  ) {
+    res.status(503).json({
+      code: "database_busy",
+      message: "La base está ocupada. Esperá un momento e intentá de nuevo.",
+    });
+    return;
+  }
+
   res.status(500).json({
     code: "internal_error",
     message: "Error interno",

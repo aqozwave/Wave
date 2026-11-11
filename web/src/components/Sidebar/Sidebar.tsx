@@ -123,6 +123,7 @@ const PREVENCION_MENU_RESOURCES = [
   "work_permits",
   "permit_types",
   "trainings",
+  "training_sessions",
   "accreditation_packs",
 ] as const;
 
@@ -179,7 +180,7 @@ const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
     label: "Sesiones capacitación",
     to: "/prevencion/capacitaciones/sesiones",
     icon: Users,
-    canShow: (u) => userHasPermission(u, "trainings", "read"),
+    canShow: (u) => userHasPermission(u, "training_sessions", "read"),
   },
   {
     label: "Packs de habilitación",
@@ -190,13 +191,20 @@ const PREVENCION_LINKS: ReadonlyArray<NavLink> = [
   },
 ];
 
-/** Activo exacto en Presentación; prefijo en subrutas. */
+/**
+ * Activo exacto en Presentación y Capacitaciones (catálogo):
+ * no deben marcarse activos en /capacitaciones/sesiones (hija).
+ * Resto: match exacto o prefijo de subruta.
+ */
 function isPrevencionNavActive(
   to: string | null,
   pathname: string,
 ): boolean {
   if (!to) return false;
   if (to === "/prevencion") return pathname === "/prevencion";
+  if (to === "/prevencion/capacitaciones") {
+    return pathname === "/prevencion/capacitaciones";
+  }
   return pathname === to || pathname.startsWith(`${to}/`);
 }
 

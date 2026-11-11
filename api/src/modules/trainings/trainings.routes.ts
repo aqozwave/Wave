@@ -2,7 +2,6 @@ import { Router } from "express";
 import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { requirePermission } from "../../middlewares/requirePermission.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createTrainingHandler,
@@ -21,7 +20,7 @@ import {
 
 /**
  * Catálogo capacitaciones Prevención bajo /api/v1/trainings.
- * Lectura: trainings.read. Mutaciones: admin/superadmin + create/update/deactivate.
+ * Manda el permiso del rol (trainings.read/create/update/deactivate), no el internalRol.
  */
 export const trainingsRouter = Router();
 
@@ -36,7 +35,6 @@ trainingsRouter.get(
 trainingsRouter.post(
   "/",
   authenticate,
-  requireTenantManager,
   requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.CREATE),
   validate(createTrainingRequestSchema),
   createTrainingHandler,
@@ -53,7 +51,6 @@ trainingsRouter.get(
 trainingsRouter.patch(
   "/:id",
   authenticate,
-  requireTenantManager,
   requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.UPDATE),
   validate(updateTrainingRequestSchema),
   updateTrainingHandler,
@@ -62,7 +59,6 @@ trainingsRouter.patch(
 trainingsRouter.delete(
   "/:id",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.TRAININGS,
     PERMISSION_ACTION.DEACTIVATE,

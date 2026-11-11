@@ -76,6 +76,11 @@ export const PERMISSION_RESOURCE = {
   /** Capacitaciones del módulo Prevención (no confundir con cursos OMI). */
   TRAININGS: "trainings",
   /**
+   * Sesiones de capacitación (menú P1): dictado grupal/individual + acta.
+   * Separado del catálogo trainings para poder ocultar sesiones sin quitar el maestro.
+   */
+  TRAINING_SESSIONS: "training_sessions",
+  /**
    * Packs de habilitación (menú P1): qué document_types van en pack empresa/persona.
    * Separado de maestros.document_types para poder ocultar el menú sin quitar el catálogo.
    */
@@ -111,6 +116,7 @@ export const RESOURCE_TO_MODULE_KEY: Readonly<
   [PERMISSION_RESOURCE.PERMIT_TYPES]: BUSINESS_MODULE_KEY.WORK_PERMITS,
   [PERMISSION_RESOURCE.APPROVAL_FLOWS]: BUSINESS_MODULE_KEY.WORK_PERMITS,
   [PERMISSION_RESOURCE.TRAININGS]: BUSINESS_MODULE_KEY.TRAININGS,
+  [PERMISSION_RESOURCE.TRAINING_SESSIONS]: BUSINESS_MODULE_KEY.TRAININGS,
   [PERMISSION_RESOURCE.ACCREDITATION_PACKS]: BUSINESS_MODULE_KEY.CONTRACTORS,
 };
 
@@ -123,6 +129,7 @@ export const PREVENCION_RESOURCES = [
   PERMISSION_RESOURCE.PERMIT_TYPES,
   PERMISSION_RESOURCE.APPROVAL_FLOWS,
   PERMISSION_RESOURCE.TRAININGS,
+  PERMISSION_RESOURCE.TRAINING_SESSIONS,
   PERMISSION_RESOURCE.ACCREDITATION_PACKS,
 ] as const;
 
@@ -312,6 +319,13 @@ export const PERMISSION_CATALOG: PermissionCatalogModule[] = [
       {
         resource: PERMISSION_RESOURCE.TRAININGS,
         label: "Capacitaciones (Prevención)",
+        hint: "Catálogo ALT-01 / EXT-01… · independiente de Sesiones.",
+        actions: PERMISSION_ACTIONS,
+      },
+      {
+        resource: PERMISSION_RESOURCE.TRAINING_SESSIONS,
+        label: "Sesiones capacitación",
+        hint: "Dictado grupal/individual + acta · menú Prevención.",
         actions: PERMISSION_ACTIONS,
       },
       {
@@ -452,6 +466,7 @@ export const SYSTEM_ROLE_DEFS = [
       allActions(PERMISSION_RESOURCE.PERMIT_TYPES),
       allActions(PERMISSION_RESOURCE.APPROVAL_FLOWS),
       allActions(PERMISSION_RESOURCE.TRAININGS),
+      allActions(PERMISSION_RESOURCE.TRAINING_SESSIONS),
       allActions(PERMISSION_RESOURCE.ACCREDITATION_PACKS),
     ],
   },
@@ -506,6 +521,7 @@ export const SYSTEM_ROLE_DEFS = [
       crudOnly(PERMISSION_RESOURCE.WORK_PERMITS),
       allActions(PERMISSION_RESOURCE.PERMIT_TYPES),
       allActions(PERMISSION_RESOURCE.TRAININGS),
+      allActions(PERMISSION_RESOURCE.TRAINING_SESSIONS),
       allActions(PERMISSION_RESOURCE.ACCREDITATION_PACKS),
       /** Catálogos de solo lectura para selects de ficha/alta. */
       readOnly(PERMISSION_RESOURCE.MAESTROS_LOCATIONS),

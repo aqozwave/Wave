@@ -23,10 +23,18 @@ export type TrainingSessionAttendee = {
   logEntryId: string | null;
 };
 
+/** Nave embebida en la sesión. */
+export type TrainingSessionLocation = {
+  id: string;
+  name: string;
+};
+
 /** Sesión de capacitación. */
 export type TrainingSession = {
   id: string;
   businessId: string;
+  locationId: string;
+  location: TrainingSessionLocation | null;
   trainingId: string;
   training: TrainingSessionTraining | null;
   heldAt: string;
@@ -57,6 +65,7 @@ export type ListTrainingSessionsResult = {
 /** Body alta borrador. */
 export type CreateTrainingSessionBody = {
   trainingId: string;
+  locationId: string;
   heldAt: string;
   notes?: string | null;
   businessId?: string;

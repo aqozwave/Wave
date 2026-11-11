@@ -17,6 +17,7 @@ auth:bearer {
 body:json {
   {
     "trainingId": "{{trainingId}}",
+    "locationId": "{{locationId}}",
     "heldAt": "2026-11-11T15:00:00.000Z",
     "notes": "Sesión de prueba",
     "crewMemberIds": ["{{crewMemberId}}"]
@@ -24,8 +25,9 @@ body:json {
 }
 
 docs {
-  Crea borrador (1 id = individual; varios = grupal). Permiso trainings.create.
-  Definí trainingId y crewMemberId (o ampliá el array).
+  Crea borrador (1 id = individual; varios = grupal). Permiso training_sessions.create.
+  Definí trainingId, locationId (nave) y crewMemberId (o ampliá el array).
+  No cierra la sesión: el cierre es POST …/complete con acta.
 }
 
 script:pre-request {

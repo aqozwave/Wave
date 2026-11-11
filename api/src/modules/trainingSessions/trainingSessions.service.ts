@@ -1,5 +1,6 @@
 import type {
   CrewMember,
+  Location,
   Training,
   TrainingSession,
   TrainingSessionAttendee,
@@ -39,9 +40,10 @@ type Actor = Pick<
   | "roleId"
 >;
 
-/** Fila con training y asistentes para serializar. */
+/** Fila con training, nave y asistentes para serializar. */
 type SessionRow = TrainingSession & {
   training: Training | null;
+  location: Pick<Location, "id" | "name"> | null;
   attendees: Array<
     TrainingSessionAttendee & {
       crewMember: Pick<
@@ -55,6 +57,7 @@ type SessionRow = TrainingSession & {
 /** Include estándar de lecturas. */
 const sessionInclude = {
   training: true,
+  location: { select: { id: true, name: true } },
   attendees: {
     include: {
       crewMember: {
@@ -87,6 +90,10 @@ function toSessionResponse(row: SessionRow): TrainingSessionResponse {
   return {
     id: row.id,
     businessId: row.businessId,
+    locationId: row.locationId,
+    location: row.location
+      ? { id: row.location.id, name: row.location.name }
+      : null,
     trainingId: row.trainingId,
     training: row.training
       ? {
@@ -148,13 +155,20 @@ function resolveBusinessId(
   return actor.businessId;
 }
 
-/** Filtro de listado por tenant. */
+/** Filtro de listado por tenant / nave. */
 function listWhere(
   actor: Actor,
   query: ListTrainingSessionsQuery,
-): { businessId?: string; trainingId?: string; status?: "draft" | "completed" | "cancelled"; deletedAt: null } {
+): {
+  businessId?: string;
+  locationId?: string;
+  trainingId?: string;
+  status?: "draft" | "completed" | "cancelled";
+  deletedAt: null;
+} {
   const where: {
     businessId?: string;
+    locationId?: string;
     trainingId?: string;
     status?: "draft" | "completed" | "cancelled";
     deletedAt: null;
@@ -162,6 +176,7 @@ function listWhere(
 
   if (query.trainingId) where.trainingId = query.trainingId;
   if (query.status) where.status = query.status;
+  if (query.locationId) where.locationId = query.locationId;
 
   if (actor.internalRol === "superadmin") {
     if (query.businessId) where.businessId = query.businessId;
@@ -222,13 +237,14 @@ function assertDraft(row: TrainingSession): void {
 }
 
 /**
- * Valida tripulantes: misma empresa, activos, visibles por dataScope.
+ * Valida tripulantes: misma empresa, misma nave, activos, visibles por dataScope.
  * Dedup por id.
  */
 async function loadAttendeeCrew(
   actor: Actor,
   businessId: string,
   crewMemberIds: string[],
+  locationId: string,
 ): Promise<CrewMember[]> {
   const uniqueIds = [...new Set(crewMemberIds)];
   const crews = await prisma.crewMember.findMany({
@@ -253,12 +269,45 @@ async function loadAttendeeCrew(
         "Todos los asistentes deben ser de la misma empresa de la sesión",
       );
     }
+    if (crew.locationId !== locationId) {
+      throw new AppError(
+        400,
+        "crew_location_mismatch",
+        "Todos los asistentes deben pertenecer a la nave de la sesión",
+      );
+    }
     assertDataScopeAccess(actor, crew, {
       code: "crew_member_not_found",
       message: "Tripulante no encontrado",
     });
   }
   return crews;
+}
+
+/**
+ * Valida nave activa de la empresa (vessel o sin clasificar, como el Panel).
+ */
+async function loadSessionLocation(
+  businessId: string,
+  locationId: string,
+): Promise<Location> {
+  const location = await prisma.location.findFirst({
+    where: { id: locationId, deletedAt: null },
+  });
+  if (!location || location.businessId !== businessId) {
+    throw new AppError(404, "location_not_found", "Nave no encontrada");
+  }
+  if (!location.state) {
+    throw new AppError(400, "location_inactive", "La nave está inactiva");
+  }
+  if (location.kind !== "vessel" && location.kind != null) {
+    throw new AppError(
+      400,
+      "location_not_vessel",
+      "La ubicación debe ser una nave",
+    );
+  }
+  return location;
 }
 
 /** Calcula expiresAt desde completedAt + validityMonths. */
@@ -352,11 +401,18 @@ export async function createTrainingSession(
     );
   }
 
-  await loadAttendeeCrew(actor, businessId, body.crewMemberIds);
+  await loadSessionLocation(businessId, body.locationId);
+  await loadAttendeeCrew(
+    actor,
+    businessId,
+    body.crewMemberIds,
+    body.locationId,
+  );
 
   const created = await prisma.trainingSession.create({
     data: {
       businessId,
+      locationId: body.locationId,
       trainingId: training.id,
       heldAt: new Date(body.heldAt),
       notes: body.notes ?? null,
@@ -384,7 +440,12 @@ export async function updateTrainingSession(
   assertDraft(existing);
 
   if (body.crewMemberIds) {
-    await loadAttendeeCrew(actor, existing.businessId, body.crewMemberIds);
+    await loadAttendeeCrew(
+      actor,
+      existing.businessId,
+      body.crewMemberIds,
+      existing.locationId,
+    );
   }
 
   const updated = await prisma.$transaction(async (tx) => {

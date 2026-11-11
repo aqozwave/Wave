@@ -81,14 +81,20 @@ const selectClass =
 
 /**
  * Listado de capacitaciones Prevención (P1 / P4) con CRUD.
- * Mutaciones: admin/superadmin (requireTenantManager en API).
+ * Crear, editar y desactivar siguen el permiso del rol (trainings.*).
  */
 export function TrainingsPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const isSuperadmin = user?.internalRol === "superadmin";
-  const canManage =
-    user?.internalRol === "admin" || user?.internalRol === "superadmin";
+  /** Alta: trainings.create. El superadmin pasa siempre (userHasPermission). */
+  const canCreate = userHasPermission(user, "trainings", "create");
+  /** Edición: trainings.update. */
+  const canUpdate = userHasPermission(user, "trainings", "update");
+  /** Baja lógica: trainings.deactivate. */
+  const canDeactivate = userHasPermission(user, "trainings", "deactivate");
+  /** Menú de la fila si hay al menos una mutación. */
+  const canAct = canUpdate || canDeactivate;
 
   const [items, setItems] = useState<Training[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -247,6 +253,7 @@ export function TrainingsPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!accessToken || submitting) return;
+    if (editing ? !canUpdate : !canCreate) return;
 
     const code = form.code.trim().toUpperCase();
     if (!/^[A-Z0-9][A-Z0-9-]{0,14}$/.test(code)) {
@@ -321,7 +328,7 @@ export function TrainingsPage() {
 
   /** Soft-delete (tras Modal). */
   async function confirmDeactivate() {
-    if (!accessToken || !canManage || !pendingDeactivate || deactivating) {
+    if (!accessToken || !canDeactivate || !pendingDeactivate || deactivating) {
       return;
     }
     setDeactivating(true);
@@ -357,7 +364,7 @@ export function TrainingsPage() {
           description="Catálogo de capacitaciones del módulo Prevención (distinto de cursos OMI)."
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              {userHasPermission(user, "trainings", "read") ? (
+              {userHasPermission(user, "training_sessions", "read") ? (
                 <Link
                   to="/prevencion/capacitaciones/sesiones"
                   className="inline-flex h-9 items-center rounded-[var(--radius-md)] bg-[var(--color-nachipa-tab)] px-3.5 text-[13px] font-medium text-[var(--color-nachipa-body)] hover:brightness-95"
@@ -365,7 +372,7 @@ export function TrainingsPage() {
                   Sesiones
                 </Link>
               ) : null}
-              {canManage ? (
+              {canCreate ? (
                 <Button
                   type="button"
                   size="medium"
@@ -467,7 +474,7 @@ export function TrainingsPage() {
                       </StatusChip>
                     </td>
                     <td className="relative px-3 py-2.5 text-right">
-                      {canManage ? (
+                      {canAct ? (
                         <>
                           <button
                             type="button"
@@ -485,20 +492,24 @@ export function TrainingsPage() {
                           </button>
                           {menuId === row.id ? (
                             <div className="absolute right-3 z-10 mt-1 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white py-1 shadow-sm">
-                              <button
-                                type="button"
-                                className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
-                                onClick={() => openEdit(row)}
-                              >
-                                Editar
-                              </button>
-                              <button
-                                type="button"
-                                className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-nachipa-bg-page)]"
-                                onClick={() => askDeactivate(row)}
-                              >
-                                Desactivar
-                              </button>
+                              {canUpdate ? (
+                                <button
+                                  type="button"
+                                  className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                  onClick={() => openEdit(row)}
+                                >
+                                  Editar
+                                </button>
+                              ) : null}
+                              {canDeactivate ? (
+                                <button
+                                  type="button"
+                                  className="block w-full px-3 py-1.5 text-left text-[13px] text-[var(--color-status-danger-fg)] hover:bg-[var(--color-nachipa-bg-page)]"
+                                  onClick={() => askDeactivate(row)}
+                                >
+                                  Desactivar
+                                </button>
+                              ) : null}
                             </div>
                           ) : null}
                         </>

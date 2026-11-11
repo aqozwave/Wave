@@ -7,7 +7,7 @@ import {
   isAllowedPublicUploadPhotoPath,
 } from "./lib/localUploads.js";
 import { buildOpenApiDocument } from "./lib/openapi.js";
-import { startRateLimitCleanup } from "./lib/rateLimit.js";
+import { apiRateLimit, startRateLimitCleanup } from "./lib/rateLimit.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { notFoundHandler } from "./middlewares/notFound.js";
 import { academicDegreesRouter } from "./modules/academicDegrees/academicDegrees.routes.js";
@@ -114,6 +114,12 @@ export function createApp() {
       credentials: true,
     }),
   );
+
+  /**
+   * Tope de /api antes de leer el body: un flood no parsea JSON de 12 MB
+   * ni llega a Prisma. Auth sigue con su límite más estricto encima de este.
+   */
+  app.use("/api", apiRateLimit);
 
   // 12 MB: fotos y documentos en JSON+base64 (crew docs hasta 10 MB).
   app.use(express.json({ limit: "12mb" }));

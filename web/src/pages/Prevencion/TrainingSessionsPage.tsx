@@ -10,6 +10,7 @@ import {
   GraduationCap,
   MoreVertical,
   Plus,
+  Upload,
   Users,
 } from "lucide-react";
 import { Link } from "react-router";
@@ -36,6 +37,10 @@ import {
   listCrewMembersRequest,
   type CrewMember,
 } from "../../lib/api/crewMembers";
+import {
+  listLocationsRequest,
+  type Location,
+} from "../../lib/api/locations";
 import {
   cancelTrainingSessionRequest,
   completeTrainingSessionRequest,
@@ -117,14 +122,18 @@ export function TrainingSessionsPage() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
 
-  const canCreate = userHasPermission(user, "trainings", "create");
-  const canUpdate = userHasPermission(user, "trainings", "update");
-  const canCancel = userHasPermission(user, "trainings", "deactivate");
+  const canCreate = userHasPermission(user, "training_sessions", "create");
+  const canUpdate = userHasPermission(user, "training_sessions", "update");
+  const canCancel = userHasPermission(user, "training_sessions", "deactivate");
 
   const [items, setItems] = useState<TrainingSession[]>([]);
   const [trainings, setTrainings] = useState<Training[]>([]);
+  /** Naves activas del tenant (select del wizard). */
+  const [vessels, setVessels] = useState<Location[]>([]);
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [loading, setLoading] = useState(true);
+  /** Carga de embarcados al cambiar de nave. */
+  const [loadingCrew, setLoadingCrew] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
     TrainingSessionStatus | "all"
@@ -133,6 +142,8 @@ export function TrainingSessionsPage() {
 
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState<WizardStep>(1);
+  /** Nave elegida: filtra participantes del paso 2. */
+  const [locationId, setLocationId] = useState("");
   const [trainingId, setTrainingId] = useState("");
   const [heldAt, setHeldAt] = useState(todayInputValue());
   const [notes, setNotes] = useState("");
@@ -151,20 +162,20 @@ export function TrainingSessionsPage() {
   const [uploadFor, setUploadFor] = useState<TrainingSession | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  /** Detalle de asistentes (borrador, cerrada o cancelada). */
+  const [viewAttendees, setViewAttendees] = useState<TrainingSession | null>(
+    null,
+  );
 
-  /** Carga sesiones + catálogos para el wizard. */
+  /** Carga sesiones + capacitaciones + naves (los embarcados van por nave). */
   const load = useCallback(async () => {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [sessions, cats, members] = await Promise.all([
+      const [sessions, cats, locs] = await Promise.all([
         listTrainingSessionsRequest(accessToken, 1, 100),
         listTrainingsRequest(accessToken, 1, 100, { active: true }),
-        listCrewMembersRequest(accessToken, {
-          page: 1,
-          limit: 200,
-          includeInactive: false,
-        }),
+        listLocationsRequest(accessToken, 1, 100),
       ]);
       setItems(sessions.items);
       setTrainings(
@@ -172,7 +183,16 @@ export function TrainingSessionsPage() {
           (t) => t.active && t.appliesTo.includes("crew"),
         ),
       );
-      setCrew(members.items.filter((c) => c.state && !c.deletedAt));
+      // Naves activas: kind vessel o sin clasificar (ETL legacy suele dejar null).
+      // Misma regla que Panel / listado de posiciones de flota.
+      setVessels(
+        locs.items.filter(
+          (loc) =>
+            loc.state &&
+            !loc.deletedAt &&
+            (loc.kind === "vessel" || loc.kind == null),
+        ),
+      );
     } catch (err) {
       showToast(
         err instanceof ApiError
@@ -189,6 +209,40 @@ export function TrainingSessionsPage() {
     void load();
   }, [load]);
 
+  /**
+   * Embarcados activos de una nave (tope API 100).
+   * Se llama al elegir nave en el wizard.
+   */
+  const loadCrewForVessel = useCallback(
+    async (vesselId: string) => {
+      if (!accessToken || !vesselId) {
+        setCrew([]);
+        return;
+      }
+      setLoadingCrew(true);
+      try {
+        const members = await listCrewMembersRequest(accessToken, {
+          page: 1,
+          limit: 100,
+          locationId: vesselId,
+          includeInactive: false,
+        });
+        setCrew(members.items.filter((c) => c.state && !c.deletedAt));
+      } catch (err) {
+        setCrew([]);
+        showToast(
+          err instanceof ApiError
+            ? err.message
+            : "No se pudieron cargar los embarcados de la nave",
+          "danger",
+        );
+      } finally {
+        setLoadingCrew(false);
+      }
+    },
+    [accessToken, showToast],
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return items.filter((row) => {
@@ -202,21 +256,38 @@ export function TrainingSessionsPage() {
   const { page, setPage, pageSize, setPageSize, pageCount, pageItems, total } =
     useClientTablePagination(filtered);
 
-  /** Resetea el wizard. */
+  /** Resetea el wizard (nave: la del usuario si es nave conocida). */
   function resetWizard() {
     setWizardStep(1);
+    const preferred =
+      user?.locationId && vessels.some((v) => v.id === user.locationId)
+        ? user.locationId
+        : "";
+    setLocationId(preferred);
     setTrainingId("");
     setHeldAt(todayInputValue());
     setNotes("");
     setSelectedCrewIds([]);
     setCrewSearch("");
     setCertificateFile(null);
+    setCrew([]);
+    if (preferred) {
+      void loadCrewForVessel(preferred);
+    }
   }
 
   /** Abre wizard nueva sesión. */
   function openWizard() {
     resetWizard();
     setWizardOpen(true);
+  }
+
+  /** Cambia nave: limpia selección y recarga embarcados. */
+  function onVesselChange(nextId: string) {
+    setLocationId(nextId);
+    setSelectedCrewIds([]);
+    setCrewSearch("");
+    void loadCrewForVessel(nextId);
   }
 
   /** Cierra wizard si no está enviando. */
@@ -244,22 +315,28 @@ export function TrainingSessionsPage() {
   }, [crew, crewSearch]);
 
   const selectedTraining = trainings.find((t) => t.id === trainingId) ?? null;
+  const selectedVessel = vessels.find((v) => v.id === locationId) ?? null;
 
-  /** Crea sesión, sube acta y cierra en un flujo. */
+  /**
+   * Guarda borrador (sin cerrar). PDF opcional ahora;
+   * el cierre se hace después desde el listado con “Cerrar sesión”.
+   */
   async function onSubmitWizard(event: FormEvent) {
     event.preventDefault();
     if (!accessToken || !canCreate) return;
+    if (!locationId) {
+      showToast("Elegí una nave.", "danger");
+      setWizardStep(1);
+      return;
+    }
     if (!trainingId) {
       showToast("Elegí una capacitación.", "danger");
+      setWizardStep(1);
       return;
     }
     if (selectedCrewIds.length === 0) {
       showToast("Seleccioná al menos una persona.", "danger");
-      return;
-    }
-    if (!certificateFile) {
-      showToast("Subí el acta/PDF de la sesión.", "danger");
-      setWizardStep(3);
+      setWizardStep(2);
       return;
     }
     if (selectedTraining && !selectedTraining.documentTypeId) {
@@ -274,28 +351,30 @@ export function TrainingSessionsPage() {
     try {
       const created = await createTrainingSessionRequest(accessToken, {
         trainingId,
+        locationId,
         heldAt: dateInputToIso(heldAt),
         notes: notes.trim() || null,
         crewMemberIds: selectedCrewIds,
       });
-      const contentBase64 = await fileToBase64(certificateFile);
-      await uploadTrainingSessionCertificateRequest(accessToken, created.id, {
-        fileName: certificateFile.name,
-        mimeType: resolveUploadMime(certificateFile),
-        contentBase64,
-      });
-      await completeTrainingSessionRequest(accessToken, created.id);
+      if (certificateFile) {
+        const contentBase64 = await fileToBase64(certificateFile);
+        await uploadTrainingSessionCertificateRequest(accessToken, created.id, {
+          fileName: certificateFile.name,
+          mimeType: resolveUploadMime(certificateFile),
+          contentBase64,
+        });
+      }
       showToast(
-        selectedCrewIds.length === 1
-          ? "Capacitación individual registrada."
-          : `Sesión grupal cerrada · ${selectedCrewIds.length} personas.`,
+        certificateFile
+          ? "Borrador guardado con acta. Cerralo cuando esté listo."
+          : "Borrador guardado. Subí el acta y cerrá la sesión cuando corresponda.",
         "success",
       );
       closeWizard();
       await load();
     } catch (err) {
       showToast(
-        err instanceof ApiError ? err.message : "No se pudo cerrar la sesión",
+        err instanceof ApiError ? err.message : "No se pudo guardar la sesión",
         "danger",
       );
     } finally {
@@ -382,7 +461,7 @@ export function TrainingSessionsPage() {
             { label: "Sesiones" },
           ]}
           title="Sesiones de capacitación"
-          description="Registrá capacitaciones grupales o individuales: elegí personas, subí el acta y cerrá la sesión."
+          description="Creá un borrador (nave + personas), subí el acta cuando esté y cerrá la sesión después."
           actions={
             <div className="flex flex-wrap items-center gap-2">
               <Link
@@ -451,6 +530,7 @@ export function TrainingSessionsPage() {
                 <th className="rounded-tl-[var(--radius-md)] px-3 py-2.5 font-medium">
                   Capacitación
                 </th>
+                <th className="px-3 py-2.5 font-medium">Nave</th>
                 <th className="px-3 py-2.5 font-medium">Fecha</th>
                 <th className="px-3 py-2.5 font-medium">Asistentes</th>
                 <th className="px-3 py-2.5 font-medium">Acta</th>
@@ -464,7 +544,7 @@ export function TrainingSessionsPage() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-center text-[var(--color-nachipa-secondary)]"
                   >
                     Cargando…
@@ -473,7 +553,7 @@ export function TrainingSessionsPage() {
               ) : pageItems.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-center text-[var(--color-nachipa-secondary)]"
                   >
                     No hay sesiones.
@@ -492,6 +572,9 @@ export function TrainingSessionsPage() {
                       <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
                         {row.training?.name ?? "—"}
                       </p>
+                    </td>
+                    <td className="px-3 py-2.5 text-[var(--color-nachipa-body)]">
+                      {row.location?.name ?? "—"}
                     </td>
                     <td className="px-3 py-2.5 tabular-nums text-[var(--color-nachipa-body)]">
                       {formatDay(row.heldAt)}
@@ -514,67 +597,71 @@ export function TrainingSessionsPage() {
                       </StatusChip>
                     </td>
                     <td className="relative px-3 py-2.5 text-right">
-                      {row.status === "draft" ? (
-                        <>
+                      <button
+                        type="button"
+                        className="inline-flex size-8 items-center justify-center rounded-md text-[var(--color-nachipa-secondary)] hover:bg-[var(--color-nachipa-tab)]"
+                        onClick={() =>
+                          setMenuId((id) => (id === row.id ? null : row.id))
+                        }
+                        aria-label="Acciones"
+                      >
+                        <MoreVertical size={16} strokeWidth={1.5} />
+                      </button>
+                      {menuId === row.id ? (
+                        <div className="absolute right-3 z-10 mt-1 w-44 rounded-[10px] border border-[var(--color-tremor-border)] bg-white py-1 shadow-md">
                           <button
                             type="button"
-                            className="inline-flex size-8 items-center justify-center rounded-md text-[var(--color-nachipa-secondary)] hover:bg-[var(--color-nachipa-tab)]"
-                            onClick={() =>
-                              setMenuId((id) => (id === row.id ? null : row.id))
-                            }
-                            aria-label="Acciones"
+                            className="block w-full px-3 py-2 text-left text-[13px] hover:bg-[var(--color-nachipa-tab)]"
+                            onClick={() => {
+                              setMenuId(null);
+                              setViewAttendees(row);
+                            }}
                           >
-                            <MoreVertical size={16} strokeWidth={1.5} />
+                            Ver asistentes
                           </button>
-                          {menuId === row.id ? (
-                            <div className="absolute right-3 z-10 mt-1 w-44 rounded-[10px] border border-[var(--color-tremor-border)] bg-white py-1 shadow-md">
-                              {canUpdate ? (
-                                <button
-                                  type="button"
-                                  className="block w-full px-3 py-2 text-left text-[13px] hover:bg-[var(--color-nachipa-tab)]"
-                                  onClick={() => {
-                                    setMenuId(null);
-                                    setUploadFor(row);
-                                    setUploadFile(null);
-                                  }}
-                                >
-                                  {row.hasCertificate
-                                    ? "Reemplazar acta"
-                                    : "Subir acta"}
-                                </button>
-                              ) : null}
-                              {canUpdate && row.hasCertificate ? (
-                                <button
-                                  type="button"
-                                  className="block w-full px-3 py-2 text-left text-[13px] hover:bg-[var(--color-nachipa-tab)]"
-                                  onClick={() => {
-                                    setMenuId(null);
-                                    setPendingComplete(row);
-                                  }}
-                                >
-                                  Cerrar sesión
-                                </button>
-                              ) : null}
-                              {canCancel ? (
-                                <button
-                                  type="button"
-                                  className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg,#b42318)] hover:bg-[var(--color-nachipa-tab)]"
-                                  onClick={() => {
-                                    setMenuId(null);
-                                    setPendingCancel(row);
-                                  }}
-                                >
-                                  Cancelar
-                                </button>
-                              ) : null}
-                            </div>
+                          {row.status === "draft" && canUpdate ? (
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-[13px] hover:bg-[var(--color-nachipa-tab)]"
+                              onClick={() => {
+                                setMenuId(null);
+                                setUploadFor(row);
+                                setUploadFile(null);
+                              }}
+                            >
+                              {row.hasCertificate
+                                ? "Reemplazar acta"
+                                : "Subir acta"}
+                            </button>
                           ) : null}
-                        </>
-                      ) : (
-                        <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
-                          —
-                        </span>
-                      )}
+                          {row.status === "draft" &&
+                          canUpdate &&
+                          row.hasCertificate ? (
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-[13px] hover:bg-[var(--color-nachipa-tab)]"
+                              onClick={() => {
+                                setMenuId(null);
+                                setPendingComplete(row);
+                              }}
+                            >
+                              Cerrar sesión
+                            </button>
+                          ) : null}
+                          {row.status === "draft" && canCancel ? (
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-[13px] text-[var(--color-status-danger-fg,#b42318)] hover:bg-[var(--color-nachipa-tab)]"
+                              onClick={() => {
+                                setMenuId(null);
+                                setPendingCancel(row);
+                              }}
+                            >
+                              Cancelar
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
                 ))
@@ -590,10 +677,10 @@ export function TrainingSessionsPage() {
         title="Nueva sesión de capacitación"
         subtitle={
           wizardStep === 1
-            ? "Paso 1 · Capacitación y fecha"
+            ? "Paso 1 · Nave, capacitación y fecha"
             : wizardStep === 2
-              ? "Paso 2 · Participantes (1 = individual)"
-              : "Paso 3 · Acta PDF y cierre"
+              ? "Paso 2 · Embarcados de la nave (1 = individual)"
+              : "Paso 3 · Acta PDF (opcional) y guardar borrador"
         }
         onClose={closeWizard}
         maxWidthClass="w-full max-w-[560px] sm:w-[560px]"
@@ -616,6 +703,10 @@ export function TrainingSessionsPage() {
                 className="!w-auto"
                 disabled={submitting}
                 onClick={() => {
+                  if (wizardStep === 1 && !locationId) {
+                    showToast("Elegí una nave.", "danger");
+                    return;
+                  }
                   if (wizardStep === 1 && !trainingId) {
                     showToast("Elegí una capacitación.", "danger");
                     return;
@@ -636,7 +727,7 @@ export function TrainingSessionsPage() {
                 className="!w-auto"
                 disabled={submitting || !canCreate}
               >
-                {submitting ? "Registrando…" : "Cerrar y registrar"}
+                {submitting ? "Guardando…" : "Guardar borrador"}
               </Button>
             )}
           </div>
@@ -651,6 +742,24 @@ export function TrainingSessionsPage() {
         >
           {wizardStep === 1 ? (
             <>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Nave *
+                </span>
+                <select
+                  className={selectClass}
+                  value={locationId}
+                  onChange={(e) => onVesselChange(e.target.value)}
+                  required
+                >
+                  <option value="">Seleccionar nave…</option>
+                  {vessels.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
                   Capacitación *
@@ -695,7 +804,17 @@ export function TrainingSessionsPage() {
           {wizardStep === 2 ? (
             <>
               <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
-                Seleccioná una persona (individual) o varias (grupal).{" "}
+                {selectedVessel ? (
+                  <>
+                    Embarcados de{" "}
+                    <strong className="font-semibold text-[var(--color-nachipa-title)]">
+                      {selectedVessel.name}
+                    </strong>
+                    . Una persona = individual; varias = grupal.{" "}
+                  </>
+                ) : (
+                  "Elegí una nave en el paso anterior. "
+                )}
                 <strong className="font-semibold text-[var(--color-nachipa-title)]">
                   {selectedCrewIds.length} seleccionadas
                 </strong>
@@ -707,9 +826,15 @@ export function TrainingSessionsPage() {
                 placeholder="Nombre, RUN o correo…"
               />
               <div className="max-h-[280px] overflow-y-auto rounded-[10px] border border-[var(--color-tremor-border)]">
-                {crewFiltered.length === 0 ? (
+                {loadingCrew ? (
                   <p className="m-0 px-3 py-4 text-center text-[12px] text-[var(--color-nachipa-secondary)]">
-                    Sin resultados.
+                    Cargando embarcados…
+                  </p>
+                ) : crewFiltered.length === 0 ? (
+                  <p className="m-0 px-3 py-4 text-center text-[12px] text-[var(--color-nachipa-secondary)]">
+                    {locationId
+                      ? "No hay embarcados activos en esta nave."
+                      : "Sin resultados."}
                   </p>
                 ) : (
                   <ul className="m-0 list-none p-0">
@@ -754,41 +879,111 @@ export function TrainingSessionsPage() {
                     : "—"}
                 </p>
                 <p className="m-0 mt-1">
+                  {selectedVessel ? `${selectedVessel.name} · ` : ""}
                   {formatDay(dateInputToIso(heldAt))} · {selectedCrewIds.length}{" "}
                   {selectedCrewIds.length === 1 ? "persona" : "personas"}
                 </p>
               </div>
-              <label className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5">
                 <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                  Acta / PDF *
+                  Acta / PDF
                 </span>
-                <input
-                  type="file"
-                  accept=".pdf,application/pdf,image/*"
-                  onChange={(e) =>
-                    setCertificateFile(e.target.files?.[0] ?? null)
-                  }
-                  className="text-[13px] text-[var(--color-nachipa-body)]"
-                  required
-                />
+                {/* Botón visible: el input nativo solo dice “Seleccionar archivo”. */}
+                <label className="inline-flex h-9 w-fit cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]">
+                  <Upload
+                    className="size-4 shrink-0 text-[var(--color-icon-default)]"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                  {certificateFile ? "Cambiar archivo" : "Elegir archivo"}
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf,image/*"
+                    onChange={(e) =>
+                      setCertificateFile(e.target.files?.[0] ?? null)
+                    }
+                    className="sr-only"
+                  />
+                </label>
                 {certificateFile ? (
                   <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
                     {certificateFile.name}
                   </span>
-                ) : null}
-              </label>
+                ) : (
+                  <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                    Opcional ahora. Podés subirla después desde el listado.
+                  </span>
+                )}
+              </div>
               <p className="m-0 flex items-start gap-2 text-[12px] text-[var(--color-nachipa-secondary)]">
                 <CheckCircle2
                   className="mt-0.5 size-3.5 shrink-0 text-[var(--color-nachipa-primary)]"
                   strokeWidth={1.5}
                   aria-hidden
                 />
-                Al cerrar se registra la capacitación en cada ficha, se copia el
-                acta a Documentos y queda en la bitácora.
+                Se guarda como borrador. Al cerrar la sesión (con acta) se
+                registra en cada ficha, se copia a Documentos y queda en la
+                bitácora.
               </p>
             </>
           ) : null}
         </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(viewAttendees)}
+        icon={Users}
+        title="Asistentes"
+        subtitle={
+          viewAttendees
+            ? `${viewAttendees.training?.code ?? ""} · ${formatDay(viewAttendees.heldAt)} · ${statusLabel(viewAttendees.status)}`
+            : undefined
+        }
+        onClose={() => setViewAttendees(null)}
+        maxWidthClass="w-full max-w-[480px]"
+        footer={
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className="h-9 rounded-[var(--radius-md)] bg-[var(--color-nachipa-tab)] px-3.5 text-[13px] font-medium"
+              onClick={() => setViewAttendees(null)}
+            >
+              Cerrar
+            </button>
+          </div>
+        }
+      >
+        {viewAttendees ? (
+          viewAttendees.attendees.length === 0 ? (
+            <p className="m-0 text-[13px] text-[var(--color-nachipa-secondary)]">
+              Esta sesión no tiene asistentes.
+            </p>
+          ) : (
+            <ul className="m-0 flex max-h-[360px] list-none flex-col gap-1 overflow-y-auto p-0">
+              {viewAttendees.attendees.map((a) => (
+                <li key={a.id}>
+                  <Link
+                    to={`/embarcados/${a.crewMemberId}`}
+                    className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] px-2.5 py-2 hover:bg-[var(--color-nachipa-bg-page)]"
+                    onClick={() => setViewAttendees(null)}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                        {a.crewMemberName}
+                      </span>
+                      <span className="block truncate text-[12px] text-[var(--color-nachipa-secondary)]">
+                        {a.crewMemberRun}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-[12px] font-medium text-[var(--color-nachipa-primary)]">
+                      Ver ficha
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : null}
       </Modal>
 
       <Modal
@@ -825,6 +1020,7 @@ export function TrainingSessionsPage() {
               className="!w-auto"
               disabled={uploading || !uploadFile}
             >
+              <Upload className="size-4" strokeWidth={1.5} aria-hidden />
               {uploading ? "Subiendo…" : "Subir"}
             </Button>
           </div>
@@ -832,17 +1028,36 @@ export function TrainingSessionsPage() {
       >
         <form
           id="upload-session-certificate"
+          className="flex flex-col gap-1.5"
           onSubmit={(e) => {
             void onUploadCertificate(e);
           }}
         >
-          <input
-            type="file"
-            accept=".pdf,application/pdf,image/*"
-            onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-            className="text-[13px]"
-            required
-          />
+          {/* Botón con ícono: el input nativo no se entiende como acción de subir. */}
+          <label className="inline-flex h-9 w-fit cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)]">
+            <Upload
+              className="size-4 shrink-0 text-[var(--color-icon-default)]"
+              strokeWidth={1.5}
+              aria-hidden
+            />
+            {uploadFile ? "Cambiar archivo" : "Elegir archivo"}
+            <input
+              type="file"
+              accept=".pdf,application/pdf,image/*"
+              onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+              className="sr-only"
+              required={!uploadFile}
+            />
+          </label>
+          {uploadFile ? (
+            <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+              {uploadFile.name}
+            </span>
+          ) : (
+            <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+              PDF o imagen del acta.
+            </span>
+          )}
         </form>
       </Modal>
 

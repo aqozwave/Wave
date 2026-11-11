@@ -24,14 +24,17 @@ import {
 
 /**
  * Sesiones de capacitación (grupal/individual) bajo /api/v1/training-sessions.
- * Sin requireTenantManager: el prevencionista tiene trainings.*.
+ * Manda training_sessions.* (no el catálogo trainings).
  */
 export const trainingSessionsRouter = Router();
 
 trainingSessionsRouter.get(
   "/",
   authenticate,
-  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.READ),
+  requirePermission(
+    PERMISSION_RESOURCE.TRAINING_SESSIONS,
+    PERMISSION_ACTION.READ,
+  ),
   validate(listTrainingSessionsRequestSchema),
   listTrainingSessionsHandler,
 );
@@ -39,7 +42,10 @@ trainingSessionsRouter.get(
 trainingSessionsRouter.post(
   "/",
   authenticate,
-  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.CREATE),
+  requirePermission(
+    PERMISSION_RESOURCE.TRAINING_SESSIONS,
+    PERMISSION_ACTION.CREATE,
+  ),
   validate(createTrainingSessionRequestSchema),
   createTrainingSessionHandler,
 );
@@ -47,7 +53,10 @@ trainingSessionsRouter.post(
 trainingSessionsRouter.get(
   "/:id",
   authenticate,
-  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.READ),
+  requirePermission(
+    PERMISSION_RESOURCE.TRAINING_SESSIONS,
+    PERMISSION_ACTION.READ,
+  ),
   validate(getTrainingSessionRequestSchema),
   getTrainingSessionHandler,
 );
@@ -55,7 +64,10 @@ trainingSessionsRouter.get(
 trainingSessionsRouter.patch(
   "/:id",
   authenticate,
-  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.UPDATE),
+  requirePermission(
+    PERMISSION_RESOURCE.TRAINING_SESSIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(updateTrainingSessionRequestSchema),
   updateTrainingSessionHandler,
 );
@@ -63,7 +75,10 @@ trainingSessionsRouter.patch(
 trainingSessionsRouter.post(
   "/:id/certificate",
   authenticate,
-  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.UPDATE),
+  requirePermission(
+    PERMISSION_RESOURCE.TRAINING_SESSIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(uploadTrainingSessionCertificateRequestSchema),
   uploadTrainingSessionCertificateHandler,
 );
@@ -71,7 +86,10 @@ trainingSessionsRouter.post(
 trainingSessionsRouter.post(
   "/:id/complete",
   authenticate,
-  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.UPDATE),
+  requirePermission(
+    PERMISSION_RESOURCE.TRAINING_SESSIONS,
+    PERMISSION_ACTION.UPDATE,
+  ),
   validate(completeTrainingSessionRequestSchema),
   completeTrainingSessionHandler,
 );
@@ -79,7 +97,10 @@ trainingSessionsRouter.post(
 trainingSessionsRouter.delete(
   "/:id",
   authenticate,
-  requirePermission(PERMISSION_RESOURCE.TRAININGS, PERMISSION_ACTION.DEACTIVATE),
+  requirePermission(
+    PERMISSION_RESOURCE.TRAINING_SESSIONS,
+    PERMISSION_ACTION.DEACTIVATE,
+  ),
   validate(cancelTrainingSessionRequestSchema),
   cancelTrainingSessionHandler,
 );
