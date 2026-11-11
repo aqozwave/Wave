@@ -58,6 +58,11 @@ const TYPE_LABELS: Record<NotificationOutboxType, string> = {
   course_expired: "Curso vencido",
   boarding_book_admin_digest: "Resumen admin · libretas",
   course_admin_digest: "Resumen admin · cursos",
+  training_expiring: "Capacitación por vencer",
+  training_expired: "Capacitación vencida",
+  training_admin_digest: "Resumen · capacitaciones",
+  work_notice_created: "Nuevo aviso de trabajo",
+  work_permit_created: "PT creado → contratista",
 };
 
 const STATUS_TONE: Record<NotificationOutboxStatus, StatusChipTone> = {

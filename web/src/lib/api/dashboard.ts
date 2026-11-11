@@ -41,6 +41,8 @@ export type DashboardVesselCompliance = {
   crewCount: number;
   compliantCrewCount: number;
   compliancePercent: number | null;
+  /** Sesiones de capacitación Prevención cerradas en la nave. */
+  completedTrainingSessionsCount: number;
 };
 
 /** Alcance del resumen (S1 / D1 / C1). */

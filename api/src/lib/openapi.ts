@@ -298,6 +298,7 @@ import {
   processBoardingBookExpiryResponseSchema,
   processCourseExpiryResponseSchema,
   processOutboxResponseSchema,
+  processTrainingExpiryResponseSchema,
 } from "../modules/notificationOutbox/notificationOutbox.schemas.js";
 
 const registry = new OpenAPIRegistry();
@@ -2069,7 +2070,7 @@ registry.registerPath({
   tags: ["Trainings"],
   summary: "Crear capacitación",
   description:
-    "Admin/superadmin + trainings.create. Superadmin: businessId obligatorio.",
+    "Permiso trainings.create. Superadmin: businessId obligatorio. El resto usa su empresa.",
   security: [{ bearerAuth: [] }],
   request: {
     body: {
@@ -2121,7 +2122,7 @@ registry.registerPath({
   tags: ["Trainings"],
   summary: "Actualizar capacitación",
   description:
-    "Editar datos o active. Admin/superadmin + trainings.update.",
+    "Editar datos o active. Permiso trainings.update. Solo superadmin mueve de empresa.",
   security: [{ bearerAuth: [] }],
   request: {
     params: z.object({ id: z.uuid() }),
@@ -4756,6 +4757,26 @@ registry.registerPath({
       content: {
         "application/json": {
           schema: processBoardingBookExpiryResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/notification-outbox/run-training-expiry",
+  tags: ["NotificationOutbox"],
+  summary: "Correr generador de avisos de capacitaciones (solo encola)",
+  description:
+    "Hitos trainingCrewDays / trainingAdminDays. Digest a admin y prevencionista. No envía; deja pending en outbox.",
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Métricas del ciclo",
+      content: {
+        "application/json": {
+          schema: processTrainingExpiryResponseSchema,
         },
       },
     },

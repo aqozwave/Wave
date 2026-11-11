@@ -7,6 +7,7 @@ import {
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
+import { enqueueWorkNoticeCreatedNotifications } from "../notificationOutbox/workNoticeNotification.service.js";
 import type {
   CreateWorkNoticeBody,
   ListWorkNoticesQuery,
@@ -414,6 +415,28 @@ export async function createWorkNotice(
       include: noticeInclude,
     });
   });
+
+  // Encola mails a admin/prevencionista; el worker Resend los envía.
+  if (created.notifyByEmail) {
+    try {
+      await enqueueWorkNoticeCreatedNotifications({
+        id: created.id,
+        code: created.code,
+        businessId: created.businessId,
+        organizationName: created.organization.name,
+        locationName: created.location.name,
+        permitTypeName: created.permitType.name,
+        requestingAreaName: created.requestingArea.name,
+        tentativeDate: created.tentativeDate,
+        description: created.description,
+      });
+    } catch (error) {
+      console.error("Fallo encolando mails de aviso de trabajo", {
+        workNoticeId: created.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   return toWorkNoticeResponse(created);
 }

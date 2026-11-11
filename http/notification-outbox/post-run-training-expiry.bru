@@ -1,0 +1,38 @@
+meta {
+  name: Post run training expiry
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/notification-outbox/run-training-expiry
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Genera filas pending en el outbox (capacitaciones por vencer / vencidas / digest admin+prevencionista).
+  No envía correos. Jobs siguen OFF; usá esto para probar el generador.
+  Después corré Get notification outbox y Post process outbox.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.warningDays: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

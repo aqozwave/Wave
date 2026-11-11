@@ -28,7 +28,9 @@ type DaysField =
   | "courseCrewDays"
   | "courseAdminDays"
   | "boardingBookCrewDays"
-  | "boardingBookAdminDays";
+  | "boardingBookAdminDays"
+  | "trainingCrewDays"
+  | "trainingAdminDays";
 
 /** Chip seleccionable (hito o opción numérica). */
 function OptionChip({
@@ -353,6 +355,105 @@ export function NotificacionesVencimiento() {
                 days={settings.boardingBookAdminDays}
                 onToggleDay={toggleDay}
               />
+            </SettingsCard>
+
+            <SettingsCard
+              title="Capacitaciones Prevención"
+              description="Vigencia de capacitaciones en ficha. Digest a admin y prevencionista."
+            >
+              <ChannelRow
+                icon={
+                  <Mail
+                    className="size-3.5 text-[var(--color-nachipa-primary)]"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                }
+                title="Correo al tripulante"
+                field="trainingCrewDays"
+                days={settings.trainingCrewDays}
+                onToggleDay={toggleDay}
+              />
+              <ChannelRow
+                icon={
+                  <Users
+                    className="size-3.5 text-[var(--color-nachipa-primary)]"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                }
+                title="Resumen a admin / prevencionista"
+                field="trainingAdminDays"
+                days={settings.trainingAdminDays}
+                onToggleDay={toggleDay}
+              />
+            </SettingsCard>
+
+            <SettingsCard
+              title="Capacitaciones vencidas"
+              description="Recordatorios cuando la capacitación ya venció."
+            >
+              <div className="border-t border-[var(--color-tremor-border)] px-3 py-2 first:border-t-0">
+                <div className="mb-1 flex items-center gap-2">
+                  <Mail
+                    className="size-3.5 text-[var(--color-nachipa-primary)]"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                  <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                    Cada cuántos días
+                  </p>
+                </div>
+                <p className="m-0 mb-1.5 text-[11px] text-[var(--color-nachipa-secondary)]">
+                  0 = desactivado (no se envían recordatorios al tripulante).
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {COURSE_EXPIRED_REPEAT_DAY_OPTIONS.map((value) => (
+                    <OptionChip
+                      key={`training-repeat-${value}`}
+                      label={value === 0 ? "Off" : `${value} d`}
+                      selected={
+                        settings.trainingExpiredCrewRepeatDays === value
+                      }
+                      onToggle={() =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          trainingExpiredCrewRepeatDays: value,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="border-t border-[var(--color-tremor-border)] px-3 py-2">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <Bell
+                    className="size-3.5 text-[var(--color-nachipa-primary)]"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                  <p className="m-0 text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                    Máximo de recordatorios
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {COURSE_EXPIRED_MAX_REMINDER_OPTIONS.map((value) => (
+                    <OptionChip
+                      key={`training-max-${value}`}
+                      label={value === 1 ? "1 vez" : `${value} veces`}
+                      selected={
+                        settings.trainingExpiredCrewMaxReminders === value
+                      }
+                      onToggle={() =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          trainingExpiredCrewMaxReminders: value,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
             </SettingsCard>
 
             <div className="mt-auto flex shrink-0 justify-end gap-2 pt-1">

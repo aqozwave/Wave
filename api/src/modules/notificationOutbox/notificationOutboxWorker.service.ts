@@ -11,6 +11,13 @@ import {
   sendCourseExpiringSoonEmail,
 } from "../../emails/sendCourseExpiryEmails.js";
 import {
+  sendAdminTrainingExpiryDigest,
+  sendTrainingExpiredEmail,
+  sendTrainingExpiringSoonEmail,
+} from "../../emails/sendTrainingExpiryEmails.js";
+import { sendWorkNoticeCreatedEmail } from "../../emails/sendWorkNoticeEmails.js";
+import { sendWorkPermitCreatedEmail } from "../../emails/sendWorkPermitEmails.js";
+import {
   claimNextPending,
   markCancelled,
   markFailed,
@@ -110,17 +117,96 @@ async function validateBoardingBookExpiringRow(
   return payloadKey === currentKey;
 }
 
+/**
+ * Capacitación por vencer/vencida: tripulante activo + assignment con misma fecha.
+ */
+async function validateTrainingRow(row: NotificationOutbox): Promise<boolean> {
+  if (!row.crewMemberId) return false;
+  const payload = asPayload(row.payload);
+  const assignmentId =
+    typeof payload.assignmentId === "string" ? payload.assignmentId : null;
+  if (!assignmentId) return false;
+
+  const crew = await prisma.crewMember.findFirst({
+    where: {
+      id: row.crewMemberId,
+      deletedAt: null,
+      state: true,
+    },
+    select: { id: true },
+  });
+  if (!crew) return false;
+
+  const assignment = await prisma.crewMemberTraining.findFirst({
+    where: {
+      id: assignmentId,
+      crewMemberId: row.crewMemberId,
+      deletedAt: null,
+    },
+    select: { expiresAt: true },
+  });
+  if (!assignment) return false;
+
+  const payloadKey =
+    typeof payload.expiresAtKey === "number" ? payload.expiresAtKey : null;
+  const currentKey = getDateOnlyKey(assignment.expiresAt);
+  if (payloadKey == null || currentKey == null) return false;
+  return payloadKey === currentKey;
+}
+
+/**
+ * Aviso de trabajo: sigue existiendo (no soft-deleted).
+ */
+async function validateWorkNoticeCreatedRow(
+  row: NotificationOutbox,
+): Promise<boolean> {
+  const payload = asPayload(row.payload);
+  const workNoticeId =
+    typeof payload.workNoticeId === "string" ? payload.workNoticeId : null;
+  if (!workNoticeId) return false;
+  const notice = await prisma.workNotice.findFirst({
+    where: { id: workNoticeId, deletedAt: null },
+    select: { id: true },
+  });
+  return Boolean(notice);
+}
+
+/**
+ * PT creado: sigue existiendo (no soft-deleted).
+ */
+async function validateWorkPermitCreatedRow(
+  row: NotificationOutbox,
+): Promise<boolean> {
+  const payload = asPayload(row.payload);
+  const workPermitId =
+    typeof payload.workPermitId === "string" ? payload.workPermitId : null;
+  if (!workPermitId) return false;
+  const permit = await prisma.workPermit.findFirst({
+    where: { id: workPermitId, deletedAt: null },
+    select: { id: true },
+  });
+  return Boolean(permit);
+}
+
 /** Decide si la fila sigue vigente antes de gastar un envío Resend. */
 async function validateOutboxRow(row: NotificationOutbox): Promise<boolean> {
   switch (row.type) {
     case "course_expiring":
     case "course_expired":
       return validateCourseRow(row);
+    case "training_expiring":
+    case "training_expired":
+      return validateTrainingRow(row);
     case "course_admin_digest":
     case "boarding_book_admin_digest":
+    case "training_admin_digest":
       return validateAdminDigestRow(row);
     case "boarding_book_expiring":
       return validateBoardingBookExpiringRow(row);
+    case "work_notice_created":
+      return validateWorkNoticeCreatedRow(row);
+    case "work_permit_created":
+      return validateWorkPermitCreatedRow(row);
     default:
       return false;
   }
@@ -200,6 +286,90 @@ async function dispatchOutboxEmail(
           crewRun: typeof r.crewRun === "string" ? r.crewRun : "",
           validUntil: typeof r.validUntil === "string" ? r.validUntil : null,
         })),
+      });
+      return { resendId: result.resendId, deliveredTo: recipient.to };
+    }
+    case "training_expiring": {
+      const result = await sendTrainingExpiringSoonEmail({
+        to: recipient.to,
+        logicalTo: recipient.logicalTo,
+        overridden: recipient.overridden,
+        crewName: String(payload.crewName ?? ""),
+        trainingName: String(payload.trainingName ?? ""),
+        expiresAt:
+          typeof payload.expiresAt === "string" ? payload.expiresAt : null,
+      });
+      return { resendId: result.resendId, deliveredTo: recipient.to };
+    }
+    case "training_expired": {
+      const result = await sendTrainingExpiredEmail({
+        to: recipient.to,
+        logicalTo: recipient.logicalTo,
+        overridden: recipient.overridden,
+        crewName: String(payload.crewName ?? ""),
+        trainingName: String(payload.trainingName ?? ""),
+        expiresAt:
+          typeof payload.expiresAt === "string" ? payload.expiresAt : null,
+      });
+      return { resendId: result.resendId, deliveredTo: recipient.to };
+    }
+    case "training_admin_digest": {
+      const rows = Array.isArray(payload.rows)
+        ? (payload.rows as Array<Record<string, unknown>>)
+        : [];
+      const result = await sendAdminTrainingExpiryDigest({
+        to: recipient.to,
+        logicalTo: recipient.logicalTo,
+        overridden: recipient.overridden,
+        rows: rows.map((r) => ({
+          crewName: typeof r.crewName === "string" ? r.crewName : "",
+          crewRun: typeof r.crewRun === "string" ? r.crewRun : "",
+          trainingName:
+            typeof r.trainingName === "string" ? r.trainingName : "",
+          expiresAt: typeof r.expiresAt === "string" ? r.expiresAt : null,
+          kind: typeof r.kind === "string" ? r.kind : "expiring",
+        })),
+      });
+      return { resendId: result.resendId, deliveredTo: recipient.to };
+    }
+    case "work_notice_created": {
+      const result = await sendWorkNoticeCreatedEmail({
+        to: recipient.to,
+        logicalTo: recipient.logicalTo,
+        overridden: recipient.overridden,
+        code: String(payload.code ?? ""),
+        organizationName: String(payload.organizationName ?? ""),
+        locationName: String(payload.locationName ?? ""),
+        permitTypeName: String(payload.permitTypeName ?? ""),
+        tentativeDate:
+          typeof payload.tentativeDate === "string"
+            ? payload.tentativeDate
+            : null,
+        requestingAreaName: String(payload.requestingAreaName ?? ""),
+        description:
+          typeof payload.description === "string" ? payload.description : null,
+      });
+      return { resendId: result.resendId, deliveredTo: recipient.to };
+    }
+    case "work_permit_created": {
+      const result = await sendWorkPermitCreatedEmail({
+        to: recipient.to,
+        logicalTo: recipient.logicalTo,
+        overridden: recipient.overridden,
+        code: String(payload.code ?? ""),
+        organizationName: String(payload.organizationName ?? ""),
+        locationName: String(payload.locationName ?? ""),
+        permitTypeName: String(payload.permitTypeName ?? ""),
+        scheduledDate:
+          typeof payload.scheduledDate === "string"
+            ? payload.scheduledDate
+            : null,
+        workNoticeCode:
+          typeof payload.workNoticeCode === "string"
+            ? payload.workNoticeCode
+            : null,
+        description:
+          typeof payload.description === "string" ? payload.description : null,
       });
       return { resendId: result.resendId, deliveredTo: recipient.to };
     }

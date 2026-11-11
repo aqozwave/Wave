@@ -15,6 +15,7 @@ import {
   evaluateCompanyPack,
   evaluatePersonPack,
 } from "../accreditations/accreditations.service.js";
+import { enqueueWorkPermitCreatedNotifications } from "../notificationOutbox/workPermitNotification.service.js";
 import { actorHasPermission } from "../roles/roles.service.js";
 import type {
   CreateWorkPermitBody,
@@ -52,7 +53,13 @@ type Actor = Pick<
 const permitInclude = {
   workNotice: { select: { id: true, code: true, status: true, deletedAt: true } },
   organization: {
-    select: { id: true, name: true, rut: true, deletedAt: true },
+    select: {
+      id: true,
+      name: true,
+      rut: true,
+      deletedAt: true,
+      contactEmail: true,
+    },
   },
   permitType: { select: { id: true, code: true, name: true } },
   location: { select: { id: true, name: true } },
@@ -1116,6 +1123,28 @@ export async function createWorkPermitFromNotice(
     });
     return permit;
   });
+
+  // Avisa al portal contratista (usuarios de la org + contactEmail).
+  try {
+    await enqueueWorkPermitCreatedNotifications({
+      id: created.id,
+      code: created.code,
+      businessId: created.businessId,
+      organizationId: created.organizationId,
+      organizationName: created.organization.name,
+      locationName: created.location.name,
+      permitTypeName: `${created.permitType.code} — ${created.permitType.name}`,
+      scheduledDate: created.scheduledDate,
+      workNoticeCode: created.workNotice?.code ?? null,
+      description: created.description,
+      contactEmail: created.organization.contactEmail,
+    });
+  } catch (error) {
+    console.error("No se pudo encolar mail de PT al contratista", {
+      workPermitId: created.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   return toWorkPermitResponse(created);
 }

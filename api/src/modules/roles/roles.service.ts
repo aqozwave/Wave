@@ -12,6 +12,7 @@ import {
   PERMISSION_RESOURCES,
   RESOURCE_TO_MODULE_KEY,
   ROLE_DATA_SCOPES,
+  SYSTEM_ROLE_KEY,
   SYSTEM_ROLE_KEYS,
   catalogActionsFor,
 } from "../../lib/permissions.js";
@@ -497,6 +498,97 @@ export async function listExpiryDigestRecipients(): Promise<
       businessId: user.businessId,
       seesAllBusinesses:
         user.internalRol === "superadmin" || user.role.dataScope === "all",
+    });
+  }
+  return out;
+}
+
+/**
+ * Claves de rol de staff Prevención / admin del tenant
+ * (avisos de trabajo + digest de capacitaciones).
+ */
+const PREVENTION_STAFF_ROLE_KEYS = new Set<string>([
+  SYSTEM_ROLE_KEY.ADMIN,
+  SYSTEM_ROLE_KEY.PREVENCIONISTA,
+]);
+
+/**
+ * Usuarios activos admin o prevencionista.
+ * Opcional: filtrar por empresa (misma businessId).
+ * seesAllBusinesses = superadmin o dataScope all (digests globales).
+ */
+export async function listPreventionStaffRecipients(options?: {
+  businessId?: string;
+}): Promise<ExpiryDigestRecipient[]> {
+  const users = await prisma.user.findMany({
+    where: {
+      deletedAt: null,
+      state: true,
+      ...(options?.businessId
+        ? {
+            OR: [
+              { businessId: options.businessId },
+              { internalRol: "superadmin" },
+            ],
+          }
+        : {}),
+    },
+    select: {
+      id: true,
+      email: true,
+      businessId: true,
+      internalRol: true,
+      role: {
+        select: {
+          key: true,
+          dataScope: true,
+          state: true,
+          deletedAt: true,
+        },
+      },
+    },
+  });
+
+  const out: ExpiryDigestRecipient[] = [];
+  for (const user of users) {
+    const email = user.email?.trim().toLowerCase();
+    if (!email) continue;
+
+    const roleKey = user.role?.deletedAt || !user.role?.state
+      ? null
+      : user.role.key;
+    const isStaffByRole =
+      roleKey != null && PREVENTION_STAFF_ROLE_KEYS.has(roleKey);
+    const isStaffByInternal =
+      user.internalRol === SYSTEM_ROLE_KEY.ADMIN ||
+      user.internalRol === SYSTEM_ROLE_KEY.PREVENCIONISTA;
+    // Superadmin solo entra si pide digests globales (sin filtro business).
+    const isSuperadmin = user.internalRol === "superadmin";
+    if (!isStaffByRole && !isStaffByInternal && !isSuperadmin) continue;
+
+    // Con filtro de empresa: excluir superadmin sin business (no es staff del tenant).
+    if (
+      options?.businessId &&
+      user.businessId !== options.businessId &&
+      !isStaffByRole &&
+      !isStaffByInternal
+    ) {
+      continue;
+    }
+    if (
+      options?.businessId &&
+      user.businessId !== options.businessId &&
+      isSuperadmin
+    ) {
+      continue;
+    }
+
+    out.push({
+      id: user.id,
+      email,
+      businessId: user.businessId,
+      seesAllBusinesses:
+        isSuperadmin || user.role?.dataScope === "all",
     });
   }
   return out;

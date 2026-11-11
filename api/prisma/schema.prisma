@@ -194,6 +194,14 @@ enum NotificationOutboxType {
   course_expired
   boarding_book_admin_digest
   course_admin_digest
+  /// Capacitaciones Prevención por vencer / vencidas.
+  training_expiring
+  training_expired
+  training_admin_digest
+  /// Nuevo aviso de trabajo → Prevención / admin del tenant.
+  work_notice_created
+  /// PT creado por Prevención → usuarios portal de la org contratista.
+  work_permit_created
 }
 
 /**
@@ -1688,6 +1696,12 @@ model CrewMemberTraining {
   /// Evidencia documental opcional (mismo expediente del tripulante).
   evidenceDocumentId  String?            @map("evidence_document_id") @db.Uuid
   evidenceDocument    CrewMemberDocument? @relation(fields: [evidenceDocumentId], references: [id], onDelete: SetNull)
+  /// Último mail “por vencer” enviado (auditoría / dedupe blando).
+  lastExpiringEmailAt DateTime?          @map("last_expiring_email_at") @db.Timestamptz
+  /// Último mail “vencido” enviado.
+  lastExpiredEmailAt  DateTime?          @map("last_expired_email_at") @db.Timestamptz
+  /// Hitos (días) ya avisados para esta vigencia (evita reenvío del mismo hito).
+  expiringMilestonesSent Int[]           @default([]) @map("expiring_milestones_sent")
   deletedAt           DateTime?          @map("deleted_at") @db.Timestamptz
   createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime           @updatedAt @map("updated_at") @db.Timestamptz

@@ -7,6 +7,7 @@ import {
   processBoardingBookExpiryResponseSchema,
   processCourseExpiryResponseSchema,
   processOutboxResponseSchema,
+  processTrainingExpiryResponseSchema,
   retryNotificationOutboxResponseSchema,
   type ListNotificationOutboxQuery,
   type ProcessOutboxQuery,
@@ -16,6 +17,7 @@ import {
   retryNotificationOutbox,
 } from "./notificationOutbox.service.js";
 import { processOutbox } from "./notificationOutboxWorker.service.js";
+import { processTrainingExpiryNotifications } from "./trainingExpiryNotification.service.js";
 
 /** GET /notification-outbox */
 export async function listNotificationOutboxHandler(
@@ -52,6 +54,19 @@ export async function runBoardingBookExpiryHandler(
   if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
   const result = await processBoardingBookExpiryNotifications();
   res.status(200).json(processBoardingBookExpiryResponseSchema.parse(result));
+}
+
+/**
+ * POST /notification-outbox/run-training-expiry
+ * Dispara el generador de capacitaciones a mano. Solo encola; no envía.
+ */
+export async function runTrainingExpiryHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await processTrainingExpiryNotifications();
+  res.status(200).json(processTrainingExpiryResponseSchema.parse(result));
 }
 
 /**

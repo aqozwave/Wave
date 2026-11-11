@@ -68,6 +68,8 @@ export const dashboardVesselComplianceSchema = z
     compliantCrewCount: z.number().int().nonnegative(),
     /** Promedio de cumplimiento 0–100; null si nadie tiene cursos obligatorios. */
     compliancePercent: z.number().int().min(0).max(100).nullable(),
+    /** Sesiones de capacitación Prevención cerradas en esa nave. */
+    completedTrainingSessionsCount: z.number().int().nonnegative(),
   })
   .openapi("DashboardVesselCompliance");
 

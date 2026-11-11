@@ -9,8 +9,12 @@ export const DEFAULT_EXPIRY_NOTIFICATION_SETTINGS: ExpiryNotificationSettings = 
   courseAdminDays: [30, 25, 15, 10],
   boardingBookCrewDays: [30, 25, 15, 10],
   boardingBookAdminDays: [30, 25, 15, 10],
+  trainingCrewDays: [30, 25, 15, 10],
+  trainingAdminDays: [30, 25, 15, 10],
   courseExpiredCrewRepeatDays: 7,
   courseExpiredCrewMaxReminders: 4,
+  trainingExpiredCrewRepeatDays: 7,
+  trainingExpiredCrewMaxReminders: 4,
 };
 
 /** Opciones UI: cada cuántos días recordar curso vencido. */
@@ -24,8 +28,12 @@ export type ExpiryNotificationSettings = {
   courseAdminDays: number[];
   boardingBookCrewDays: number[];
   boardingBookAdminDays: number[];
+  trainingCrewDays: number[];
+  trainingAdminDays: number[];
   courseExpiredCrewRepeatDays: number;
   courseExpiredCrewMaxReminders: number;
+  trainingExpiredCrewRepeatDays: number;
+  trainingExpiredCrewMaxReminders: number;
 };
 
 /** Tipos de fila del outbox. */
@@ -34,7 +42,12 @@ export type NotificationOutboxType =
   | "course_expiring"
   | "course_expired"
   | "boarding_book_admin_digest"
-  | "course_admin_digest";
+  | "course_admin_digest"
+  | "training_expiring"
+  | "training_expired"
+  | "training_admin_digest"
+  | "work_notice_created"
+  | "work_permit_created";
 
 /** Estados del worker. */
 export type NotificationOutboxStatus =

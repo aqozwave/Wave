@@ -758,6 +758,12 @@ export function Panel() {
                           }}
                         />
                       </div>
+                      <p className="m-0 mt-0.5 text-[11px] leading-[14px] text-[var(--color-nachipa-secondary)]">
+                        {nave.completedTrainingSessionsCount}{" "}
+                        {nave.completedTrainingSessionsCount === 1
+                          ? "capacitación cerrada"
+                          : "capacitaciones cerradas"}
+                      </p>
                     </div>
                   </div>
                 );
