@@ -260,7 +260,7 @@ const SYSTEM_LINKS: ReadonlyArray<NavLink> = [
     label: "Roles y permisos",
     to: "/roles",
     icon: ShieldCheck,
-    canShow: (u) => u?.internalRol === "superadmin",
+    canShow: (u) => userHasPermission(u, "roles", "read"),
   },
   {
     label: "Notificaciones",
@@ -410,7 +410,7 @@ export function Sidebar() {
   const showCursosGroup = !isContractorPortal && visibleCursosLinks.length > 0;
   const showConfigGroup = !isContractorPortal && visibleConfigLinks.length > 0;
   const showPrevencion = !isContractorPortal && canSeePrevencion(user);
-  /** Sistema: Usuarios (admin+) + Roles/Bitácora (superadmin). */
+  /** Sistema: Usuarios/Roles por permiso; Bitácora (superadmin). */
   const showSystemGroup =
     !isContractorPortal && visibleSystemLinks.length > 0;
   /** Etiqueta del home según rol (Figma C1 / T* / E3). */

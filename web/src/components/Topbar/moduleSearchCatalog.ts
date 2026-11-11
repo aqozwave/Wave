@@ -258,7 +258,7 @@ export const MODULE_SEARCH_CATALOG: readonly ModuleSearchItem[] = [
     group: "Sistema",
     to: "/roles",
     keywords: ["rbac", "permisos"],
-    canShow: (u) => u?.internalRol === "superadmin",
+    canShow: (u) => userHasPermission(u, "roles", "read"),
   },
   {
     id: "actividad",

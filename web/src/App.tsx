@@ -249,13 +249,25 @@ export function App() {
             path="configuracion/flujos/:id"
             element={<ApprovalFlowDetailPage />}
           />
-          <Route path="usuarios" element={<Usuarios />} />
+          {/* Sin maestros.users:read → Panel (no listado 403). */}
+          <Route
+            element={
+              <RequirePermission resource="maestros.users" action="read" />
+            }
+          >
+            <Route path="usuarios" element={<Usuarios />} />
+          </Route>
           <Route path="notificaciones" element={<NotificacionesVencimiento />} />
           <Route
             path="notificaciones/outbox"
             element={<OutboxNotificaciones />}
           />
-          <Route path="roles" element={<Roles />} />
+          {/* Sin roles:read → Panel. */}
+          <Route
+            element={<RequirePermission resource="roles" action="read" />}
+          >
+            <Route path="roles" element={<Roles />} />
+          </Route>
           <Route path="sistema/actividad" element={<ActivityLogs />} />
         </Route>
       </Route>

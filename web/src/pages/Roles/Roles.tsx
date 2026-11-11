@@ -20,6 +20,7 @@ import {
   listBusinessesRequest,
   type Business,
 } from "../../lib/api/businesses";
+import { userHasPermission } from "../../lib/api/auth";
 import {
   createRoleRequest,
   getPermissionCatalogRequest,
@@ -29,6 +30,9 @@ import {
   type Role,
 } from "../../lib/api/roles";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+
+/** Recurso RBAC de esta pantalla (catálogo Sistema · Roles). */
+const ROLES_RESOURCE = "roles";
 
 /** Capitaliza nombre de empresa guardado en minúsculas. */
 function displayBusinessName(value: string): string {
@@ -102,12 +106,18 @@ function modulesWithAccess(
 
 /**
  * Pantalla Roles y permisos (Figma 105:1229).
- * Lista a la izquierda + editor de permisos a la derecha. Solo superadmin CRUD.
+ * Lista a la izquierda + editor a la derecha. Acciones según roles.*.
  */
 export function Roles() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
   const isSuperadmin = user?.internalRol === "superadmin";
+  /** Ver listado / matriz (ruta ya exige read). */
+  const canRead = userHasPermission(user, ROLES_RESOURCE, "read");
+  /** Alta de rol custom. */
+  const canCreate = userHasPermission(user, ROLES_RESOURCE, "create");
+  /** Editar nombre, alcance, permisos y estado. */
+  const canUpdate = userHasPermission(user, ROLES_RESOURCE, "update");
 
   const [roles, setRoles] = useState<Role[]>([]);
   const [catalog, setCatalog] = useState<PermissionCatalog | null>(null);
@@ -118,6 +128,8 @@ export function Roles() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  /** Editable solo al crear (con create) o al editar (con update). */
+  const canEditForm = (creating && canCreate) || (!creating && canUpdate);
 
   /** Form del editor (rol seleccionado o borrador de alta). */
   const [name, setName] = useState("");
@@ -134,17 +146,16 @@ export function Roles() {
   );
 
   const load = useCallback(async () => {
-    if (!accessToken) return;
+    if (!accessToken || !canRead) return;
     setLoading(true);
     try {
       const [rolesResult, catalogResult, businessesResult] = await Promise.all([
         listRolesRequest(accessToken, true),
-        isSuperadmin
-          ? getPermissionCatalogRequest(
-              accessToken,
-              catalogBusinessId || undefined,
-            )
-          : Promise.resolve(null),
+        getPermissionCatalogRequest(
+          accessToken,
+          catalogBusinessId || undefined,
+        ),
+        // Filtro empresa de matriz: solo superadmin ve todas las empresas.
         isSuperadmin
           ? listBusinessesRequest(accessToken, 1, 100)
           : Promise.resolve({ items: [] as Business[] }),
@@ -166,7 +177,7 @@ export function Roles() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, catalogBusinessId, isSuperadmin, showToast]);
+  }, [accessToken, canRead, catalogBusinessId, isSuperadmin, showToast]);
 
   useEffect(() => {
     void load();
@@ -195,6 +206,7 @@ export function Roles() {
   }, [selected, creating]);
 
   function startCreate() {
+    if (!canCreate) return;
     setCreating(true);
     setSelectedId(null);
     setName("");
@@ -212,6 +224,7 @@ export function Roles() {
   }
 
   function toggleAction(resource: string, action: string) {
+    if (!canEditForm) return;
     setPermMap((prev) => {
       const next = new Map(prev);
       const set = new Set(next.get(resource) ?? []);
@@ -225,7 +238,7 @@ export function Roles() {
 
   async function onSave(event: FormEvent) {
     event.preventDefault();
-    if (!accessToken || !isSuperadmin) return;
+    if (!accessToken || !canEditForm) return;
     if (!name.trim()) {
       showToast("El nombre es requerido.", "danger");
       return;
@@ -237,6 +250,7 @@ export function Roles() {
       /** Contexto de módulos: no borrar permisos de submódulos apagados. */
       const scopeBusinessId = catalogBusinessId || undefined;
       if (creating) {
+        if (!canCreate) return;
         const created = await createRoleRequest(accessToken, {
           name: name.trim(),
           key: key.trim() || undefined,
@@ -251,6 +265,7 @@ export function Roles() {
         await load();
         setSelectedId(created.id);
       } else if (selected) {
+        if (!canUpdate) return;
         await updateRoleRequest(accessToken, selected.id, {
           name: name.trim(),
           description: description.trim(),
@@ -276,21 +291,6 @@ export function Roles() {
   const selectClass =
     "h-[42px] w-full rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-brand-sky)_25%,transparent)]";
 
-  if (!isSuperadmin) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <Topbar
-          breadcrumb="Roles y permisos"
-          breadcrumbIcon={Shield}
-          actions={<UserMenu />}
-        />
-        <div className="flex flex-1 items-center justify-center p-8 text-[13px] text-[var(--color-nachipa-secondary)]">
-          Solo el superadmin puede gestionar roles y permisos.
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <Topbar
@@ -309,30 +309,34 @@ export function Roles() {
           actions={
             <div className="flex flex-wrap items-center gap-2">
               {/* S3b: filtrar matriz por módulos activos de la empresa. */}
-              <label className="flex items-center gap-2 text-[12px] text-[var(--color-nachipa-secondary)]">
-                <span className="shrink-0">Empresa (matriz)</span>
-                <select
-                  className="h-9 max-w-[220px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-2.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)]"
-                  value={catalogBusinessId}
-                  onChange={(e) => setCatalogBusinessId(e.target.value)}
-                  aria-label="Empresa para filtrar la matriz de permisos"
+              {isSuperadmin ? (
+                <label className="flex items-center gap-2 text-[12px] text-[var(--color-nachipa-secondary)]">
+                  <span className="shrink-0">Empresa (matriz)</span>
+                  <select
+                    className="h-9 max-w-[220px] rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-2.5 text-[13px] text-[var(--color-nachipa-body)] outline-none focus:border-[var(--color-brand-sky)]"
+                    value={catalogBusinessId}
+                    onChange={(e) => setCatalogBusinessId(e.target.value)}
+                    aria-label="Empresa para filtrar la matriz de permisos"
+                  >
+                    <option value="">Todas (catálogo completo)</option>
+                    {businesses.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {displayBusinessName(b.name)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {canCreate ? (
+                <Button
+                  type="button"
+                  className="!w-auto shrink-0"
+                  onClick={startCreate}
                 >
-                  <option value="">Todas (catálogo completo)</option>
-                  {businesses.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {displayBusinessName(b.name)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <Button
-                type="button"
-                className="!w-auto shrink-0"
-                onClick={startCreate}
-              >
-                <Plus className="size-4" strokeWidth={1.5} aria-hidden />
-                Nuevo rol
-              </Button>
+                  <Plus className="size-4" strokeWidth={1.5} aria-hidden />
+                  Nuevo rol
+                </Button>
+              ) : null}
             </div>
           }
         />
@@ -424,7 +428,9 @@ export function Roles() {
                     <h2 className="truncate text-[15px] font-semibold text-[var(--color-nachipa-title)]">
                       {creating
                         ? "Nuevo rol"
-                        : `Editar rol · ${selected?.name ?? ""}`}
+                        : canEditForm
+                          ? `Editar rol · ${selected?.name ?? ""}`
+                          : `Ver rol · ${selected?.name ?? ""}`}
                     </h2>
                     {isSystem ? (
                       <span className="rounded-full bg-[var(--color-nachipa-tab,#f4f4f5)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-nachipa-secondary)]">
@@ -439,6 +445,7 @@ export function Roles() {
                     <Toggle
                       checked={state}
                       onChange={setState}
+                      disabled={!canEditForm}
                       aria-label="Rol activo"
                     />
                   </div>
@@ -452,13 +459,14 @@ export function Roles() {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       required
+                      disabled={!canEditForm}
                     />
                     <TextField
                       label="Clave"
                       name="key"
                       value={key}
                       onChange={(e) => setKey(e.target.value)}
-                      disabled={!creating || isSystem}
+                      disabled={!canEditForm || !creating || isSystem}
                       placeholder="se-deriva-del-nombre"
                     />
                     <label className="flex flex-col gap-1.5 sm:col-span-2">
@@ -470,6 +478,7 @@ export function Roles() {
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
                         maxLength={300}
+                        disabled={!canEditForm}
                       />
                     </label>
                   </div>
@@ -485,18 +494,19 @@ export function Roles() {
                     >
                       {SCOPE_OPTIONS.map((scope) => {
                         const active = dataScope === scope;
+                        const scopeDisabled = isSystem || !canEditForm;
                         return (
                           <button
                             key={scope}
                             type="button"
-                            disabled={isSystem}
+                            disabled={scopeDisabled}
                             onClick={() => setDataScope(scope)}
                             className={[
                               "rounded-[var(--radius-sm)] px-3 py-1.5 text-[12px] font-medium",
                               active
                                 ? "bg-white text-[var(--color-nachipa-title)] shadow-sm"
                                 : "text-[var(--color-nachipa-secondary)]",
-                              isSystem ? "opacity-60" : "",
+                              scopeDisabled ? "opacity-60" : "",
                             ].join(" ")}
                           >
                             {SCOPE_LABELS[scope]}
@@ -576,6 +586,7 @@ export function Roles() {
                                           type="checkbox"
                                           className="size-4 accent-[var(--color-nachipa-primary,#004c8c)]"
                                           checked={checked}
+                                          disabled={!canEditForm}
                                           onChange={() =>
                                             toggleAction(
                                               item.resource,
@@ -604,6 +615,9 @@ export function Roles() {
                 <div className="flex shrink-0 items-center justify-between gap-3 border-t border-[var(--color-tremor-border)] px-5 py-3">
                   <p className="text-[12px] text-[var(--color-nachipa-secondary)]">
                     {withAccess} de {total} módulos con acceso
+                    {!canEditForm
+                      ? " · Solo lectura"
+                      : ""}
                   </p>
                   <div className="flex gap-3">
                     {creating ? (
@@ -616,17 +630,19 @@ export function Roles() {
                         Cancelar
                       </button>
                     ) : null}
-                    <Button
-                      type="submit"
-                      className="!h-9 !w-auto"
-                      disabled={submitting}
-                    >
-                      {submitting
-                        ? "Guardando…"
-                        : creating
-                          ? "Crear rol"
-                          : "Guardar cambios"}
-                    </Button>
+                    {canEditForm ? (
+                      <Button
+                        type="submit"
+                        className="!h-9 !w-auto"
+                        disabled={submitting}
+                      >
+                        {submitting
+                          ? "Guardando…"
+                          : creating
+                            ? "Crear rol"
+                            : "Guardar cambios"}
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               </form>

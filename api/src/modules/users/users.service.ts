@@ -472,6 +472,30 @@ export async function updateUser(
   assertUserTenantAccess(actor, existing);
   assertCanManageTarget(actor, existing);
 
+  // Nadie se desactiva a sí mismo (el soft-delete ya tenía la misma regla).
+  if (actor.id === id && body.state === false) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "No puedes desactivar tu propia cuenta",
+    );
+  }
+
+  // Tampoco puede cambiarse el propio rol ni el alcance desde admin.
+  if (
+    actor.id === id &&
+    (body.roleId !== undefined ||
+      body.businessId !== undefined ||
+      body.locationId !== undefined ||
+      body.areaId !== undefined)
+  ) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "No puedes cambiar tu propio rol ni alcance",
+    );
+  }
+
   if (actor.internalRol !== "superadmin" && body.businessId !== undefined) {
     if (body.businessId !== actor.businessId) {
       throw new AppError(

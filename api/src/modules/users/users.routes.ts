@@ -13,6 +13,7 @@ import {
   updateUserHandler,
   uploadUserPhotoHandler,
 } from "./users.controller.js";
+import { requireUsersPatchPermission } from "./users.patchPermission.js";
 import {
   createUserRequestSchema,
   deleteUserPhotoRequestSchema,
@@ -66,11 +67,9 @@ usersRouter.get(
 usersRouter.patch(
   "/:id",
   authenticate,
-  requirePermission(
-    PERMISSION_RESOURCE.MAESTROS_USERS,
-    PERMISSION_ACTION.UPDATE,
-  ),
   validate(updateUserRequestSchema),
+  /** state → deactivate; resto → update (ver users.patchPermission). */
+  requireUsersPatchPermission,
   updateUserHandler,
 );
 
