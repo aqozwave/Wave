@@ -2,7 +2,6 @@ import { Router } from "express";
 import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { requirePermission } from "../../middlewares/requirePermission.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createPermitChecklistItemHandler,
@@ -37,7 +36,7 @@ import {
 
 /**
  * Catálogo tipos de permiso bajo /api/v1/permit-types.
- * Lectura: permit_types.read. Mutaciones: admin/superadmin + create/update/deactivate.
+ * Lectura: permit_types.read. Mutaciones: requirePermission (create/update/deactivate); superadmin bypass.
  * Nested: requirements y checklist-items (mismas reglas).
  */
 export const permitTypesRouter = Router();
@@ -56,7 +55,6 @@ permitTypesRouter.get(
 permitTypesRouter.post(
   "/",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.PERMIT_TYPES,
     PERMISSION_ACTION.CREATE,
@@ -80,7 +78,6 @@ permitTypesRouter.get(
 permitTypesRouter.post(
   "/:id/requirements",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.PERMIT_TYPES,
     PERMISSION_ACTION.CREATE,
@@ -92,7 +89,6 @@ permitTypesRouter.post(
 permitTypesRouter.patch(
   "/:id/requirements/:requirementId",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.PERMIT_TYPES,
     PERMISSION_ACTION.UPDATE,
@@ -104,7 +100,6 @@ permitTypesRouter.patch(
 permitTypesRouter.delete(
   "/:id/requirements/:requirementId",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.PERMIT_TYPES,
     PERMISSION_ACTION.DEACTIVATE,
@@ -128,7 +123,6 @@ permitTypesRouter.get(
 permitTypesRouter.post(
   "/:id/checklist-items",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.PERMIT_TYPES,
     PERMISSION_ACTION.CREATE,
@@ -140,7 +134,6 @@ permitTypesRouter.post(
 permitTypesRouter.patch(
   "/:id/checklist-items/:itemId",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.PERMIT_TYPES,
     PERMISSION_ACTION.UPDATE,
@@ -152,7 +145,6 @@ permitTypesRouter.patch(
 permitTypesRouter.delete(
   "/:id/checklist-items/:itemId",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.PERMIT_TYPES,
     PERMISSION_ACTION.DEACTIVATE,
@@ -175,7 +167,6 @@ permitTypesRouter.get(
 permitTypesRouter.patch(
   "/:id",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.PERMIT_TYPES,
     PERMISSION_ACTION.UPDATE,
@@ -187,7 +178,6 @@ permitTypesRouter.patch(
 permitTypesRouter.delete(
   "/:id",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.PERMIT_TYPES,
     PERMISSION_ACTION.DEACTIVATE,

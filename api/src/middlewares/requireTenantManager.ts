@@ -2,8 +2,11 @@ import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../lib/errors.js";
 
 /**
- * Exige autenticación previa y rol superadmin o admin.
- * Usado en altas/ediciones de ubicaciones (mismo criterio que el portal viejo).
+ * Solo superadmin (internalRol).
+ * El Administrador y el resto se rigen por Role.permissions vía requirePermission;
+ * no usar este middleware para “abrir” mutaciones a admin.
+ * Preferí requirePermission en rutas de negocio; este gate queda para
+ * operaciones exclusivas de sistema si hiciera falta.
  */
 export function requireTenantManager(
   req: Request,
@@ -15,13 +18,12 @@ export function requireTenantManager(
     return;
   }
 
-  const rol = req.user.internalRol;
-  if (rol !== "superadmin" && rol !== "admin") {
+  if (req.user.internalRol !== "superadmin") {
     next(
       new AppError(
         403,
         "forbidden",
-        "Solo un administrador puede realizar esta acción",
+        "Solo el superadmin puede realizar esta acción",
       ),
     );
     return;

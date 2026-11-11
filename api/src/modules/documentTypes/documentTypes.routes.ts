@@ -5,7 +5,6 @@ import {
   requireAnyPermission,
   requirePermission,
 } from "../../middlewares/requirePermission.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createDocumentTypeHandler,
@@ -24,7 +23,7 @@ import {
 
 /**
  * Maestro tipos de documento bajo /api/v1/document-types.
- * Lectura: permiso read. Mutaciones: admin/superadmin + permiso create/update/deactivate.
+ * Lectura: permiso read. Mutaciones: requirePermission (create/update/deactivate); superadmin bypass.
  */
 export const documentTypesRouter = Router();
 
@@ -49,7 +48,6 @@ documentTypesRouter.get(
 documentTypesRouter.post(
   "/",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES,
     PERMISSION_ACTION.CREATE,
@@ -78,7 +76,6 @@ documentTypesRouter.get(
 documentTypesRouter.patch(
   "/:id",
   authenticate,
-  requireTenantManager,
   /** Editar tipo en catálogo o membresía de pack. */
   requireAnyPermission([
     {
@@ -97,7 +94,6 @@ documentTypesRouter.patch(
 documentTypesRouter.delete(
   "/:id",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.MAESTROS_DOCUMENT_TYPES,
     PERMISSION_ACTION.DEACTIVATE,

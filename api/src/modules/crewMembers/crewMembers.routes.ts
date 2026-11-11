@@ -2,7 +2,6 @@ import { Router } from "express";
 import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { requirePermission } from "../../middlewares/requirePermission.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createCrewMemberMuelleHandler,
@@ -354,7 +353,6 @@ crewMembersRouter.get(
 crewMembersRouter.post(
   "/:id/access",
   authenticate,
-  requireTenantManager,
   requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.UPDATE),
   validate(grantCrewMemberAccessRequestSchema),
   grantCrewMemberAccessHandler,
@@ -363,7 +361,6 @@ crewMembersRouter.post(
 crewMembersRouter.patch(
   "/:id/access",
   authenticate,
-  requireTenantManager,
   requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.UPDATE),
   validate(changeCrewMemberAccessRoleRequestSchema),
   changeCrewMemberAccessRoleHandler,
@@ -372,7 +369,6 @@ crewMembersRouter.patch(
 crewMembersRouter.delete(
   "/:id/access",
   authenticate,
-  requireTenantManager,
   requirePermission(PERMISSION_RESOURCE.EMBARCADOS, PERMISSION_ACTION.UPDATE),
   validate(revokeCrewMemberAccessRequestSchema),
   revokeCrewMemberAccessHandler,

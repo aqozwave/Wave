@@ -2,7 +2,6 @@ import { Router } from "express";
 import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { requirePermission } from "../../middlewares/requirePermission.js";
-import { requireTenantManager } from "../../middlewares/requireTenantManager.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   createContractorHandler,
@@ -59,7 +58,7 @@ import {
 
 /**
  * Organizaciones contratistas bajo /api/v1/contractors (P2).
- * Lectura: contractors.read. Mutaciones: admin/superadmin + create/update/deactivate.
+ * Lectura: contractors.read. Mutaciones: requirePermission (create/update/deactivate); superadmin bypass.
  * Módulo contractors on se valida en el service (por businessId de la org).
  */
 export const contractorsRouter = Router();
@@ -182,7 +181,6 @@ contractorsRouter.get(
 contractorsRouter.post(
   "/",
   authenticate,
-  requireTenantManager,
   requirePermission(PERMISSION_RESOURCE.CONTRACTORS, PERMISSION_ACTION.CREATE),
   validate(createContractorRequestSchema),
   createContractorHandler,
@@ -199,7 +197,6 @@ contractorsRouter.get(
 contractorsRouter.post(
   "/:id/users",
   authenticate,
-  requireTenantManager,
   requirePermission(PERMISSION_RESOURCE.CONTRACTORS, PERMISSION_ACTION.CREATE),
   validate(inviteContractorUserRequestSchema),
   inviteContractorUserHandler,
@@ -216,7 +213,6 @@ contractorsRouter.get(
 contractorsRouter.post(
   "/:id/people",
   authenticate,
-  requireTenantManager,
   requirePermission(PERMISSION_RESOURCE.CONTRACTORS, PERMISSION_ACTION.CREATE),
   validate(createContractorPersonRequestSchema),
   createContractorPersonHandler,
@@ -225,7 +221,6 @@ contractorsRouter.post(
 contractorsRouter.patch(
   "/:id/people/:personId",
   authenticate,
-  requireTenantManager,
   requirePermission(PERMISSION_RESOURCE.CONTRACTORS, PERMISSION_ACTION.UPDATE),
   validate(updateContractorPersonRequestSchema),
   updateContractorPersonHandler,
@@ -234,7 +229,6 @@ contractorsRouter.patch(
 contractorsRouter.delete(
   "/:id/people/:personId",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.CONTRACTORS,
     PERMISSION_ACTION.DEACTIVATE,
@@ -254,7 +248,6 @@ contractorsRouter.get(
 contractorsRouter.patch(
   "/:id",
   authenticate,
-  requireTenantManager,
   requirePermission(PERMISSION_RESOURCE.CONTRACTORS, PERMISSION_ACTION.UPDATE),
   validate(updateContractorRequestSchema),
   updateContractorHandler,
@@ -263,7 +256,6 @@ contractorsRouter.patch(
 contractorsRouter.delete(
   "/:id",
   authenticate,
-  requireTenantManager,
   requirePermission(
     PERMISSION_RESOURCE.CONTRACTORS,
     PERMISSION_ACTION.DEACTIVATE,
