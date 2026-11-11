@@ -232,8 +232,14 @@ export async function getRoleById(id: string): Promise<RoleResponse> {
   return toRoleResponse(row);
 }
 
+/** Actor mínimo para tope de dataScope=all. */
+type RoleActor = { internalRol: string };
+
 /** Crea rol custom (no sistema). */
-export async function createRole(body: CreateRoleBody): Promise<RoleResponse> {
+export async function createRole(
+  actor: RoleActor,
+  body: CreateRoleBody,
+): Promise<RoleResponse> {
   const key = normalizeKey(body.key || body.name);
   if (!key) {
     throw new AppError(400, "validation_error", "La clave del rol es requerida");
@@ -244,6 +250,15 @@ export async function createRole(body: CreateRoleBody): Promise<RoleResponse> {
       400,
       "validation_error",
       "Esa clave está reservada para un rol de sistema",
+    );
+  }
+
+  // dataScope=all es poder global: solo superadmin lo asigna.
+  if (body.dataScope === "all" && actor.internalRol !== "superadmin") {
+    throw new AppError(
+      403,
+      "forbidden",
+      "Solo superadmin puede crear un rol con alcance global",
     );
   }
 
@@ -302,6 +317,7 @@ export async function createRole(body: CreateRoleBody): Promise<RoleResponse> {
  * Sistema: se pueden editar permisos/nombre/desc/state; no dataScope ni key.
  */
 export async function updateRole(
+  actor: RoleActor,
   id: string,
   payload: UpdateRoleBody,
 ): Promise<RoleResponse> {
@@ -321,6 +337,17 @@ export async function updateRole(
       400,
       "validation_error",
       "No se puede cambiar el alcance de un rol de sistema",
+    );
+  }
+
+  if (
+    payload.dataScope === "all" &&
+    actor.internalRol !== "superadmin"
+  ) {
+    throw new AppError(
+      403,
+      "forbidden",
+      "Solo superadmin puede asignar alcance global a un rol",
     );
   }
 

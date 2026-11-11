@@ -2,6 +2,7 @@ import { Router } from "express";
 import { PERMISSION_ACTION, PERMISSION_RESOURCE } from "../../lib/permissions.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { requirePermission } from "../../middlewares/requirePermission.js";
+import { requireSuperadmin } from "../../middlewares/requireSuperadmin.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   listNotificationOutboxHandler,
@@ -34,44 +35,35 @@ notificationOutboxRouter.get(
   listNotificationOutboxHandler,
 );
 
-/** Rutas fijas antes de /:id/retry. */
+/**
+ * Jobs globales (todos los tenants): solo superadmin.
+ * Un admin de una empresa no debe disparar generadores/worker globales.
+ */
 notificationOutboxRouter.post(
   "/run-course-expiry",
   authenticate,
-  requirePermission(
-    PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS,
-    PERMISSION_ACTION.UPDATE,
-  ),
+  requireSuperadmin,
   runCourseExpiryHandler,
 );
 
 notificationOutboxRouter.post(
   "/run-boarding-book-expiry",
   authenticate,
-  requirePermission(
-    PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS,
-    PERMISSION_ACTION.UPDATE,
-  ),
+  requireSuperadmin,
   runBoardingBookExpiryHandler,
 );
 
 notificationOutboxRouter.post(
   "/run-training-expiry",
   authenticate,
-  requirePermission(
-    PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS,
-    PERMISSION_ACTION.UPDATE,
-  ),
+  requireSuperadmin,
   runTrainingExpiryHandler,
 );
 
 notificationOutboxRouter.post(
   "/process",
   authenticate,
-  requirePermission(
-    PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS,
-    PERMISSION_ACTION.UPDATE,
-  ),
+  requireSuperadmin,
   validate(processOutboxRequestSchema),
   processOutboxHandler,
 );

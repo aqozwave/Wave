@@ -76,16 +76,17 @@ export function createApp() {
   }
 
   /**
-   * Swagger/OpenAPI: on en local; off en production salvo ENABLE_API_DOCS=true.
-   * (Se calcula antes de helmet: con docs hay que relajar CSP.)
+   * Swagger/OpenAPI: on solo en development/test, o con ENABLE_API_DOCS=true.
+   * NODE_ENV indefinido o production → docs off y CSP activa (fail closed).
    */
   const docsFlag = (process.env.ENABLE_API_DOCS ?? "").trim().toLowerCase();
+  const nodeEnv = (process.env.NODE_ENV ?? "").trim().toLowerCase();
   const apiDocsEnabled =
     docsFlag === "1" || docsFlag === "true"
       ? true
       : docsFlag === "0" || docsFlag === "false"
         ? false
-        : process.env.NODE_ENV !== "production";
+        : nodeEnv === "development" || nodeEnv === "test";
 
   // Cabeceras de seguridad (CSP off si Swagger UI está activo: usa inline scripts).
   app.use(

@@ -43,6 +43,15 @@ export async function authenticate(
       throw new AppError(401, "unauthorized", "Sesión inválida");
     }
 
+    // Acceso temporal vencido: no seguir sirviendo rutas con un access aún válido.
+    if (user.accessExpiresAt && user.accessExpiresAt.getTime() <= Date.now()) {
+      throw new AppError(
+        403,
+        "access_expired",
+        "El acceso de esta cuenta venció. Contactá al administrador.",
+      );
+    }
+
     // Alcance del rol (para dashboard / tenant); null si no hay Role.
     let dataScope: AuthUser["dataScope"] = null;
     if (user.internalRol === "superadmin") {

@@ -1,5 +1,6 @@
 import type { Request } from "express";
 import type { ActivityAction, ActivityResource, Prisma } from "@prisma/client";
+import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import { clientIp } from "../../lib/rateLimit.js";
 import type {
@@ -180,10 +181,20 @@ function toItem(row: {
   };
 }
 
+/** Actor mínimo para filtrar bitácora por tenant del actor. */
+type ActivityListActor = {
+  internalRol: string;
+  businessId: string | null;
+};
+
 /**
- * Listado paginado de auditoría (solo superadmin en la ruta).
+ * Listado paginado de auditoría.
+ * Superadmin: global. Resto: solo eventos cuyo actor es de su empresa.
  */
-export async function listActivityLogs(query: ListActivityLogsQuery): Promise<{
+export async function listActivityLogs(
+  actor: ActivityListActor,
+  query: ListActivityLogsQuery,
+): Promise<{
   items: ActivityLogItem[];
   total: number;
   page: number;
@@ -194,6 +205,18 @@ export async function listActivityLogs(query: ListActivityLogsQuery): Promise<{
   if (query.resource) where.resource = query.resource;
   if (query.success === "true") where.success = true;
   if (query.success === "false") where.success = false;
+
+  // Sin businessId en ActivityLog: se aísla por la empresa del actor del evento.
+  if (actor.internalRol !== "superadmin") {
+    if (!actor.businessId) {
+      throw new AppError(
+        403,
+        "forbidden",
+        "Tu usuario no tiene una empresa asignada",
+      );
+    }
+    where.actor = { businessId: actor.businessId };
+  }
 
   const page = query.page;
   const limit = query.limit;

@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { render } from "@react-email/render";
+import { logEmailStub } from "../lib/env.js";
 import { isEmailConfigured, sendEmail } from "../lib/resend.js";
 import { getLogoAttachment } from "./emailBrand.js";
 import { ResetPassword } from "./ResetPassword.js";
@@ -50,7 +51,7 @@ export async function sendResetPasswordEmail(
   const resetUrl = buildResetPasswordUrl(input.plainToken);
 
   if (!isEmailConfigured()) {
-    console.info(
+    logEmailStub(
       `[email.stub] reset para ${input.to}: token=${input.plainToken} url=${resetUrl} (expira ${input.expiresAt.toISOString()})`,
     );
     return;

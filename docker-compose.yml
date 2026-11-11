@@ -4,8 +4,9 @@ services:
     image: postgres:16
     container_name: wave-postgres
     restart: unless-stopped
+    # Solo localhost: evita exponer Postgres a la LAN con wave/wave.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: wave
       POSTGRES_PASSWORD: wave
