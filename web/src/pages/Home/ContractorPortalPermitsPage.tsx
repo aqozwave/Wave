@@ -31,6 +31,7 @@ import {
   requestCloseWorkPermitRequest,
   resolveWorkPermitFlowPolicy,
   workPermitStatusLabel,
+  workPermitStatusLabelFor,
   type WorkPermit,
   type WorkPermitStatus,
 } from "../../lib/api/workPermits";
@@ -226,7 +227,7 @@ export function ContractorPortalPermitsPage() {
         },
         {
           header: "Estado",
-          value: (row) => workPermitStatusLabel(row.status),
+          value: (row) => workPermitStatusLabelFor(row),
         },
       ],
       "mis-permisos",
@@ -373,7 +374,7 @@ export function ContractorPortalPermitsPage() {
                   <option value="to_complete">Por completar</option>
                   <option value="to_approve">En aprobación</option>
                   <option value="to_receive">Aprobado Prevención</option>
-                  <option value="active">Autorizado a bordo</option>
+                  <option value="active">Autorizado / en curso</option>
                   <option value="to_verify">Verificar trabajo</option>
                   <option value="to_close">Por cerrar</option>
                   <option value="closed">Trabajo cerrado</option>
@@ -453,7 +454,7 @@ export function ContractorPortalPermitsPage() {
                     </td>
                     <td className="px-3 py-2.5">
                       <StatusChip tone={statusTone(row.status)}>
-                        {workPermitStatusLabel(row.status)}
+                        {workPermitStatusLabelFor(row)}
                       </StatusChip>
                     </td>
                     <td className="px-3 py-2.5">

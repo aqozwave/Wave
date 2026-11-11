@@ -39,6 +39,7 @@ import {
   resolveWorkPermitFlowPolicy,
   returnWorkPermitRequest,
   workPermitStatusLabel,
+  workPermitStatusLabelFor,
   type WorkPermit,
   type WorkPermitChecklistItem,
   type WorkPermitDigitalSignaturePayload,
@@ -454,7 +455,7 @@ export function WorkPermitDetailPage() {
           payload,
         );
         showToast(
-          `${updated.code} · ${workPermitStatusLabel(updated.status)}.`,
+          `${updated.code} · ${workPermitStatusLabelFor(updated)}.`,
           "success",
         );
       } else if (signKind === "receive") {
@@ -464,7 +465,7 @@ export function WorkPermitDetailPage() {
           payload,
         );
         showToast(
-          `${updated.code} · ${workPermitStatusLabel("active")}.`,
+          `${updated.code} · ${workPermitStatusLabelFor({ status: "active", approvalFlowSnapshot: updated.approvalFlowSnapshot })}.`,
           "success",
         );
       } else if (signKind === "close") {
@@ -642,7 +643,7 @@ export function WorkPermitDetailPage() {
               permit ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusChip tone={statusTone(permit.status)}>
-                    {workPermitStatusLabel(permit.status)}
+                    {workPermitStatusLabelFor(permit)}
                   </StatusChip>
                   {permitDoc && signedCount > 0 ? (
                     <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
@@ -865,7 +866,7 @@ export function WorkPermitDetailPage() {
             <Row label="Fecha" value={formatDate(permit.scheduledDate)} />
             <Row
               label="Estado"
-              value={workPermitStatusLabel(permit.status)}
+              value={workPermitStatusLabelFor(permit)}
             />
             <Row
               label="Flujo"
@@ -1210,7 +1211,7 @@ export function WorkPermitDetailPage() {
                       {permitDoc.permit.permitType.name}
                     </p>
                     <p className="m-0 mt-1 text-[12px] font-medium text-[var(--color-nachipa-title)]">
-                      {workPermitStatusLabel(permitDoc.permit.status)}
+                      {workPermitStatusLabelFor(permitDoc.permit)}
                     </p>
                   </div>
                 </header>

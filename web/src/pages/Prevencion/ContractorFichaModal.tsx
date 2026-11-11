@@ -52,7 +52,7 @@ import {
 import { userHasPermission } from "../../lib/api/auth";
 import {
   listWorkPermitsRequest,
-  workPermitStatusLabel,
+  workPermitStatusLabelFor,
   type WorkPermit,
   type WorkPermitStatus,
 } from "../../lib/api/workPermits";
@@ -1234,7 +1234,7 @@ export function ContractorFichaModal({ organizationId, onClose }: Props) {
                             </td>
                             <td className="px-3 py-2.5">
                               <StatusChip tone={permitStatusTone(p.status)}>
-                                {workPermitStatusLabel(p.status)}
+                                {workPermitStatusLabelFor(p)}
                               </StatusChip>
                             </td>
                             <td className="px-3 py-2.5">

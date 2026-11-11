@@ -10,11 +10,24 @@ export type WorkPermitStatus =
   | "closed"
   | "no_closure";
 
+/** Opciones de copy según el flujo congelado del PT. */
+export type WorkPermitStatusLabelOpts = {
+  /**
+   * Si false, `active` no implica recepción del Capitán
+   * (flujos sin etapa receive → «Trabajo autorizado»).
+   * Si true/undefined, se mantiene «Autorizado a bordo».
+   */
+  hasReceiveStage?: boolean;
+};
+
 /**
  * Etiqueta corta de UI para el ciclo del PT.
  * Los códigos internos no cambian; solo el copy visible.
  */
-export function workPermitStatusLabel(status: WorkPermitStatus): string {
+export function workPermitStatusLabel(
+  status: WorkPermitStatus,
+  opts?: WorkPermitStatusLabelOpts,
+): string {
   switch (status) {
     case "to_complete":
       return "Por completar";
@@ -23,7 +36,9 @@ export function workPermitStatusLabel(status: WorkPermitStatus): string {
     case "to_receive":
       return "Aprobado Prevención";
     case "active":
-      return "Autorizado a bordo";
+      return opts?.hasReceiveStage === false
+        ? "Trabajo autorizado"
+        : "Autorizado a bordo";
     case "to_verify":
       return "Verificar trabajo";
     case "closed":
@@ -320,6 +335,24 @@ export function resolveWorkPermitFlowPolicy(
     closeStage?.actor === "prevention" ? "prevention" : "captain";
 
   return { hasReceiveStage, hasRequestCloseStage, closeActor };
+}
+
+/**
+ * Etiqueta de status usando el snapshot del PT.
+ * Sin etapas en snapshot → copy clásico (con recepción).
+ */
+export function workPermitStatusLabelFor(
+  permit: {
+    status: WorkPermitStatus;
+    approvalFlowSnapshot?: WorkPermitApprovalFlowSnapshot | null;
+  },
+): string {
+  const policy = resolveWorkPermitFlowPolicy(
+    permit.approvalFlowSnapshot ?? null,
+  );
+  return workPermitStatusLabel(permit.status, {
+    hasReceiveStage: policy.hasReceiveStage,
+  });
 }
 
 /** Estado de una exigencia en P13b. */
