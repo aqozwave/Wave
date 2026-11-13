@@ -437,6 +437,12 @@ model Travesia {
   @@map("travesias")
 }
 
+/**
+ * Rol de permisos.
+ * Sistema (isSystem): businessId null, compartido entre empresas.
+ * Custom: businessId obligatorio (dueño del catálogo); no cruza tenants.
+ * Unicidad de key: índices parciales en migración (global si null; por empresa si no).
+ */
 model Role {
   id            String        @id @default(uuid()) @db.Uuid
   legacyMongoId String?       @unique @map("legacy_mongo_id")
@@ -447,13 +453,16 @@ model Role {
   dataScope     RoleDataScope @map("data_scope")
   /// [{ resource, actions: string[] }] — mismo shape que el portal viejo.
   permissions   Json          @default("[]")
+  /// Empresa dueña del rol custom; null = rol de sistema (o custom legado sin dueño).
+  businessId    String?       @map("business_id") @db.Uuid
+  business      Business?     @relation(fields: [businessId], references: [id])
   state         Boolean       @default(true)
   deletedAt     DateTime?     @map("deleted_at") @db.Timestamptz
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz
   users         User[]
 
-  @@unique([key])
+  @@index([businessId])
   @@map("roles")
 }
 
@@ -587,6 +596,8 @@ model Business {
   createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz
   updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz
   users                  User[]
+  /// Roles custom de esta empresa (los de sistema no tienen businessId).
+  roles                  Role[]
   locations              Location[]
   areas                  Area[]
   ranks                  Rank[]

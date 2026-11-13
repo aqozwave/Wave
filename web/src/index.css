@@ -74,20 +74,30 @@ body,
   height: 100%;
 }
 
-/**
- * Reserva el ancho del scrollbar clásico para que al abrir/cerrar modales
- * (overflow:hidden en body) la tabla y el layout no “salten” de ancho.
- */
-html {
-  scrollbar-gutter: stable;
-}
-
 body {
   margin: 0;
   font-family: var(--font-sans);
   background: var(--color-nachipa-bg-page);
   color: var(--color-nachipa-title);
   -webkit-font-smoothing: antialiased;
+}
+
+/**
+ * Mientras hay un Modal abierto: sin barra de scroll en el documento.
+ * El AppShell ya scrollea adentro; la barra del viewport no debe aparecer
+ * ni desaparecer al abrir/cerrar (evita el salto de layout).
+ */
+html.wave-modal-open,
+html.wave-modal-open body {
+  overflow: hidden !important;
+  scrollbar-width: none;
+}
+
+html.wave-modal-open::-webkit-scrollbar,
+html.wave-modal-open body::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none;
 }
 
 .font-brand {

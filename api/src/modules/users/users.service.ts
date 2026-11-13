@@ -118,17 +118,42 @@ async function assertCanAssignRole(
 
   if (roleId === null) return;
 
-  // Roles de sistema: el nivel basta.
-  if ((SYSTEM_ROLE_KEYS as readonly string[]).includes(nextInternalRol)) {
-    return;
-  }
-
   const role = await prisma.role.findFirst({
     where: { id: roleId, deletedAt: null },
-    select: { permissions: true },
+    select: {
+      permissions: true,
+      isSystem: true,
+      businessId: true,
+    },
   });
   if (!role) {
     throw new AppError(400, "validation_error", "Rol no encontrado o inactivo");
+  }
+
+  // Roles de sistema: el nivel basta (son globales).
+  if (
+    role.isSystem ||
+    (SYSTEM_ROLE_KEYS as readonly string[]).includes(nextInternalRol)
+  ) {
+    return;
+  }
+
+  // Custom sin dueño (legado): solo superadmin (ya retornó arriba).
+  if (!role.businessId) {
+    throw new AppError(
+      403,
+      "forbidden",
+      "Ese rol no tiene empresa asignada; no se puede asignar",
+    );
+  }
+
+  // El actor solo asigna roles custom de su propia empresa.
+  if (!actor.businessId || role.businessId !== actor.businessId) {
+    throw new AppError(
+      403,
+      "forbidden",
+      "No puedes asignar un rol de otra empresa",
+    );
   }
 
   const rolePermissions = Array.isArray(role.permissions)
@@ -152,6 +177,41 @@ async function assertCanAssignRole(
       403,
       "forbidden",
       "No puedes asignar un rol con más permisos que los tuyos",
+    );
+  }
+}
+
+/**
+ * El rol custom debe ser de la misma empresa que el usuario destino.
+ * Roles de sistema no tienen businessId y se permiten en cualquier tenant.
+ */
+async function assertRoleMatchesUserBusiness(
+  roleId: string | null | undefined,
+  userBusinessId: string | null,
+): Promise<void> {
+  if (!roleId) return;
+
+  const role = await prisma.role.findFirst({
+    where: { id: roleId, deletedAt: null, state: true },
+    select: { isSystem: true, businessId: true },
+  });
+  if (!role) {
+    throw new AppError(400, "validation_error", "Rol no encontrado o inactivo");
+  }
+  if (role.isSystem) return;
+
+  if (!role.businessId) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "Ese rol no tiene empresa asignada",
+    );
+  }
+  if (!userBusinessId || role.businessId !== userBusinessId) {
+    throw new AppError(
+      400,
+      "validation_error",
+      "El rol no pertenece a la empresa del usuario",
     );
   }
 }
@@ -530,6 +590,8 @@ export async function createUser(
 
   // Tope de privilegio + permisos: RR.HH. no fabrica admins ni roles más amplios.
   await assertCanAssignRole(actor, roleId, internalRol);
+  // Rol custom solo si es de la misma empresa que el usuario destino.
+  await assertRoleMatchesUserBusiness(roleId, businessId);
 
   if (internalRol !== "superadmin" && !businessId) {
     throw new AppError(
@@ -660,6 +722,11 @@ export async function updateUser(
   // Si cambian el rol, el nuevo no puede superar al actor.
   if (body.roleId !== undefined) {
     await assertCanAssignRole(actor, nextRoleId, nextInternalRol);
+  }
+
+  // Si cambian rol o empresa, el rol custom debe coincidir con el tenant destino.
+  if (body.roleId !== undefined || body.businessId !== undefined) {
+    await assertRoleMatchesUserBusiness(nextRoleId, nextBusinessId);
   }
 
   if (nextInternalRol !== "superadmin" && !nextBusinessId) {

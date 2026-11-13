@@ -17,6 +17,11 @@ import {
   catalogActionsFor,
 } from "../../lib/permissions.js";
 import { prisma } from "../../lib/prisma.js";
+import {
+  resolveNextBusinessId,
+  resolveRequiredBusinessId,
+  type TenantActor,
+} from "../../lib/tenant.js";
 import type {
   CreateRoleBody,
   ListRolesQuery,
@@ -45,6 +50,7 @@ function toRoleResponse(row: {
   isSystem: boolean;
   dataScope: RoleDataScope;
   permissions: Prisma.JsonValue;
+  businessId: string | null;
   state: boolean;
   deletedAt: Date | null;
   createdAt: Date;
@@ -62,11 +68,40 @@ function toRoleResponse(row: {
     isSystem: row.isSystem,
     dataScope: row.dataScope,
     permissions,
+    businessId: row.businessId,
     state: row.state,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/** Actor mínimo para listar / mutar roles con tenant. */
+type RoleActor = TenantActor;
+
+/**
+ * ¿El actor puede ver o mutar este rol?
+ * Sistema: cualquiera con permiso de ruta. Custom: solo su empresa (o superadmin).
+ * Custom legado sin businessId: solo superadmin.
+ */
+function assertCanAccessRole(
+  actor: RoleActor,
+  role: { isSystem: boolean; businessId: string | null },
+): void {
+  if (actor.internalRol === "superadmin") return;
+  if (role.isSystem) return;
+
+  if (!role.businessId) {
+    throw new AppError(
+      404,
+      "role_not_found",
+      "Rol no encontrado",
+    );
+  }
+
+  if (!actor.businessId || role.businessId !== actor.businessId) {
+    throw new AppError(404, "role_not_found", "Rol no encontrado");
+  }
 }
 
 /** Valida resource/actions contra el catálogo fijo. */
@@ -200,8 +235,14 @@ export async function mergePermissionsForBusinessModules(
   return [...incoming, ...preserved];
 }
 
-/** Lista roles (activos por defecto). */
-export async function listRoles(query: ListRolesQuery): Promise<{
+/**
+ * Lista roles visibles para el actor.
+ * Superadmin: todos. Resto: sistema + custom de su empresa.
+ */
+export async function listRoles(
+  actor: RoleActor,
+  query: ListRolesQuery,
+): Promise<{
   items: RoleResponse[];
   total: number;
 }> {
@@ -209,6 +250,20 @@ export async function listRoles(query: ListRolesQuery): Promise<{
     deletedAt: null,
     ...(query.includeInactive ? {} : { state: true }),
   };
+
+  if (actor.internalRol !== "superadmin") {
+    if (!actor.businessId) {
+      throw new AppError(
+        403,
+        "forbidden",
+        "Tu usuario no tiene una empresa asignada",
+      );
+    }
+    where.OR = [
+      { isSystem: true },
+      { businessId: actor.businessId },
+    ];
+  }
 
   const rows = await prisma.role.findMany({
     where,
@@ -221,21 +276,22 @@ export async function listRoles(query: ListRolesQuery): Promise<{
   };
 }
 
-/** Detalle por id. */
-export async function getRoleById(id: string): Promise<RoleResponse> {
+/** Detalle por id (404 si es custom de otra empresa). */
+export async function getRoleById(
+  actor: RoleActor,
+  id: string,
+): Promise<RoleResponse> {
   const row = await prisma.role.findFirst({
     where: { id, deletedAt: null },
   });
   if (!row) {
     throw new AppError(404, "role_not_found", "Rol no encontrado");
   }
+  assertCanAccessRole(actor, row);
   return toRoleResponse(row);
 }
 
-/** Actor mínimo para tope de dataScope=all. */
-type RoleActor = { internalRol: string };
-
-/** Crea rol custom (no sistema). */
+/** Crea rol custom anclado a una empresa (nunca de sistema). */
 export async function createRole(
   actor: RoleActor,
   body: CreateRoleBody,
@@ -262,25 +318,30 @@ export async function createRole(
     );
   }
 
+  // Custom siempre tiene dueño: solo superadmin elige empresa del body.
+  const businessId = resolveRequiredBusinessId(actor, body.businessId, "el rol");
+
   assertValidPermissions(body.permissions ?? []);
 
   const permissions = await mergePermissionsForBusinessModules(
-    body.businessId,
+    businessId,
     body.permissions ?? [],
     null,
   );
 
+  const name = body.name.trim();
   const exists = await prisma.role.findFirst({
     where: {
       deletedAt: null,
-      OR: [{ key }, { name: body.name.trim() }],
+      businessId,
+      OR: [{ key }, { name }],
     },
   });
   if (exists) {
     throw new AppError(
       409,
       "duplicate_role",
-      "Ya existe un rol con esa clave o nombre",
+      "Ya existe un rol con esa clave o nombre en esta empresa",
     );
   }
 
@@ -288,11 +349,12 @@ export async function createRole(
     const row = await prisma.role.create({
       data: {
         key,
-        name: body.name.trim(),
+        name,
         description: body.description?.trim() ?? "",
         isSystem: false,
         dataScope: body.dataScope as RoleDataScope,
         permissions,
+        businessId,
         state: body.state ?? true,
       },
     });
@@ -305,7 +367,7 @@ export async function createRole(
       throw new AppError(
         409,
         "duplicate_role",
-        "Ya existe un rol con esa clave o nombre",
+        "Ya existe un rol con esa clave o nombre en esta empresa",
       );
     }
     throw err;
@@ -314,7 +376,8 @@ export async function createRole(
 
 /**
  * Actualiza rol.
- * Sistema: se pueden editar permisos/nombre/desc/state; no dataScope ni key.
+ * Sistema: permisos/nombre/desc/state; no dataScope ni key ni businessId.
+ * Custom: solo la empresa dueña (o superadmin); puede moverse de tenant.
  */
 export async function updateRole(
   actor: RoleActor,
@@ -327,6 +390,7 @@ export async function updateRole(
   if (!existing) {
     throw new AppError(404, "role_not_found", "Rol no encontrado");
   }
+  assertCanAccessRole(actor, existing);
 
   if (payload.permissions !== undefined) {
     assertValidPermissions(payload.permissions);
@@ -351,6 +415,31 @@ export async function updateRole(
     );
   }
 
+  // Empresa de contexto para módulos; en custom también puede reasignar dueño.
+  let nextBusinessId = existing.businessId;
+  if (!existing.isSystem) {
+    if (!existing.businessId) {
+      // Legado sin dueño: solo superadmin puede asignarle empresa.
+      if (actor.internalRol !== "superadmin" || !payload.businessId) {
+        throw new AppError(
+          400,
+          "validation_error",
+          "Este rol no tiene empresa; asigná businessId como superadmin",
+        );
+      }
+      nextBusinessId = payload.businessId;
+    } else {
+      nextBusinessId = resolveNextBusinessId(
+        actor,
+        payload.businessId,
+        existing.businessId,
+      );
+    }
+  }
+
+  const moduleContextBusinessId =
+    nextBusinessId ?? payload.businessId ?? actor.businessId ?? null;
+
   const data: Prisma.RoleUpdateInput = {};
   if (payload.name !== undefined) data.name = payload.name.trim();
   if (payload.description !== undefined) {
@@ -362,13 +451,16 @@ export async function updateRole(
       ? (existing.permissions as PermissionEntry[])
       : [];
     data.permissions = await mergePermissionsForBusinessModules(
-      payload.businessId,
+      moduleContextBusinessId,
       payload.permissions,
       existingPerms,
     );
   }
   if (!existing.isSystem && payload.dataScope !== undefined) {
     data.dataScope = payload.dataScope as RoleDataScope;
+  }
+  if (!existing.isSystem && nextBusinessId !== existing.businessId) {
+    data.business = { connect: { id: nextBusinessId! } };
   }
 
   try {
@@ -385,7 +477,7 @@ export async function updateRole(
       throw new AppError(
         409,
         "duplicate_role",
-        "Ya existe un rol con ese nombre",
+        "Ya existe un rol con esa clave o nombre en esta empresa",
       );
     }
     throw err;
@@ -394,14 +486,19 @@ export async function updateRole(
 
 /**
  * Soft delete. No borra sistema ni roles con usuarios asignados.
+ * Custom de otra empresa → 404.
  */
-export async function deleteRoleById(id: string): Promise<RoleResponse> {
+export async function deleteRoleById(
+  actor: RoleActor,
+  id: string,
+): Promise<RoleResponse> {
   const role = await prisma.role.findFirst({
     where: { id, deletedAt: null },
   });
   if (!role) {
     throw new AppError(404, "role_not_found", "Rol no encontrado");
   }
+  assertCanAccessRole(actor, role);
 
   if (role.isSystem) {
     throw new AppError(

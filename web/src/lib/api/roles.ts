@@ -16,6 +16,8 @@ export type Role = {
   isSystem: boolean;
   dataScope: string;
   permissions: PermissionEntry[];
+  /** Empresa dueña (custom); null = sistema o legado sin dueño. */
+  businessId: string | null;
   state: boolean;
   deletedAt: string | null;
   createdAt: string;
