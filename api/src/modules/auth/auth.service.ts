@@ -38,6 +38,7 @@ import {
 } from "../../lib/rateLimit.js";
 import {
   hashRefreshToken,
+  sessionAbsoluteTtlMs,
   signAccessToken,
   signRefreshToken,
   verifyRefreshToken,
@@ -213,10 +214,15 @@ function assertAccessNotExpired(user: User): void {
 /**
  * Emite access + refresh; persiste el hash del refresh (rotación / revocación).
  * Si `revokeTokenId` viene, marca esa fila como revocada (rotación).
+ * `absoluteExpiresAt` se hereda al rotar; en login nuevo = ahora + 5d.
  */
 async function issueTokens(
   user: User,
-  options?: { revokeTokenId?: string },
+  options?: {
+    revokeTokenId?: string;
+    /** Tope absoluto heredado de la familia (rotación). */
+    absoluteExpiresAt?: Date;
+  },
 ): Promise<LoginResponse> {
   const accessToken = signAccessToken({
     sub: user.id,
@@ -229,6 +235,11 @@ async function issueTokens(
     sub: user.id,
     v: user.tokenVersion,
   });
+
+  // Login: arranca el reloj de 5 días. Rotación: no se alarga.
+  const absoluteExpiresAt =
+    options?.absoluteExpiresAt ??
+    new Date(Date.now() + sessionAbsoluteTtlMs());
 
   await prisma.$transaction(async (tx) => {
     if (options?.revokeTokenId) {
@@ -243,6 +254,7 @@ async function issueTokens(
         userId: user.id,
         tokenHash: hashRefreshToken(signed.token),
         expiresAt: signed.expiresAt,
+        absoluteExpiresAt,
       },
     });
   });
@@ -637,7 +649,7 @@ export async function deleteMyPhoto(
 
 /**
  * Renueva access y rota el refresh (revoca el usado, emite uno nuevo en BD).
- * Si tokenVersion no coincide o el hash no está activo, 401.
+ * Si tokenVersion no coincide, el hash no está activo, o pasó el tope de 5d → 401.
  */
 export async function refreshSession(
   refreshToken: string,
@@ -670,6 +682,19 @@ export async function refreshSession(
     throw new AppError(401, "invalid_refresh", "Refresh inválido o expirado");
   }
 
+  // Tope absoluto: aunque el refresh siga válido, la sesión no pasa de 5 días.
+  if (stored.absoluteExpiresAt.getTime() <= Date.now()) {
+    await prisma.refreshToken.updateMany({
+      where: { userId: stored.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    throw new AppError(
+      401,
+      "session_absolute_expired",
+      "La sesión alcanzó el máximo de 5 días. Volvé a iniciar sesión.",
+    );
+  }
+
   const user = await prisma.user.findFirst({
     where: {
       id: payload.sub,
@@ -683,7 +708,10 @@ export async function refreshSession(
 
   assertAccessNotExpired(user);
 
-  return issueTokens(user, { revokeTokenId: stored.id });
+  return issueTokens(user, {
+    revokeTokenId: stored.id,
+    absoluteExpiresAt: stored.absoluteExpiresAt,
+  });
 }
 
 /**

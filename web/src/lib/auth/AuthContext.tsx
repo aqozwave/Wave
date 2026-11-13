@@ -64,6 +64,13 @@ const AuthContext = createContext<AuthState | null>(null);
 const MIN_HYDRATE_MS = 450;
 
 /**
+ * El access JWT dura ~15m. Sin renovación proactiva, las pantallas
+ * empiezan a fallar con «Token inválido o expirado».
+ * Renovamos un poco antes (14m) mientras haya sesión en memoria.
+ */
+const ACCESS_REFRESH_INTERVAL_MS = 14 * 60 * 1000;
+
+/**
  * Una sola promesa de bootstrap por carga de página.
  * Evita doble refresh en StrictMode (rotar cookie dos veces → 401).
  */
@@ -120,6 +127,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearSession();
     setUser(null);
   }, []);
+
+  /**
+   * Renueva el access con la cookie refresh antes de que venza (~15m).
+   * Sin esto, tras un rato las APIs responden 401 y el toast dice token inválido.
+   */
+  useEffect(() => {
+    if (!accessToken) {
+      return;
+    }
+
+    let cancelled = false;
+
+    /** Una corrida de refresh; si falla, cierra sesión local. */
+    async function renewAccess(): Promise<void> {
+      try {
+        const refreshed = await refreshRequest();
+        if (cancelled) return;
+        setAccessToken(refreshed.accessToken);
+        setUser(refreshed.user);
+      } catch {
+        if (!cancelled) {
+          clearLocal();
+        }
+      }
+    }
+
+    const timerId = window.setInterval(() => {
+      void renewAccess();
+    }, ACCESS_REFRESH_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timerId);
+    };
+  }, [accessToken, clearLocal]);
 
   /**
    * Al montar: si no hay access (recarga), intenta POST /refresh con cookie.
