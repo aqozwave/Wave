@@ -381,8 +381,8 @@ export function Panel() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-7 py-4">
-      {/* Header S1 (133:4710): saludo + búsqueda + iconos + exportar + UserMenu */}
-      <header className="flex items-center gap-2.5">
+      {/* Header encima del mapa Leaflet (panes z altos); evita que tape avisos/menú. */}
+      <header className="relative z-40 flex items-center gap-2.5">
         <div className="min-w-0 flex-1">
           <h1 className="text-[20px] font-semibold leading-[26px] text-[var(--color-nachipa-title)]">
             {locationScoped
@@ -820,9 +820,9 @@ export function Panel() {
             })}
           </div>
 
-          {/* Mapa primero: más espacio que el listado de cumplimiento. */}
+          {/* Mapa: z-0 para que no compita con el header (avisos, UserMenu). */}
           {accessToken ? (
-            <div className="flex min-h-0 flex-[1.65] flex-col overflow-hidden">
+            <div className="relative z-0 flex min-h-0 flex-[1.65] flex-col overflow-hidden">
               <VesselLocationMap
                 accessToken={accessToken}
                 mode={

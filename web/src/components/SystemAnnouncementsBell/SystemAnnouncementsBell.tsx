@@ -154,7 +154,7 @@ export function SystemAnnouncementsBell() {
         <div
           role="dialog"
           aria-label="Avisos del sistema"
-          className="absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-1.5rem))] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
+          className="absolute right-0 z-[100] mt-2 w-[min(22rem,calc(100vw-1.5rem))] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-tremor-border)] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
         >
           <div className="flex items-center justify-between gap-2 border-b border-[var(--color-tremor-border)] px-3.5 py-2.5">
             <div>
