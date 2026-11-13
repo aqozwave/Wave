@@ -72,6 +72,21 @@ function upcomingEstado(status: DashboardUpcomingItem["status"]): {
 }
 
 /**
+ * Texto corto del chip de variación KPI.
+ * pp = puntos porcentuales; count = diferencia absoluta.
+ */
+function formatKpiDelta(
+  delta: number,
+  kind: "pp" | "count",
+): string {
+  const sign = delta > 0 ? "+" : "";
+  if (kind === "pp") {
+    return `${sign}${delta.toLocaleString("es-CL")} pp`;
+  }
+  return `${sign}${delta.toLocaleString("es-CL")}`;
+}
+
+/**
  * Escala mínima del plot Figma (8 unidades = 150px).
  * Si los datos superan 8, el eje crece al máximo real (ceil a par).
  */
@@ -282,7 +297,7 @@ export function Panel() {
   const globalScoped =
     scopeKind === "global" || (scopeKind == null && isGlobalScope);
 
-  /** Tres tarjetas KPI desde la API (sin deltas históricos aún). */
+  /** Tres tarjetas KPI; delta de cumplimiento vs mes anterior (snapshots). */
   const kpis = useMemo(() => {
     const k = summary?.kpis;
     const horizon = k?.horizonDays ?? 60;
@@ -291,6 +306,7 @@ export function Panel() {
       : globalScoped
         ? "Cumplimiento global"
         : "Cumplimiento";
+    const deltaPp = k?.deltas.compliancePercentPoints ?? null;
     return [
       {
         label: complianceLabel,
@@ -303,12 +319,16 @@ export function Panel() {
           k == null
             ? "cargando…"
             : `${k.crewCount} tripulantes activos`,
+        delta: deltaPp,
+        deltaKind: "pp" as const,
       },
       {
         label: `Vencen en ${horizon} días`,
         value: k == null ? "—" : String(k.expiringSoonCount),
         icon: AlertTriangle,
         hint: "cursos OMI por vencer",
+        delta: k?.deltas.expiringSoonCount ?? null,
+        deltaKind: "count" as const,
       },
       {
         label: locationScoped ? "Pendientes / vencidos" : "Vencidos o faltantes",
@@ -317,6 +337,8 @@ export function Panel() {
         hint: locationScoped
           ? "obligatorios vencidos o sin cursar"
           : "vencidos + pendientes obligatorios",
+        delta: k?.deltas.expiredOrMissingCount ?? null,
+        deltaKind: "count" as const,
       },
     ];
   }, [summary, locationScoped, globalScoped]);
@@ -449,28 +471,53 @@ export function Panel() {
           <div className="flex shrink-0 gap-3">
             {kpis.map((kpi) => {
               const Icon = kpi.icon;
+              const deltaLabel =
+                kpi.delta == null
+                  ? null
+                  : formatKpiDelta(kpi.delta, kpi.deltaKind);
+              // Cumplimiento: subir es bueno. Conteos de riesgo: bajar es bueno.
+              const deltaGood =
+                kpi.delta == null
+                  ? null
+                  : kpi.deltaKind === "pp"
+                    ? kpi.delta >= 0
+                    : kpi.delta <= 0;
               return (
                 <div
                   key={kpi.label}
                   className="flex min-w-0 flex-1 flex-col gap-1.5 rounded-[14px] border border-[var(--color-tremor-border)] bg-[var(--color-tremor-background)] px-4 py-3"
                 >
                   <div className="flex items-center gap-2">
-                    <p className="text-[13px] font-medium leading-[19px] text-[var(--color-nachipa-body)]">
+                    <p className="min-w-0 flex-1 text-[13px] font-medium leading-[19px] text-[var(--color-nachipa-body)]">
                       {kpi.label}
                     </p>
                     <Icon
                       size={16}
                       strokeWidth={1.5}
-                      className="text-[var(--color-nav-icon)]"
+                      className="shrink-0 text-[var(--color-nav-icon)]"
                       aria-hidden
                     />
                   </div>
                   <p className="text-[24px] font-semibold leading-8 tracking-[-0.14px] text-[var(--color-nachipa-title)]">
                     {loading ? "…" : kpi.value}
                   </p>
-                  <p className="text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
-                    {kpi.hint}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="m-0 text-[12px] leading-4 text-[var(--color-nachipa-secondary)]">
+                      {kpi.hint}
+                    </p>
+                    {deltaLabel && deltaGood != null ? (
+                      <span
+                        className={[
+                          "inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium leading-4",
+                          deltaGood
+                            ? "bg-[var(--color-status-success-bg)] text-[var(--color-status-success-fg)]"
+                            : "bg-[var(--color-status-danger-bg)] text-[var(--color-status-danger-fg)]",
+                        ].join(" ")}
+                      >
+                        {deltaLabel} vs mes ant.
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               );
             })}

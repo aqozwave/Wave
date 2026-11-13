@@ -1,0 +1,54 @@
+meta {
+  name: Post admin create
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{baseUrl}}/api/v1/system-announcements/admin
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "kind": "maintenance",
+    "title": "Prueba aviso admin",
+    "body": "Mensaje de prueba desde Bruno. Podés borrarlo desde la UI."
+  }
+}
+
+docs {
+  Publica un aviso (superadmin). Aparece en la campanita de todos.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isDefined
+}
+
+script:post-response {
+  if (res.status === 201 && res.body && res.body.id) {
+    bru.setVar("announcementId", res.body.id);
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

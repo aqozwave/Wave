@@ -280,8 +280,8 @@ con cierre "En una frase" y Glosario del paso.
 | 8 | Cursos de tripulantes | Hecha — asignaciones ficha + auto por título + ETL + verificación vencimientos/tenant OK (2026-11-02) |
 | 9 | Notificaciones | Hecha — outbox + settings + generador cursos + worker Resend (override prueba) + jobs off + UI; verificación OK (2026-11-02) |
 | 10 | Auditoría y sistema | Hecha — ActivityLog + auditWrite en CRUDs, SystemAnnouncement + campanita; verificación OK (2026-11-02) |
-| 11 | Dashboard / KPIs | Hecha — GET /dashboard/summary (KPIs, upcoming, byVessel, byCourse, vessels) + Panel vivo; chart cumplimiento mensual sigue mock; verificación OK (2026-11-02) |
-| 12 | Corte a producción | Pendiente |
+| 11 | Dashboard / KPIs | Hecha — summary + Panel vivo + chart cumplimiento mensual con snapshots (empresa/nave); verificación OK (2026-11-02) + serie 2026-11-13 |
+| 12 | Corte a producción | Pendiente — validar con usuarios + pantallas faltantes en Figma antes de cortar |
 
 Un paso a la vez, con mi confirmación antes de avanzar. **Ninguna sección se marca hecha sin su verificación cumplida.**
 
@@ -292,6 +292,7 @@ Un paso a la vez, con mi confirmación antes de avanzar. **Ninguna sección se m
 3. ~~Sección 8~~ **Hecha** (2026-11-02) + UI maestro título↔cursos.
 4. ~~Roles de sistema `rrhh` / `area_tecnica` / `prevencionista`~~ **Hecho** (seed + mapeo de tags de docs).
 5. ~~Sección 9~~ **Hecha** (2026-11-02) — generador de libreta de embarque cableado (`run-boarding-book-expiry` + worker).
-6. ~~Sección 10~~ **Hecha** (2026-11-02) — falta ETL de activity/announcements + UI admin para publicar avisos.
-7. ~~Sección 11~~ **Hecha** (2026-11-02) — falta serie histórica del chart «Cumplimiento mensual».
-8. **Sección 12** — Corte a producción: checksums + user/activity/announcements apply OK; faltan documentType/crewMemberDocument/port/outbox (si aplica) + smoke + rollback; hosting pendiente (decisión #11).
+6. ~~Sección 10 avisos admin~~ **Hecha** (2026-11-13) — CRUD + UI Sistema → Avisos (superadmin).
+7. ~~Sección 11 chart + deltas KPI~~ **Hecha** (2026-11-13) — cumplimiento vs mes ant.; conteos sin histórico (snapshot aún no guarda expiring/expired).
+8. **Sección 12** — Pausada (validar con usuarios + gaps Figma). Corte a prod: checksums + user/activity/announcements apply OK; faltan documentType/crewMemberDocument/port/outbox (si aplica) + smoke + rollback; hosting pendiente (decisión #11).
+9. `npm audit` transitivas en `api/` (Prisma / React Email) — con OK explícito.

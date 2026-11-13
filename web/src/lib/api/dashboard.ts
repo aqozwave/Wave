@@ -3,6 +3,17 @@ import { ApiError, type ApiErrorBody } from "./auth";
 /** Estado de fila en próximos vencimientos. */
 export type DashboardExpiryStatus = "expired" | "expiring_soon" | "pending";
 
+/** Variación vs mes anterior (snapshots). */
+export type DashboardKpiDeltas = {
+  /** Puntos porcentuales de cumplimiento (actual − mes previo). */
+  compliancePercentPoints: number | null;
+  /** Diff de “por vencer”; null si no hay histórico de conteos. */
+  expiringSoonCount: number | null;
+  /** Diff de “vencidos/faltantes”; null si no hay histórico. */
+  expiredOrMissingCount: number | null;
+  comparedTo: "previous_month";
+};
+
 /** KPIs del Panel. */
 export type DashboardKpis = {
   compliancePercent: number | null;
@@ -10,6 +21,7 @@ export type DashboardKpis = {
   expiredOrMissingCount: number;
   horizonDays: number;
   crewCount: number;
+  deltas: DashboardKpiDeltas;
 };
 
 /** Fila de próximos vencimientos. */

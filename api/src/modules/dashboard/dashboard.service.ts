@@ -148,6 +148,12 @@ export async function getDashboardSummary(
     expiredOrMissingCount: number;
     horizonDays: number;
     crewCount: number;
+    deltas: {
+      compliancePercentPoints: number | null;
+      expiringSoonCount: number | null;
+      expiredOrMissingCount: number | null;
+      comparedTo: "previous_month";
+    };
   };
   upcoming: Array<{
     assignmentId: string;
@@ -552,6 +558,19 @@ export async function getDashboardSummary(
     locationId: effectiveLocationId,
   });
 
+  // Delta de cumplimiento: actual vivo vs snapshot del mes anterior.
+  // Conteos quedan null: ComplianceSnapshot aún no guarda expiring/expired.
+  const previousMonthPoint =
+    monthlyCompliance.length >= 2
+      ? monthlyCompliance[monthlyCompliance.length - 2]
+      : undefined;
+  const compliancePercentPoints =
+    compliancePercent != null &&
+    previousMonthPoint != null &&
+    previousMonthPoint.percent != null
+      ? compliancePercent - previousMonthPoint.percent
+      : null;
+
   return {
     scope: {
       kind: effectiveKind,
@@ -564,6 +583,12 @@ export async function getDashboardSummary(
       expiredOrMissingCount,
       horizonDays: DASHBOARD_HORIZON_DAYS,
       crewCount: crews.length,
+      deltas: {
+        compliancePercentPoints,
+        expiringSoonCount: null,
+        expiredOrMissingCount: null,
+        comparedTo: "previous_month",
+      },
     },
     upcoming,
     byVessel,

@@ -1,0 +1,41 @@
+meta {
+  name: Delete admin soft
+  type: http
+  seq: 13
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/system-announcements/admin/{{announcementId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Soft-delete de un aviso (superadmin). Deja de verse en la campanita.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+  const id = bru.getVar("announcementId") || bru.getEnvVar("announcementId");
+  if (!id) {
+    throw new Error("Sin announcementId. Creá un aviso o setiá la variable.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+  res.body.deletedAt: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

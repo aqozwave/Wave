@@ -7,6 +7,30 @@ export const dashboardExpiryStatusSchema = z.enum([
   "pending",
 ]);
 
+/**
+ * Variación vs periodo previo (mes anterior vía ComplianceSnapshot).
+ * null = sin snapshot previo o KPI sin histórico (conteos).
+ */
+export const dashboardKpiDeltasSchema = z
+  .object({
+    /**
+     * Puntos porcentuales: cumplimiento actual − mes anterior.
+     * Positivo = mejoró; negativo = bajó.
+     */
+    compliancePercentPoints: z.number().int().nullable(),
+    /**
+     * Diferencia de “por vencer”; null hasta que el snapshot guarde conteos.
+     */
+    expiringSoonCount: z.number().int().nullable(),
+    /**
+     * Diferencia de “vencidos/faltantes”; null hasta snapshot de conteos.
+     */
+    expiredOrMissingCount: z.number().int().nullable(),
+    /** Etiqueta fija del periodo de comparación. */
+    comparedTo: z.literal("previous_month"),
+  })
+  .openapi("DashboardKpiDeltas");
+
 /** KPI superior del Panel. */
 export const dashboardKpiSchema = z
   .object({
@@ -20,6 +44,8 @@ export const dashboardKpiSchema = z
     horizonDays: z.number().int().positive(),
     /** Tripulantes activos considerados en el cálculo. */
     crewCount: z.number().int().nonnegative(),
+    /** Variación vs mes anterior (cumplimiento desde snapshots). */
+    deltas: dashboardKpiDeltasSchema,
   })
   .openapi("DashboardKpis");
 

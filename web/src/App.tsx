@@ -31,6 +31,7 @@ import { ResendConfirmation } from "./pages/ResendConfirmation/ResendConfirmatio
 import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
 import { Roles } from "./pages/Roles/Roles";
 import { ActivityLogs } from "./pages/Sistema/ActivityLogs";
+import { SystemAnnouncementsAdmin } from "./pages/Sistema/SystemAnnouncementsAdmin";
 import { Embarcados } from "./pages/Embarcados/Embarcados";
 import { FichaTripulante } from "./pages/Embarcados/FichaTripulante";
 import { NotificacionesVencimiento } from "./pages/Notificaciones/NotificacionesVencimiento";
@@ -329,6 +330,11 @@ export function App() {
           >
             <Route path="sistema/actividad" element={<ActivityLogs />} />
           </Route>
+          {/* Avisos campanita: la página exige superadmin (API también). */}
+          <Route
+            path="sistema/avisos"
+            element={<SystemAnnouncementsAdmin />}
+          />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

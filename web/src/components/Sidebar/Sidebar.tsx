@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   MapPin,
+  Megaphone,
   GitBranch,
   Package,
   PanelLeft,
@@ -277,6 +278,12 @@ const SYSTEM_LINKS: ReadonlyArray<NavLink> = [
     to: "/notificaciones/outbox",
     icon: Inbox,
     canShow: (u) => userHasPermission(u, "cursos.notifications", "read"),
+  },
+  {
+    label: "Avisos",
+    to: "/sistema/avisos",
+    icon: Megaphone,
+    canShow: (u) => u?.internalRol === "superadmin",
   },
   {
     label: "Bitácora",

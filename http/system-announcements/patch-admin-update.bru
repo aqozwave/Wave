@@ -1,0 +1,51 @@
+meta {
+  name: Patch admin update
+  type: http
+  seq: 12
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/system-announcements/admin/{{announcementId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "title": "Aviso actualizado (Bruno)",
+    "body": "Cuerpo editado desde Bruno."
+  }
+}
+
+docs {
+  Edita un aviso admin (superadmin). Usá announcementId del create o del list.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+  const id = bru.getVar("announcementId") || bru.getEnvVar("announcementId");
+  if (!id) {
+    throw new Error("Sin announcementId. Creá un aviso o setiá la variable.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
