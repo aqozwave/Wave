@@ -37,6 +37,9 @@ function requireEnv(name: string): string {
 /** Default de vida del refresh (ms) si JWT_REFRESH_EXPIRES_IN no parsea. */
 const DEFAULT_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** Default del tope absoluto de sesión (ms): 5 días desde el login. */
+const DEFAULT_SESSION_ABSOLUTE_MS = 5 * 24 * 60 * 60 * 1000;
+
 /**
  * Parsea "15m" / "7d" / "1h" a milisegundos.
  * Solo unidades usadas en Wave; si falla, usa el fallback.
@@ -61,6 +64,17 @@ export function refreshTtlMs(): number {
   return parseDurationToMs(
     process.env.JWT_REFRESH_EXPIRES_IN,
     DEFAULT_REFRESH_MS,
+  );
+}
+
+/**
+ * Tope absoluto de sesión en ms (desde el login; no se alarga al rotar).
+ * Env: SESSION_ABSOLUTE_MAX (ej. 5d). Default 5 días.
+ */
+export function sessionAbsoluteTtlMs(): number {
+  return parseDurationToMs(
+    process.env.SESSION_ABSOLUTE_MAX,
+    DEFAULT_SESSION_ABSOLUTE_MS,
   );
 }
 

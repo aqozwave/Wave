@@ -571,6 +571,11 @@ model RefreshToken {
   /// SHA-256 hex del JWT de refresh (nunca el token en claro).
   tokenHash String    @unique @map("token_hash")
   expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  /**
+   * Tope absoluto de la sesión (familia de refresh): no se alarga al rotar.
+   * Default de producto: login + 5 días (SESSION_ABSOLUTE_MAX / 5d).
+   */
+  absoluteExpiresAt DateTime @map("absolute_expires_at") @db.Timestamptz
   revokedAt DateTime? @map("revoked_at") @db.Timestamptz
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
