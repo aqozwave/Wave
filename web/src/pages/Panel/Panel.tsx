@@ -15,6 +15,7 @@ import { UserMenu } from "../../components/UserMenu/UserMenu";
 import {
   getDashboardSummaryRequest,
   type DashboardCapsuleColumn,
+  type DashboardMonthlyCompliancePoint,
   type DashboardSummary,
   type DashboardUpcomingItem,
 } from "../../lib/api/dashboard";
@@ -28,8 +29,7 @@ const VESSEL_FILTER_ALL = "";
 /**
  * Panel global (Figma 133:4570).
  * KPIs, próximos vencimientos, cápsulas por nave/curso y lista de naves
- * vienen de GET /dashboard/summary. El chart “Cumplimiento mensual” sigue mock
- * (no hay serie histórica aún).
+ * vienen de GET /dashboard/summary, incluida la serie monthlyCompliance.
  */
 
 /** Capitaliza el primer carácter (nombres del seed vienen en minúscula). */
@@ -103,20 +103,86 @@ function capsuleScaleMax(series: DashboardCapsuleColumn[]): number {
   return peak % 2 === 0 ? peak : peak + 1;
 }
 
-const meses = [
-  "Nov",
-  "Dic",
-  "Ene",
-  "Feb",
-  "Mar",
-  "Abr",
-  "May",
-  "Jun",
-  "Jul",
-  "Ago",
-  "Sep",
-  "Oct",
-];
+/** ViewBox del chart mensual (alineado al SVG Figma). */
+const MONTHLY_CHART = {
+  width: 590,
+  height: 216,
+  padLeft: 52,
+  padRight: 12,
+  padTop: 16,
+  padBottom: 28,
+} as const;
+
+/**
+ * Escala Y del chart: encuadra los % reales con un poco de margen.
+ * Si no hay datos, deja 90–100 (rango típico del mock previo).
+ */
+function monthlyYScale(points: DashboardMonthlyCompliancePoint[]): {
+  min: number;
+  max: number;
+  ticks: number[];
+} {
+  const values = points
+    .map((p) => p.percent)
+    .filter((v): v is number => typeof v === "number");
+  if (values.length === 0) {
+    return { min: 90, max: 100, ticks: [100, 98, 96, 94, 92] };
+  }
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  if (min === max) {
+    min = Math.max(0, min - 2);
+    max = Math.min(100, max + 2);
+  }
+  const pad = Math.max(1, Math.ceil((max - min) * 0.15));
+  min = Math.max(0, Math.floor(min - pad));
+  max = Math.min(100, Math.ceil(max + pad));
+  if (max - min < 4) {
+    max = Math.min(100, min + 4);
+  }
+  const step = (max - min) / 4;
+  const ticks = [0, 1, 2, 3, 4].map((i) => Math.round(max - step * i));
+  return { min, max, ticks };
+}
+
+/** Polilínea + último punto con valor para el badge. */
+function monthlyPolyline(
+  points: DashboardMonthlyCompliancePoint[],
+  scale: { min: number; max: number },
+): {
+  pointsAttr: string;
+  last: { x: number; y: number; label: string; percent: number } | null;
+} {
+  const { width, height, padLeft, padRight, padTop, padBottom } = MONTHLY_CHART;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+  const n = Math.max(points.length - 1, 1);
+  const coords: Array<{ x: number; y: number; p: DashboardMonthlyCompliancePoint }> =
+    [];
+
+  points.forEach((p, i) => {
+    if (p.percent == null) return;
+    const x = padLeft + (plotW * i) / n;
+    const t = (p.percent - scale.min) / (scale.max - scale.min || 1);
+    const y = padTop + plotH * (1 - t);
+    coords.push({ x, y, p });
+  });
+
+  if (coords.length === 0) {
+    return { pointsAttr: "", last: null };
+  }
+
+  const last = coords[coords.length - 1]!;
+  return {
+    pointsAttr: coords.map((c) => `${c.x},${c.y}`).join(" "),
+    last: {
+      x: last.x,
+      y: last.y,
+      label: last.p.label,
+      percent: last.p.percent!,
+    },
+  };
+}
 
 /**
  * Panel OMI alineado a Figma:
@@ -279,6 +345,15 @@ export function Panel() {
   const byVessel = summary?.byVessel ?? [];
   const byCourse = summary?.byCourse ?? [];
   const vessels = summary?.vessels ?? [];
+  const monthlyCompliance = summary?.monthlyCompliance ?? [];
+  const monthlyScale = useMemo(
+    () => monthlyYScale(monthlyCompliance),
+    [monthlyCompliance],
+  );
+  const monthlyLine = useMemo(
+    () => monthlyPolyline(monthlyCompliance, monthlyScale),
+    [monthlyCompliance, monthlyScale],
+  );
   /** En C1 no tiene sentido el chart “Por nave” (ya filtró a una). */
   const showVesselCapsule = !locationScoped;
 
@@ -415,55 +490,89 @@ export function Panel() {
               </button>
             </div>
             <div className="relative h-[140px] w-full">
-              <svg
-                viewBox="0 0 590 216"
-                className="size-full"
-                preserveAspectRatio="none"
-                aria-hidden
-              >
-                {[8, 53.5, 99, 144.5, 190].map((y) => (
-                  <line
-                    key={y}
-                    x1="40"
-                    x2="590"
-                    y1={y}
-                    y2={y}
-                    stroke="var(--color-chart-grid)"
-                    strokeWidth="1"
-                  />
-                ))}
-                <polyline
-                  fill="none"
-                  stroke="var(--color-chart-primary)"
-                  strokeWidth="2.5"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                  points="52,147 100,130 148,138 196,120 244,112 292,118 340,105 388,95 436,78 484,88 532,72 578,80"
-                />
-                <circle
-                  cx="436"
-                  cy="78"
-                  r="5"
-                  fill="var(--color-chart-primary)"
-                />
-              </svg>
-              <div className="pointer-events-none absolute left-[68%] top-9 -translate-x-1/2 rounded-lg bg-[var(--color-chart-primary-soft)] px-2 py-[3px] text-[12px] font-medium leading-4 text-[var(--color-nachipa-primary)]">
-                Jul · 96,9%
-              </div>
-              <div className="absolute inset-y-0 left-0 flex w-8 flex-col justify-between py-1 text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
-                <span>100%</span>
-                <span>98%</span>
-                <span>96%</span>
-                <span>94%</span>
-                <span>92%</span>
-              </div>
-              <div className="absolute bottom-0 left-10 right-0 flex justify-between text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
-                {meses.map((m) => (
-                  <span key={m} className="w-10 text-center">
-                    {m}
-                  </span>
-                ))}
-              </div>
+              {loading && monthlyCompliance.length === 0 ? (
+                <p className="flex h-full items-center justify-center text-[13px] text-[var(--color-nachipa-secondary)]">
+                  Cargando serie…
+                </p>
+              ) : monthlyLine.pointsAttr === "" ? (
+                <p className="flex h-full items-center justify-center text-[13px] text-[var(--color-nachipa-secondary)]">
+                  Sin historial aún. El mes actual se guarda al cargar el Panel.
+                </p>
+              ) : (
+                <>
+                  <svg
+                    viewBox={`0 0 ${MONTHLY_CHART.width} ${MONTHLY_CHART.height}`}
+                    className="size-full"
+                    preserveAspectRatio="none"
+                    role="img"
+                    aria-label={chartTitleMonthly}
+                  >
+                    {monthlyScale.ticks.map((tick, i) => {
+                      const t =
+                        (tick - monthlyScale.min) /
+                        (monthlyScale.max - monthlyScale.min || 1);
+                      const y =
+                        MONTHLY_CHART.padTop +
+                        (MONTHLY_CHART.height -
+                          MONTHLY_CHART.padTop -
+                          MONTHLY_CHART.padBottom) *
+                          (1 - t);
+                      return (
+                        <line
+                          key={`grid-${i}`}
+                          x1={40}
+                          x2={MONTHLY_CHART.width}
+                          y1={y}
+                          y2={y}
+                          stroke="var(--color-chart-grid)"
+                          strokeWidth="1"
+                        />
+                      );
+                    })}
+                    <polyline
+                      fill="none"
+                      stroke="var(--color-chart-primary)"
+                      strokeWidth="2.5"
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      points={monthlyLine.pointsAttr}
+                    />
+                    {monthlyLine.last ? (
+                      <circle
+                        cx={monthlyLine.last.x}
+                        cy={monthlyLine.last.y}
+                        r="5"
+                        fill="var(--color-chart-primary)"
+                      />
+                    ) : null}
+                  </svg>
+                  {monthlyLine.last ? (
+                    <div
+                      className="pointer-events-none absolute -translate-x-1/2 -translate-y-full rounded-lg bg-[var(--color-chart-primary-soft)] px-2 py-[3px] text-[12px] font-medium leading-4 text-[var(--color-nachipa-primary)]"
+                      style={{
+                        left: `${(monthlyLine.last.x / MONTHLY_CHART.width) * 100}%`,
+                        top: `${(monthlyLine.last.y / MONTHLY_CHART.height) * 100}%`,
+                        marginTop: "-6px",
+                      }}
+                    >
+                      {monthlyLine.last.label} ·{" "}
+                      {monthlyLine.last.percent.toLocaleString("es-CL")} %
+                    </div>
+                  ) : null}
+                  <div className="absolute inset-y-0 left-0 flex w-8 flex-col justify-between py-1 text-right text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+                    {monthlyScale.ticks.map((tick) => (
+                      <span key={tick}>{tick}%</span>
+                    ))}
+                  </div>
+                  <div className="absolute bottom-0 left-10 right-0 flex justify-between text-[12px] leading-4 text-[var(--color-nachipa-muted)]">
+                    {monthlyCompliance.map((m) => (
+                      <span key={m.periodMonth} className="w-10 text-center">
+                        {m.label}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

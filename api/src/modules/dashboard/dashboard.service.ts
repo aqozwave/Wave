@@ -13,6 +13,10 @@ import {
   getMaxWarningDays,
 } from "../notificationSettings/notificationSettings.service.js";
 import type { GetDashboardSummaryQuery } from "./dashboard.schemas.js";
+import {
+  listMonthlyCompliance,
+  type MonthlyCompliancePoint,
+} from "./dashboardCompliance.service.js";
 
 /** Actor mínimo tenant + alcance de nave (+ portal externo). */
 type Actor = Pick<
@@ -178,6 +182,7 @@ export async function getDashboardSummary(
     compliancePercent: number | null;
     completedTrainingSessionsCount: number;
   }>;
+  monthlyCompliance: MonthlyCompliancePoint[];
 }> {
   // Portal contratista: sin PII de tripulantes del panel interno.
   if (isContractorPortalActor(actor)) {
@@ -536,6 +541,17 @@ export async function getDashboardSummary(
     })
     .slice(0, query.vesselListLimit);
 
+  // Serie del chart: nave si hay filtro/alcance C1; si no, empresa o global.
+  const seriesBusinessId =
+    typeof crewWhere.businessId === "string"
+      ? crewWhere.businessId
+      : actor.businessId;
+  const monthlyCompliance = await listMonthlyCompliance({
+    kind: effectiveKind,
+    businessId: seriesBusinessId,
+    locationId: effectiveLocationId,
+  });
+
   return {
     scope: {
       kind: effectiveKind,
@@ -553,5 +569,6 @@ export async function getDashboardSummary(
     byVessel,
     byCourse,
     vessels,
+    monthlyCompliance,
   };
 }

@@ -15,7 +15,8 @@ auth:bearer {
 }
 
 docs {
-  KPIs del Panel + próximos vencimientos + breakdowns por nave/curso + lista de naves.
+  KPIs del Panel + próximos vencimientos + breakdowns por nave/curso + lista de naves
+  + monthlyCompliance (12 meses; null si aún no hay snapshot).
   soft = 31–60 d, solid = 0–30 d. Permiso: dashboard read.
 }
 
@@ -33,6 +34,7 @@ assert {
   res.body.byVessel: isDefined
   res.body.byCourse: isDefined
   res.body.vessels: isDefined
+  res.body.monthlyCompliance: isDefined
 }
 
 settings {

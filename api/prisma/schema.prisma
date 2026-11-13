@@ -632,9 +632,36 @@ model Business {
   workPermits             WorkPermit[]
   /// Plantillas de flujo de aprobación de PT (P16).
   approvalFlows           ApprovalFlow[]
+  /// Snapshots mensuales de % cumplimiento (Panel chart).
+  complianceSnapshots     ComplianceSnapshot[]
 
   @@index([name])
   @@map("businesses")
+}
+
+/**
+ * Snapshot mensual de cumplimiento de cursos (Panel «Cumplimiento mensual»).
+ * locationId null = agregado de toda la empresa; con id = una nave.
+ * Unicidad: índices parciales en la migración.
+ */
+model ComplianceSnapshot {
+  id                 String    @id @default(uuid()) @db.Uuid
+  businessId         String    @map("business_id") @db.Uuid
+  business           Business  @relation(fields: [businessId], references: [id])
+  /// null = rollup de la empresa; uuid = snapshot de esa location/nave.
+  locationId         String?   @map("location_id") @db.Uuid
+  location           Location? @relation(fields: [locationId], references: [id])
+  /// Primer día del mes (UTC date), ej. 2026-11-01.
+  periodMonth        DateTime  @map("period_month") @db.Date
+  /// Promedio 0–100; null si no había cursos obligatorios ese corte.
+  compliancePercent  Int?      @map("compliance_percent")
+  crewCount          Int       @map("crew_count")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([businessId, periodMonth])
+  @@index([locationId, periodMonth])
+  @@map("compliance_snapshots")
 }
 
 /**
@@ -854,6 +881,8 @@ model Location {
   vesselPositions VesselPosition[]
   /// Sesiones de capacitación Prevención dictadas en esta nave/lugar.
   trainingSessions TrainingSession[]
+  /// Snapshots mensuales de cumplimiento de esta nave.
+  complianceSnapshots ComplianceSnapshot[]
 
   @@index([businessId])
   @@index([name, businessId])

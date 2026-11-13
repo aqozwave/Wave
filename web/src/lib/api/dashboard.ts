@@ -52,6 +52,13 @@ export type DashboardScope = {
   locationName: string | null;
 };
 
+/** Punto del chart «Cumplimiento mensual». */
+export type DashboardMonthlyCompliancePoint = {
+  periodMonth: string;
+  label: string;
+  percent: number | null;
+};
+
 /** Respuesta GET /dashboard/summary. */
 export type DashboardSummary = {
   scope: DashboardScope;
@@ -60,6 +67,7 @@ export type DashboardSummary = {
   byVessel: DashboardCapsuleColumn[];
   byCourse: DashboardCapsuleColumn[];
   vessels: DashboardVesselCompliance[];
+  monthlyCompliance: DashboardMonthlyCompliancePoint[];
 };
 
 /** Parsea error estándar Wave. */

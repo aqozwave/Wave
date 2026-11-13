@@ -83,6 +83,18 @@ export const dashboardScopeSchema = z
   })
   .openapi("DashboardScope");
 
+/** Punto del chart «Cumplimiento mensual» (últimos 12 meses). */
+export const dashboardMonthlyCompliancePointSchema = z
+  .object({
+    /** YYYY-MM (UTC). */
+    periodMonth: z.string().regex(/^\d{4}-\d{2}$/),
+    /** Etiqueta corta es-CL (Ene, Feb, …). */
+    label: z.string().min(1).max(3),
+    /** Promedio 0–100; null si aún no hay snapshot ese mes. */
+    percent: z.number().int().min(0).max(100).nullable(),
+  })
+  .openapi("DashboardMonthlyCompliancePoint");
+
 export const getDashboardSummaryResponseSchema = z
   .object({
     scope: dashboardScopeSchema,
@@ -94,6 +106,8 @@ export const getDashboardSummaryResponseSchema = z
     byCourse: z.array(dashboardCapsuleColumnSchema),
     /** Lista de cumplimiento por nave (sidebar del Panel). */
     vessels: z.array(dashboardVesselComplianceSchema),
+    /** Serie histórica del chart cumplimiento mensual. */
+    monthlyCompliance: z.array(dashboardMonthlyCompliancePointSchema),
   })
   .openapi("DashboardSummaryResponse");
 
