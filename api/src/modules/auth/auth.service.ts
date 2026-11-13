@@ -477,7 +477,8 @@ function decodeBase64Content(contentBase64: string): Buffer {
 }
 
 /**
- * PATCH /me — actualiza nombre/apellido/correo del usuario autenticado.
+ * PATCH /me — actualiza nombre/apellido; el correo nuevo va a pendingEmail
+ * hasta confirmar el enlace (y pide currentPassword).
  */
 export async function updateMe(
   userId: string,
@@ -490,10 +491,25 @@ export async function updateMe(
     throw new AppError(401, "unauthorized", "Sesión inválida");
   }
 
-  if (body.email && body.email !== existing.email) {
+  const emailChanging =
+    Boolean(body.email) && body.email !== existing.email;
+
+  if (emailChanging) {
+    const valid = await verifyPassword(
+      existing.passwordHash,
+      body.currentPassword ?? "",
+    );
+    if (!valid) {
+      throw new AppError(
+        401,
+        "invalid_current_password",
+        "La contraseña actual no es correcta",
+      );
+    }
+
     const taken = await prisma.user.findFirst({
       where: {
-        email: body.email,
+        email: body.email!,
         deletedAt: null,
         NOT: { id: existing.id },
       },
@@ -512,11 +528,14 @@ export async function updateMe(
     data: {
       ...(body.firstName !== undefined ? { firstName: body.firstName } : {}),
       ...(body.lastName !== undefined ? { lastName: body.lastName } : {}),
-      ...(body.email !== undefined
-        ? { email: body.email, pendingEmail: null }
-        : {}),
+      // No aplica el email al instante: queda pendiente hasta el enlace.
+      ...(emailChanging ? { pendingEmail: body.email! } : {}),
     },
   });
+
+  if (emailChanging) {
+    await issueAndSendConfirmation(updated, { to: body.email! });
+  }
 
   return { user: await toAuthUser(updated) };
 }
@@ -724,16 +743,19 @@ const RESEND_CONFIRMATION_MESSAGE =
 
 /**
  * Emite EmailToken confirm_email y envía (o stubbea) el correo.
- * Exportado para alta admin en /users (misma plantilla que register).
+ * `to` opcional: cambio de email (pending) manda al correo nuevo.
  */
-export async function issueAndSendConfirmation(user: User): Promise<void> {
+export async function issueAndSendConfirmation(
+  user: User,
+  options?: { to?: string },
+): Promise<void> {
   const { plain, expiresAt } = await issueEmailToken(
     user.id,
     EmailTokenPurpose.confirm_email,
   );
 
   await sendConfirmEmail({
-    to: user.email,
+    to: options?.to ?? user.email,
     firstName: user.firstName,
     plainToken: plain,
     expiresAt,
@@ -854,19 +876,41 @@ export async function confirmEmailAccount(
     throw new AppError(403, "user_disabled", "Usuario desactivado");
   }
 
-  const [, user] = await prisma.$transaction([
-    prisma.emailToken.update({
+  const pendingEmail = record.user.pendingEmail;
+  const applyingEmailChange = Boolean(pendingEmail);
+
+  const user = await prisma.$transaction(async (tx) => {
+    await tx.emailToken.update({
       where: { id: record.id },
       data: { usedAt: new Date() },
-    }),
-    prisma.user.update({
+    });
+    const next = await tx.user.update({
       where: { id: record.userId },
-      data: { confirmed: true },
-    }),
-  ]);
+      data: {
+        confirmed: true,
+        ...(applyingEmailChange
+          ? {
+              email: pendingEmail!,
+              pendingEmail: null,
+              // Cierra sesiones: el correo cambió, tokens viejos no valen.
+              tokenVersion: { increment: 1 },
+            }
+          : {}),
+      },
+    });
+    if (applyingEmailChange) {
+      await tx.refreshToken.updateMany({
+        where: { userId: record.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
+    return next;
+  });
 
   return {
-    message: "Cuenta confirmada. Ya puedes iniciar sesión.",
+    message: applyingEmailChange
+      ? "Correo actualizado. Volvé a iniciar sesión."
+      : "Cuenta confirmada. Ya puedes iniciar sesión.",
     user: await toAuthUser(user),
   };
 }
@@ -910,6 +954,9 @@ export async function requestPasswordReset(
 
   if (user) {
     await issueAndSendPasswordReset(user);
+  } else {
+    // Misma familia de costo que un envío real: evita filtrar existencia por latencia.
+    await getDummyPasswordHash();
   }
 
   return { message: PASSWORD_RESET_REQUEST_MESSAGE };

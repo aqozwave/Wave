@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
+import { resolveNextBusinessId, resolveRequiredBusinessId } from "../../lib/tenant.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import type {
   CreatePermitChecklistItemBody,
@@ -207,27 +208,9 @@ export async function getPermitTypeById(
  */
 function resolveCreateBusinessId(
   actor: Actor,
-  body: CreatePermitTypeBody,
+  body: { businessId?: string | null },
 ): string {
-  if (actor.internalRol === "admin") {
-    if (!actor.businessId) {
-      throw new AppError(
-        403,
-        "forbidden",
-        "Tu usuario no tiene una empresa asignada",
-      );
-    }
-    return actor.businessId;
-  }
-
-  if (!body.businessId) {
-    throw new AppError(
-      400,
-      "validation_error",
-      "businessId es requerido para crear un tipo de permiso",
-    );
-  }
-  return body.businessId;
+  return resolveRequiredBusinessId(actor, body.businessId, "un tipo de permiso");
 }
 
 /** Normaliza AST: sin requiresAst → astMode null. */
@@ -347,23 +330,20 @@ export async function updatePermitType(
   }
 
   if (payload.businessId !== undefined) {
-    if (
-      actor.internalRol === "admin" &&
-      payload.businessId !== actor.businessId
-    ) {
-      throw new AppError(
-        403,
-        "forbidden",
-        "No puedes mover el tipo a otra empresa",
-      );
+    const nextBusinessId = resolveNextBusinessId(
+      actor,
+      payload.businessId,
+      existing.businessId,
+    );
+    if (nextBusinessId !== existing.businessId) {
+      const business = await prisma.business.findFirst({
+        where: { id: nextBusinessId, deletedAt: null },
+      });
+      if (!business) {
+        throw new AppError(400, "business_not_found", "Empresa no encontrada");
+      }
+      data.business = { connect: { id: nextBusinessId } };
     }
-    const business = await prisma.business.findFirst({
-      where: { id: payload.businessId, deletedAt: null },
-    });
-    if (!business) {
-      throw new AppError(400, "business_not_found", "Empresa no encontrada");
-    }
-    data.business = { connect: { id: payload.businessId } };
   }
 
   if (payload.defaultApprovalFlowId !== undefined) {

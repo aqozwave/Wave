@@ -24,6 +24,8 @@ export const roleResponseSchema = z
     isSystem: z.boolean(),
     dataScope: z.enum(ROLE_DATA_SCOPES as [string, ...string[]]),
     permissions: z.array(permissionEntrySchema),
+    /** Empresa dueña (custom); null = sistema o legado sin dueño. */
+    businessId: z.uuid().nullable(),
     state: z.boolean(),
     deletedAt: z.string().datetime().nullable(),
     createdAt: z.string().datetime(),
@@ -109,8 +111,8 @@ export const createRoleBodySchema = z.object({
   permissions: z.array(permissionEntrySchema).default([]),
   state: z.boolean().optional(),
   /**
-   * Empresa de contexto (S3b): mergea permisos de módulos apagados
-   * y rechaza resources de módulos off en el body.
+   * Empresa dueña del rol custom (obligatoria vía service).
+   * También es el contexto S3b para mergear permisos de módulos apagados.
    */
   businessId: z.uuid().optional(),
 });
@@ -145,7 +147,10 @@ export const updateRoleBodySchema = z
     dataScope: z.enum(ROLE_DATA_SCOPES as [string, ...string[]]).optional(),
     permissions: z.array(permissionEntrySchema).optional(),
     state: z.boolean().optional(),
-    /** Misma semántica que en create: contexto de módulos de la empresa. */
+    /**
+     * Mover de empresa (solo superadmin en service) o contexto de módulos.
+     * En roles de sistema no se persiste: solo filtra la matriz.
+     */
     businessId: z.uuid().optional(),
   })
   .refine(

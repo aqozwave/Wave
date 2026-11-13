@@ -12,3 +12,5 @@ CLAUDE.local.md
 # Archivos subidos en local (S7 documentos tripulante).
 uploads/
 api/uploads/
+# Bruno: entorno local con tokens/password de sesión (no versionar secretos).
+http/environments/local.bru

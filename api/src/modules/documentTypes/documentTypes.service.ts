@@ -6,6 +6,7 @@ import {
 } from "../../lib/documentActorAccess.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
+import { resolveNextBusinessId, resolveRequiredBusinessId } from "../../lib/tenant.js";
 import type { AuthUser } from "../auth/auth.schemas.js";
 import type {
   CreateDocumentTypeBody,
@@ -152,29 +153,16 @@ async function applyForUploadFilter(
   return { AND: [where, uploadFilter] };
 }
 
-/** businessId de alta. */
+/** Solo superadmin elige tenant; el resto usa su empresa. */
 function resolveCreateBusinessId(
   actor: Actor,
   body: CreateDocumentTypeBody,
 ): string {
-  if (actor.internalRol === "admin") {
-    if (!actor.businessId) {
-      throw new AppError(
-        403,
-        "forbidden",
-        "Tu usuario no tiene una empresa asignada",
-      );
-    }
-    return actor.businessId;
-  }
-  if (!body.businessId) {
-    throw new AppError(
-      400,
-      "validation_error",
-      "businessId es requerido para crear un tipo de documento",
-    );
-  }
-  return body.businessId;
+  return resolveRequiredBusinessId(
+    actor,
+    body.businessId,
+    "un tipo de documento",
+  );
 }
 
 /** 404 si no ve la empresa. */
@@ -308,20 +296,19 @@ export async function updateDocumentType(
 
   let nextBusinessId = existing.businessId;
   if (payload.businessId !== undefined) {
-    if (actor.internalRol === "admin" && payload.businessId !== actor.businessId) {
-      throw new AppError(
-        403,
-        "forbidden",
-        "No puedes mover el tipo a otra empresa",
-      );
+    nextBusinessId = resolveNextBusinessId(
+      actor,
+      payload.businessId,
+      existing.businessId,
+    );
+    if (nextBusinessId !== existing.businessId) {
+      const business = await prisma.business.findFirst({
+        where: { id: nextBusinessId, deletedAt: null },
+      });
+      if (!business) {
+        throw new AppError(400, "business_not_found", "Empresa no encontrada");
+      }
     }
-    const business = await prisma.business.findFirst({
-      where: { id: payload.businessId, deletedAt: null },
-    });
-    if (!business) {
-      throw new AppError(400, "business_not_found", "Empresa no encontrada");
-    }
-    nextBusinessId = payload.businessId;
   }
 
   const data: Prisma.DocumentTypeUpdateInput = {};

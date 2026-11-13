@@ -17,6 +17,6 @@ export async function listActivityLogsHandler(
     throw new AppError(401, "unauthorized", "Token requerido");
   }
   const query = req.query as unknown as ListActivityLogsQuery;
-  const result = await listActivityLogs(query);
+  const result = await listActivityLogs(req.user, query);
   res.status(200).json(listActivityLogsResponseSchema.parse(result));
 }

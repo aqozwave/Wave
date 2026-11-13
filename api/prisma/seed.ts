@@ -787,6 +787,20 @@ async function seedCalRequirements(): Promise<number> {
 }
 
 async function main() {
+  // Nunca sembrar credenciales en producción.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Seed abortado: NODE_ENV=production. No ejecutar seed contra producción.",
+    );
+  }
+
+  const seedPassword = process.env.SEED_SUPERADMIN_PASSWORD;
+  if (!seedPassword || seedPassword.length < 8) {
+    throw new Error(
+      "SEED_SUPERADMIN_PASSWORD es obligatorio (mín. 8 caracteres). No hay password por defecto en el repo.",
+    );
+  }
+
   const role = await prisma.role.upsert({
     where: { key: "superadmin" },
     update: {},
@@ -800,10 +814,14 @@ async function main() {
     },
   });
 
-  const passwordHash = await hashPassword("Password1!");
+  const passwordHash = await hashPassword(seedPassword);
 
   // Correo real de Francisco: los mails de Resend llegan; .local rebotaba.
   const superadminEmail = "fsoto@nachipa-w.com";
+
+  // Por defecto no pisar el hash en update (evita resetear una clave rotada).
+  // Solo con SEED_RESET_SUPERADMIN_PASSWORD=1 se vuelve a escribir passwordHash.
+  const resetPassword = process.env.SEED_RESET_SUPERADMIN_PASSWORD === "1";
 
   await prisma.user.upsert({
     where: { legacyMongoId: "seed-superadmin" },
@@ -812,7 +830,7 @@ async function main() {
       username: "fsoto",
       firstName: "Francisco",
       lastName: "Soto",
-      passwordHash,
+      ...(resetPassword ? { passwordHash } : {}),
       confirmed: true,
       state: true,
       deletedAt: null,

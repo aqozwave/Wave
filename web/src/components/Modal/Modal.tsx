@@ -116,9 +116,8 @@ export function Modal({
   }, [open, onClose]);
 
   /**
-   * Bloquea scroll del fondo y compensa el ancho del scrollbar.
-   * Sin padding-right, al ocultar la barra el contenido se ensancha ~15px
-   * y las tablas “parpadean” al abrir/cerrar firmar o cargar docs.
+   * Marca html.wave-modal-open: oculta la barra del documento
+   * (ver index.css). Contador para apilar varios modales.
    */
   useEffect(() => {
     if (!open) {
@@ -127,26 +126,13 @@ export function Modal({
 
     bodyScrollLockCount += 1;
     if (bodyScrollLockCount === 1) {
-      const scrollbarWidth =
-        window.innerWidth - document.documentElement.clientWidth;
-      document.body.dataset.modalPrevOverflow = document.body.style.overflow;
-      document.body.dataset.modalPrevPaddingRight =
-        document.body.style.paddingRight;
-      document.body.style.overflow = "hidden";
-      if (scrollbarWidth > 0) {
-        document.body.style.paddingRight = `${scrollbarWidth}px`;
-      }
+      document.documentElement.classList.add("wave-modal-open");
     }
 
     return () => {
       bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1);
       if (bodyScrollLockCount === 0) {
-        document.body.style.overflow =
-          document.body.dataset.modalPrevOverflow ?? "";
-        document.body.style.paddingRight =
-          document.body.dataset.modalPrevPaddingRight ?? "";
-        delete document.body.dataset.modalPrevOverflow;
-        delete document.body.dataset.modalPrevPaddingRight;
+        document.documentElement.classList.remove("wave-modal-open");
       }
     };
   }, [open]);
@@ -157,16 +143,16 @@ export function Modal({
 
   /**
    * Shell fijo + backdrop aparte del panel.
-   * Si la opacidad anima en el mismo nodo que envuelve la card, la card
-   * también se oscurece (el bug «modal detrás de la sombra»).
+   * overflow-hidden + overscroll-none: el overlay nunca muestra
+   * barra de scroll del viewport. Scroll solo en el body del panel.
    */
   const shell = (
     <div
       className={[
-        "fixed inset-0",
+        "fixed inset-0 overscroll-none",
         isDrawer
-          ? "z-[100] flex justify-end"
-          : "z-[110] flex items-start justify-center overflow-y-auto px-6 py-8 sm:items-center",
+          ? "z-[100] flex justify-end overflow-hidden"
+          : "z-[110] flex items-center justify-center overflow-hidden px-6 py-8",
       ].join(" ")}
       role="presentation"
       onClick={() => {
@@ -185,7 +171,7 @@ export function Modal({
         aria-modal="true"
         aria-labelledby="wave-modal-title"
         className={[
-          "relative z-[1] flex flex-col bg-white",
+          "relative z-[1] flex min-h-0 flex-col overflow-hidden bg-white",
           isDrawer
             ? [
                 "animate-drawer-panel ml-auto h-full max-h-none rounded-none",
@@ -193,7 +179,7 @@ export function Modal({
                 widthClass,
               ].join(" ")
             : [
-                "animate-modal-panel my-auto max-h-[calc(100vh-4rem)] rounded-2xl",
+                "animate-modal-panel max-h-[calc(100vh-4rem)] w-full rounded-2xl",
                 "shadow-[0_12px_40px_rgba(0,0,0,0.18),0_4px_16px_rgba(0,0,0,0.08)]",
                 widthClass,
               ].join(" "),

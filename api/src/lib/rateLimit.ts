@@ -121,8 +121,8 @@ export function clientIp(req: Request): string {
 }
 
 /**
- * Middleware: limita por IP y, si hay body.email o challengeId, también por ese valor.
- * Usar en login, verify-mfa, forgot-password, resend-*, refresh, reset, confirm.
+ * Middleware: limita por IP y, si hay body.email/challengeId, por par con IP.
+ * El email nunca se rate-limita solo (evita DoS de cuenta ajena desde muchas IPs).
  */
 export function authRateLimit(bucket: string) {
   return (req: Request, _res: Response, next: NextFunction): void => {
@@ -134,13 +134,13 @@ export function authRateLimit(bucket: string) {
       const email =
         typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
       if (email) {
-        hitRateLimit(`auth:${bucket}:email:${email}`);
+        hitRateLimit(`auth:${bucket}:email:${email}:ip:${ip}`);
       }
 
       const challengeId =
         typeof body?.challengeId === "string" ? body.challengeId.trim() : "";
       if (challengeId) {
-        hitRateLimit(`auth:${bucket}:challenge:${challengeId}`);
+        hitRateLimit(`auth:${bucket}:challenge:${challengeId}:ip:${ip}`);
       }
 
       next();

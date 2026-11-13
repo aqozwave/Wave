@@ -294,7 +294,8 @@ export async function markSent(
 
 /**
  * Destino efectivo del mail de outbox.
- * Con NOTIFICATION_EMAIL_OVERRIDE todo va a ese correo (prueba mientras el portal viejo vive).
+ * NOTIFICATION_EMAIL_OVERRIDE solo aplica fuera de production
+ * (o con ALLOW_NOTIFICATION_EMAIL_OVERRIDE=1 explícito).
  */
 export function resolveNotificationRecipient(logicalTo: string): {
   to: string;
@@ -302,7 +303,16 @@ export function resolveNotificationRecipient(logicalTo: string): {
   logicalTo: string;
 } {
   const override = process.env.NOTIFICATION_EMAIL_OVERRIDE?.trim();
-  if (override) {
+  const allowInProd =
+    (process.env.ALLOW_NOTIFICATION_EMAIL_OVERRIDE ?? "")
+      .trim()
+      .toLowerCase() === "1" ||
+    (process.env.ALLOW_NOTIFICATION_EMAIL_OVERRIDE ?? "")
+      .trim()
+      .toLowerCase() === "true";
+  const inProduction = process.env.NODE_ENV === "production";
+
+  if (override && (!inProduction || allowInProd)) {
     return { to: override.toLowerCase(), overridden: true, logicalTo };
   }
   return {
@@ -311,7 +321,6 @@ export function resolveNotificationRecipient(logicalTo: string): {
     logicalTo,
   };
 }
-
 /**
  * Registra fallo: reencola con backoff o pasa a failed si agotó intentos.
  */

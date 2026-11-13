@@ -70,6 +70,16 @@ export function applyDataScopeToWhere<T extends Record<string, unknown>>(
     return base;
   }
 
+  // Portal contratista en recurso sin organizationField (maestros staff, etc.):
+  // 403 en vez de armar un where inválido (p. ej. userId en Rank → 500 Prisma).
+  if (actor.organizationId && !organizationField) {
+    throw new AppError(
+      403,
+      "forbidden",
+      "No tenés acceso a este recurso",
+    );
+  }
+
   // Portal contratista: solo su organización.
   if (actor.organizationId && organizationField) {
     return {

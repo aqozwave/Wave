@@ -145,10 +145,22 @@ export const updateMeBodySchema = z
     firstName: z.string().trim().min(1).optional(),
     lastName: z.string().trim().min(1).optional(),
     email: z.email().trim().toLowerCase().optional(),
+    /** Obligatorio si cambia el email (prueba de posesión). */
+    currentPassword: z.string().min(1).optional(),
   })
-  .refine((body) => Object.keys(body).length > 0, {
+  .refine((body) => {
+    const keys = Object.keys(body).filter((k) => k !== "currentPassword");
+    return keys.length > 0;
+  }, {
     message: "Debe enviar al menos un campo para actualizar",
-  });
+  })
+  .refine(
+    (body) => !body.email || Boolean(body.currentPassword),
+    {
+      message: "currentPassword es requerido para cambiar el correo",
+      path: ["currentPassword"],
+    },
+  );
 
 export const updateMeRequestSchema = z.object({
   body: updateMeBodySchema,

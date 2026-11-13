@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { pipeFileToResponse } from "../../lib/pipeFile.js";
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
 import {
@@ -88,7 +88,7 @@ export async function downloadAccreditationDocumentHandler(
     "Content-Disposition",
     `${disposition}; filename="${encodeURIComponent(file.originalName)}"`,
   );
-  createReadStream(file.fullPath).pipe(res);
+  pipeFileToResponse(file.fullPath, res);
 }
 
 /** POST /accreditations/:id/documents/:documentId/validate */
@@ -205,7 +205,7 @@ export async function downloadAccreditationPersonDocumentHandler(
     "Content-Disposition",
     `${disposition}; filename="${encodeURIComponent(file.originalName)}"`,
   );
-  createReadStream(file.fullPath).pipe(res);
+  pipeFileToResponse(file.fullPath, res);
 }
 
 /** POST …/people/:personId/documents/:documentId/validate */

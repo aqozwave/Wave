@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { render } from "@react-email/render";
+import { logEmailStub } from "../lib/env.js";
 import { isEmailConfigured, sendEmail } from "../lib/resend.js";
 import { getLogoAttachment } from "./emailBrand.js";
 import { LoginMfa } from "./LoginMfa.js";
@@ -30,7 +31,7 @@ export async function sendLoginMfaEmail(
     MFA_EXPIRES_MINUTES === 1 ? "1 minuto" : `${MFA_EXPIRES_MINUTES} minutos`;
 
   if (!isEmailConfigured()) {
-    console.info(
+    logEmailStub(
       `[email.stub] MFA para ${input.to}: code=${input.code} (expira en ${expiresLabel})`,
     );
     return;

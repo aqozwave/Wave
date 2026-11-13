@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { render } from "@react-email/render";
+import { logEmailStub } from "../lib/env.js";
 import { isEmailConfigured, sendEmail } from "../lib/resend.js";
 import { ConfirmEmail } from "./ConfirmEmail.js";
 import { getLogoAttachment } from "./emailBrand.js";
@@ -57,7 +58,7 @@ export async function sendConfirmEmail(
   const confirmUrl = buildConfirmEmailUrl(input.plainToken);
 
   if (!isEmailConfigured()) {
-    console.info(
+    logEmailStub(
       `[email.stub] confirm para ${input.to}: token=${input.plainToken} url=${confirmUrl} (expira ${input.expiresAt.toISOString()})`,
     );
     return;

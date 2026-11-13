@@ -637,10 +637,11 @@ export const SYSTEM_ROLE_DEFS = [
       "Proveedor externo: su organización, habilitación y permisos a completar.",
     dataScope: ROLE_DATA_SCOPE.SELF,
     permissions: [
-      readOnly(PERMISSION_RESOURCE.DASHBOARD),
+      // Sin DASHBOARD: el panel interno expone PII de tripulantes.
       readOnly(PERMISSION_RESOURCE.CONTRACTORS),
       {
         resource: PERMISSION_RESOURCE.ACCREDITATIONS,
+        // UPDATE queda para submit/subir docs; approve/validate se bloquean en service si hay organizationId.
         actions: [
           PERMISSION_ACTION.READ,
           PERMISSION_ACTION.CREATE,
@@ -664,7 +665,6 @@ export const SYSTEM_ROLE_DEFS = [
       "Trabajador a bordo: ve los permisos de su empresa y pide el cierre del trabajo.",
     dataScope: ROLE_DATA_SCOPE.SELF,
     permissions: [
-      readOnly(PERMISSION_RESOURCE.DASHBOARD),
       {
         resource: PERMISSION_RESOURCE.WORK_PERMITS,
         actions: [PERMISSION_ACTION.READ, PERMISSION_ACTION.UPDATE],

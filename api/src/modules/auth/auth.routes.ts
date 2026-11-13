@@ -141,6 +141,7 @@ authRouter.delete("/me/photo", authenticate, deleteMyPhotoHandler);
 authRouter.post(
   "/me/password",
   authenticate,
+  authRateLimit("me-password"),
   validate(changeMyPasswordRequestSchema),
   changeMyPasswordHandler,
 );
