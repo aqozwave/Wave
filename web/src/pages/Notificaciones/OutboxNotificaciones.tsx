@@ -18,6 +18,7 @@ import {
   listNotificationOutboxRequest,
   processOutboxRequest,
   retryNotificationOutboxRequest,
+  runBirthdayNotificationsRequest,
   runCourseExpiryRequest,
   type NotificationOutboxItem,
   type NotificationOutboxStatus,
@@ -43,6 +44,8 @@ const TYPE_OPTIONS: Array<{ value: "" | NotificationOutboxType; label: string }>
   { value: "course_expired", label: "Curso vencido" },
   { value: "boarding_book_admin_digest", label: "Resumen admin · libretas" },
   { value: "course_admin_digest", label: "Resumen admin · cursos" },
+  { value: "birthday_admin", label: "Cumpleaños · aviso admin" },
+  { value: "birthday_person", label: "Cumpleaños · felicitación" },
 ];
 
 const STATUS_LABELS: Record<NotificationOutboxStatus, string> = {
@@ -64,6 +67,8 @@ const TYPE_LABELS: Record<NotificationOutboxType, string> = {
   training_admin_digest: "Resumen · capacitaciones",
   work_notice_created: "Nuevo aviso de trabajo",
   work_permit_created: "PT creado → contratista",
+  birthday_admin: "Cumpleaños · aviso admin",
+  birthday_person: "Cumpleaños · felicitación",
 };
 
 const STATUS_TONE: Record<NotificationOutboxStatus, StatusChipTone> = {
@@ -93,6 +98,15 @@ function payloadLabel(row: NotificationOutboxItem): string {
   if (Array.isArray(obj.rows)) {
     const n = obj.rows.length;
     return `${n} registro${n === 1 ? "" : "s"} en resumen`;
+  }
+  if (typeof obj.personName === "string") {
+    const kind =
+      obj.personKind === "crew"
+        ? "embarcado"
+        : obj.personKind === "user"
+          ? "usuario"
+          : null;
+    return kind ? `${obj.personName} · ${kind}` : obj.personName;
   }
   if (typeof obj.crewName === "string" && typeof obj.courseName === "string") {
     return `${obj.crewName} · ${obj.courseName}`;
@@ -217,6 +231,26 @@ export function OutboxNotificaciones() {
     }
   }
 
+  /** Encola mails de cumpleaños del día (no envía). */
+  async function handleRunBirthdays() {
+    if (!accessToken || busy) return;
+    setBusy(true);
+    try {
+      const result = await runBirthdayNotificationsRequest(accessToken);
+      showToast(
+        `Cumpleaños: ${result.birthdayPeople} persona(s), ${result.personEmails} felicitación(es), ${result.adminEmails} aviso(s) admin`,
+        "success",
+      );
+      await loadRows();
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : "Falló el generador de cumpleaños";
+      showToast(message, "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleProcess(limit = 5) {
     if (!accessToken || busy) return;
     setBusy(true);
@@ -274,6 +308,21 @@ export function OutboxNotificaciones() {
                     aria-hidden
                   />
                   Generar avisos
+                </button>
+              ) : null}
+              {canUpdate ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleRunBirthdays()}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-tremor-border)] bg-white px-3 text-[13px] font-medium text-[var(--color-nachipa-title)] hover:bg-[var(--color-nachipa-bg-page)] disabled:opacity-60"
+                >
+                  <RefreshCw
+                    className="size-3.5"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                  Generar cumpleaños
                 </button>
               ) : null}
               {canUpdate ? (

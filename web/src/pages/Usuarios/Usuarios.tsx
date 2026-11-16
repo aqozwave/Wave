@@ -70,6 +70,8 @@ type FormState = {
   state: boolean;
   /** Fecha local YYYY-MM-DD; vacío = sin vencimiento. */
   accessExpiresAt: string;
+  /** Fecha local YYYY-MM-DD; vacío = sin cumpleaños cargado. */
+  birthDate: string;
 };
 
 /** Qué diálogo está abierto. null = ninguno. */
@@ -94,6 +96,7 @@ const EMPTY_FORM: FormState = {
   areaId: "",
   state: true,
   accessExpiresAt: "",
+  birthDate: "",
 };
 
 /** Ventana en la que el último acceso se muestra como "Ahora". */
@@ -250,6 +253,13 @@ function fromDateInputValue(date: string): string | null {
   const trimmed = date.trim();
   if (!trimmed) return null;
   return new Date(`${trimmed}T23:59:59.999Z`).toISOString();
+}
+
+/** Input date → ISO mediodía UTC (fecha de calendario), o null si vacío. */
+function fromBirthDateInputValue(date: string): string | null {
+  const trimmed = date.trim();
+  if (!trimmed) return null;
+  return new Date(`${trimmed}T12:00:00.000Z`).toISOString();
 }
 
 /** Usuario interno a partir del correo, porque la invitación no pide ese campo. */
@@ -529,6 +539,7 @@ export function Usuarios() {
       areaId: row.areaId ?? "",
       state: row.state,
       accessExpiresAt: toDateInputValue(row.accessExpiresAt),
+      birthDate: toDateInputValue(row.birthDate),
     };
   }
 
@@ -698,6 +709,7 @@ export function Usuarios() {
           areaId: form.areaId || null,
           state: true,
           accessExpiresAt: fromDateInputValue(form.accessExpiresAt),
+          birthDate: fromBirthDateInputValue(form.birthDate),
         };
         const username = usernameFromEmail(email, inviteBody.firstName);
         try {
@@ -730,6 +742,7 @@ export function Usuarios() {
           username: form.username.trim().toLowerCase(),
           run: normalizeRut(form.run),
           accessExpiresAt: fromDateInputValue(form.accessExpiresAt),
+          birthDate: fromBirthDateInputValue(form.birthDate),
         });
         if (photoPending) {
           await uploadUserPhotoRequest(accessToken, editing.id, photoPending);
@@ -1338,6 +1351,22 @@ export function Usuarios() {
               />
               <label className="flex flex-col gap-1.5">
                 <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Fecha de nacimiento
+                </span>
+                <input
+                  type="date"
+                  className={selectClass}
+                  value={form.birthDate}
+                  onChange={(event) =>
+                    setField("birthDate", event.target.value)
+                  }
+                />
+                <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                  Opcional. Sirve para avisos de cumpleaños a admins de la empresa.
+                </span>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
                   Acceso válido hasta
                 </span>
                 <input
@@ -1357,22 +1386,40 @@ export function Usuarios() {
           ) : null}
 
           {dialog === "edit" ? (
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
-                Acceso válido hasta
-              </span>
-              <input
-                type="date"
-                className={selectClass}
-                value={form.accessExpiresAt}
-                onChange={(event) =>
-                  setField("accessExpiresAt", event.target.value)
-                }
-              />
-              <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
-                Opcional. Vacío = sin vencimiento.
-              </span>
-            </label>
+            <>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Fecha de nacimiento
+                </span>
+                <input
+                  type="date"
+                  className={selectClass}
+                  value={form.birthDate}
+                  onChange={(event) =>
+                    setField("birthDate", event.target.value)
+                  }
+                />
+                <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                  Opcional. Avisos de cumpleaños (no requiere que use el portal).
+                </span>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[13px] font-medium text-[var(--color-nachipa-title)]">
+                  Acceso válido hasta
+                </span>
+                <input
+                  type="date"
+                  className={selectClass}
+                  value={form.accessExpiresAt}
+                  onChange={(event) =>
+                    setField("accessExpiresAt", event.target.value)
+                  }
+                />
+                <span className="text-[12px] text-[var(--color-nachipa-secondary)]">
+                  Opcional. Vacío = sin vencimiento.
+                </span>
+              </label>
+            </>
           ) : null}
 
           {dialog === "role" ? (

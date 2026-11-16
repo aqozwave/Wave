@@ -12,6 +12,8 @@ export const notificationOutboxTypeSchema = z.enum([
   "training_admin_digest",
   "work_notice_created",
   "work_permit_created",
+  "birthday_admin",
+  "birthday_person",
 ]);
 
 /** Estados del worker. */
@@ -134,6 +136,23 @@ export const processBoardingBookExpiryResponseSchema = z
  */
 export const processTrainingExpiryResponseSchema =
   processCourseExpiryResponseSchema.openapi("ProcessTrainingExpiryResponse");
+
+/**
+ * Resultado del generador manual de avisos de cumpleaños.
+ * No implica envío: solo filas encoladas / métricas.
+ */
+export const processBirthdayNotificationsResponseSchema = z
+  .object({
+    birthdayPeople: z.number().int(),
+    personEmails: z.number().int(),
+    adminEmails: z.number().int(),
+    emailsQueued: z.number().int(),
+    recipients: z.number().int(),
+    skippedWithoutBusiness: z.number().int(),
+    skippedNoRecipients: z.number().int(),
+    skippedPersonWithoutEmail: z.number().int(),
+  })
+  .openapi("ProcessBirthdayNotificationsResponse");
 
 /** Query opcional del worker manual. */
 export const processOutboxQuerySchema = z.object({

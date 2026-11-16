@@ -88,6 +88,11 @@ export const PERMISSION_RESOURCE = {
   ROLES: "roles",
   /** Registro de actividad (Bitácora). Solo lectura. */
   SISTEMA_ACTIVITY_LOGS: "sistema.activity_logs",
+  /**
+   * Quién recibe correos de cumpleaños (usuarios y embarcados de su empresa).
+   * Independiente de poder ver el outbox en la UI.
+   */
+  BIRTHDAYS_NOTIFICATIONS: "birthdays.notifications",
 } as const;
 
 export const PERMISSION_RESOURCES = Object.values(PERMISSION_RESOURCE);
@@ -352,6 +357,12 @@ export const PERMISSION_CATALOG: PermissionCatalogModule[] = [
         hint: "Registro de actividad del sistema.",
         actions: [PERMISSION_ACTION.READ],
       },
+      {
+        resource: PERMISSION_RESOURCE.BIRTHDAYS_NOTIFICATIONS,
+        label: "Recibir avisos de cumpleaños por correo",
+        hint: "Un mail por usuario/embarcado de su empresa el día del cumpleaños.",
+        actions: [PERMISSION_ACTION.READ],
+      },
     ],
   },
 ];
@@ -466,6 +477,8 @@ export const SYSTEM_ROLE_DEFS = [
         actions: [PERMISSION_ACTION.READ, PERMISSION_ACTION.UPDATE],
       },
       readOnly(PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS_DIGEST),
+      /** Cumpleaños de usuarios y embarcados de su empresa. */
+      readOnly(PERMISSION_RESOURCE.BIRTHDAYS_NOTIFICATIONS),
       /** Prevención: todo lo activo de su empresa (capa módulos filtra después). */
       allActions(PERMISSION_RESOURCE.CONTRACTORS),
       allActions(PERMISSION_RESOURCE.ACCREDITATIONS),
@@ -506,6 +519,8 @@ export const SYSTEM_ROLE_DEFS = [
       readOnly(PERMISSION_RESOURCE.CURSOS_LIBRETAS),
       /** RR.HH. suele necesitar el resumen diario de vigencias. */
       readOnly(PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS_DIGEST),
+      /** RR.HH. recibe cumpleaños de usuarios y embarcados. */
+      readOnly(PERMISSION_RESOURCE.BIRTHDAYS_NOTIFICATIONS),
     ],
   },
   {

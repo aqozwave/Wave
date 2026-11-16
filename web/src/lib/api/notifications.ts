@@ -47,7 +47,9 @@ export type NotificationOutboxType =
   | "training_expired"
   | "training_admin_digest"
   | "work_notice_created"
-  | "work_permit_created";
+  | "work_permit_created"
+  | "birthday_admin"
+  | "birthday_person";
 
 /** Estados del worker. */
 export type NotificationOutboxStatus =
@@ -201,6 +203,31 @@ export async function runCourseExpiryRequest(
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw toApiError(res, body);
   return body as ProcessCourseExpiryResult;
+}
+
+/** Resultado del generador de cumpleaños. */
+export type ProcessBirthdayNotificationsResult = {
+  birthdayPeople: number;
+  personEmails: number;
+  adminEmails: number;
+  emailsQueued: number;
+  recipients: number;
+  skippedWithoutBusiness: number;
+  skippedNoRecipients: number;
+  skippedPersonWithoutEmail: number;
+};
+
+/** POST /notification-outbox/run-birthdays */
+export async function runBirthdayNotificationsRequest(
+  accessToken: string,
+): Promise<ProcessBirthdayNotificationsResult> {
+  const res = await fetch("/api/v1/notification-outbox/run-birthdays", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, body);
+  return body as ProcessBirthdayNotificationsResult;
 }
 
 /** POST /notification-outbox/process?limit= */

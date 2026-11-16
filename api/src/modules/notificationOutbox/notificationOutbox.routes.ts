@@ -8,6 +8,7 @@ import {
   listNotificationOutboxHandler,
   processOutboxHandler,
   retryNotificationOutboxHandler,
+  runBirthdayNotificationsHandler,
   runBoardingBookExpiryHandler,
   runCourseExpiryHandler,
   runTrainingExpiryHandler,
@@ -58,6 +59,13 @@ notificationOutboxRouter.post(
   authenticate,
   requireSuperadmin,
   runTrainingExpiryHandler,
+);
+
+notificationOutboxRouter.post(
+  "/run-birthdays",
+  authenticate,
+  requireSuperadmin,
+  runBirthdayNotificationsHandler,
 );
 
 notificationOutboxRouter.post(

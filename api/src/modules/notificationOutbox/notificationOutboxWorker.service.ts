@@ -15,6 +15,10 @@ import {
   sendTrainingExpiredEmail,
   sendTrainingExpiringSoonEmail,
 } from "../../emails/sendTrainingExpiryEmails.js";
+import {
+  sendBirthdayAdminEmail,
+  sendBirthdayPersonEmail,
+} from "../../emails/sendBirthdayEmails.js";
 import { sendWorkNoticeCreatedEmail } from "../../emails/sendWorkNoticeEmails.js";
 import { sendWorkPermitCreatedEmail } from "../../emails/sendWorkPermitEmails.js";
 import {
@@ -207,6 +211,14 @@ async function validateOutboxRow(row: NotificationOutbox): Promise<boolean> {
       return validateWorkNoticeCreatedRow(row);
     case "work_permit_created":
       return validateWorkPermitCreatedRow(row);
+    case "birthday_admin":
+      // Cumpleaños del día: basta con payload con nombre (persona puede no tener login).
+      return Boolean(String(asPayload(row.payload).personName ?? "").trim());
+    case "birthday_person":
+      // Felicitación: basta con el nombre en el payload.
+      return Boolean(
+        String(asPayload(row.payload).personName ?? "").trim(),
+      );
     default:
       return false;
   }
@@ -370,6 +382,27 @@ async function dispatchOutboxEmail(
             : null,
         description:
           typeof payload.description === "string" ? payload.description : null,
+      });
+      return { resendId: result.resendId, deliveredTo: recipient.to };
+    }
+    case "birthday_admin": {
+      const result = await sendBirthdayAdminEmail({
+        to: recipient.to,
+        logicalTo: recipient.logicalTo,
+        overridden: recipient.overridden,
+        personName: String(payload.personName ?? ""),
+        personRun: String(payload.personRun ?? ""),
+        personKind: String(payload.personKind ?? "user"),
+      });
+      return { resendId: result.resendId, deliveredTo: recipient.to };
+    }
+    case "birthday_person": {
+      const result = await sendBirthdayPersonEmail({
+        to: recipient.to,
+        logicalTo: recipient.logicalTo,
+        overridden: recipient.overridden,
+        personName: String(payload.personName ?? ""),
+        firstName: String(payload.firstName ?? ""),
       });
       return { resendId: result.resendId, deliveredTo: recipient.to };
     }

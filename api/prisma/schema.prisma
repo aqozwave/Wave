@@ -202,6 +202,10 @@ enum NotificationOutboxType {
   work_notice_created
   /// PT creado por Prevención → usuarios portal de la org contratista.
   work_permit_created
+  /// Cumpleaños de usuario o embarcado → admins con permiso birthdays.notifications.
+  birthday_admin
+  /// Felicitación al cumpleañero (usuario o embarcado) en su propio correo.
+  birthday_person
 }
 
 /**
@@ -505,6 +509,8 @@ model User {
   lockUntil       DateTime?        @map("lock_until") @db.Timestamptz
   /// Acceso con vencimiento (útiles para externos / invitados temporales).
   accessExpiresAt DateTime?        @map("access_expires_at") @db.Timestamptz
+  /// Fecha de nacimiento (avisos de cumpleaños a admins de la empresa).
+  birthDate       DateTime?        @map("birth_date") @db.Timestamptz
   deletedAt       DateTime?        @map("deleted_at") @db.Timestamptz
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz

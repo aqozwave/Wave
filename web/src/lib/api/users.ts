@@ -39,6 +39,8 @@ export type AdminUser = {
   lastLoginAt: string | null;
   /** ISO; null = sin vencimiento de acceso. */
   accessExpiresAt: string | null;
+  /** ISO; null = sin fecha de nacimiento. */
+  birthDate: string | null;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -66,6 +68,7 @@ export type CreateUserBody = {
   areaId?: string | null;
   state?: boolean;
   accessExpiresAt?: string | null;
+  birthDate?: string | null;
 };
 
 /** Body patch. */
@@ -83,6 +86,7 @@ export type UpdateUserBody = {
   state?: boolean;
   confirmed?: boolean;
   accessExpiresAt?: string | null;
+  birthDate?: string | null;
 };
 
 /** Query de listado. */
