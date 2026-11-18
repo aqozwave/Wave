@@ -409,11 +409,6 @@ export const SYSTEM_ROLE_KEY = {
   USER: "user",
   COLABORADOR: "colaborador",
   CONTRATISTA: "contratista",
-  /**
-   * Trabajador de faena del portal contratista:
-   * ve permisos de su org y puede pedir cierre (sin HAB ni personal).
-   */
-  CONTRATISTA_FAENA: "contratista_faena",
 } as const;
 
 export const SYSTEM_ROLE_KEYS = Object.values(SYSTEM_ROLE_KEY);
@@ -673,28 +668,14 @@ export const SYSTEM_ROLE_DEFS = [
       },
     ],
   },
-  {
-    key: SYSTEM_ROLE_KEY.CONTRATISTA_FAENA,
-    name: "Contratista faena",
-    description:
-      "Trabajador a bordo: ve los permisos de su empresa y pide el cierre del trabajo.",
-    dataScope: ROLE_DATA_SCOPE.SELF,
-    permissions: [
-      {
-        resource: PERMISSION_RESOURCE.WORK_PERMITS,
-        actions: [PERMISSION_ACTION.READ, PERMISSION_ACTION.UPDATE],
-      },
-    ],
-  },
 ] as const;
 
 /**
- * Roles de portal que se pueden asignar al invitar un usuario a la org contratista.
- * `contratista` = dueño/admin; `contratista_faena` = trabajador a bordo.
+ * Roles de portal al invitar un usuario a la org contratista.
+ * Solo dueño/admin de la org (sin rol faena separado).
  */
 export const CONTRACTOR_INVITE_ROLE_KEYS = [
   SYSTEM_ROLE_KEY.CONTRATISTA,
-  SYSTEM_ROLE_KEY.CONTRATISTA_FAENA,
 ] as const;
 
 export type ContractorInviteRoleKey =

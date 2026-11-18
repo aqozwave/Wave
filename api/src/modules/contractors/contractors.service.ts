@@ -598,7 +598,7 @@ function generateInvitePassword(): string {
 
 /**
  * Resuelve (y crea si falta) el rol de sistema del invitado portal.
- * `contratista` = dueño/admin; `contratista_faena` = ver PT + pedir cierre.
+ * Solo `contratista` (dueño/admin de la org).
  */
 async function resolveContractorInviteRole(roleKey: ContractorInviteRoleKey) {
   const existing = await prisma.role.findFirst({
