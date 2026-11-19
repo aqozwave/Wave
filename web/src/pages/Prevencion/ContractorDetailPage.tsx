@@ -1750,9 +1750,6 @@ export function ContractorDetailPage() {
                 <option value="contratista">
                   Dueño · administra empresa
                 </option>
-                <option value="contratista_faena">
-                  Faena · ver permisos y pedir cierre
-                </option>
               </select>
             </div>
             <div className="w-full shrink-0 sm:w-[160px]">

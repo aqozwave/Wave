@@ -258,6 +258,7 @@ function toUserAdminResponse(row: UserAdminRow): UserAdminResponse {
     accessExpiresAt: row.accessExpiresAt
       ? row.accessExpiresAt.toISOString()
       : null,
+    birthDate: row.birthDate ? row.birthDate.toISOString() : null,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -631,6 +632,12 @@ export async function createUser(
           : body.accessExpiresAt
             ? new Date(body.accessExpiresAt)
             : null,
+      birthDate:
+        body.birthDate === undefined
+          ? undefined
+          : body.birthDate
+            ? new Date(body.birthDate)
+            : null,
     },
     include: userAdminInclude,
   });
@@ -771,6 +778,10 @@ export async function updateUser(
     data.accessExpiresAt = body.accessExpiresAt
       ? new Date(body.accessExpiresAt)
       : null;
+  }
+
+  if (body.birthDate !== undefined) {
+    data.birthDate = body.birthDate ? new Date(body.birthDate) : null;
   }
 
   // Si se rota la clave admin, también revocamos refresh activos.

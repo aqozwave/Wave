@@ -27,11 +27,15 @@ function getResendClient(): Resend | null {
   return client;
 }
 
-/** Adjunto opcional (logo inline vía contentId → cid: en el HTML). */
+/** Adjunto opcional (logo/foto inline vía contentId → cid: en el HTML). */
 export type EmailAttachment = {
   filename: string;
-  content: Buffer;
+  /** Buffer o base64; se normaliza a base64 antes de llamar a Resend. */
+  content?: Buffer | string;
+  /** Ruta absoluta local (alternativa a content; Resend la sube). */
+  path?: string;
   contentId?: string;
+  contentType?: string;
 };
 
 /** Parámetros mínimos de un envío transaccional. */
@@ -47,6 +51,51 @@ export type SendEmailResult = {
   /** Id del mensaje en Resend (dashboard / webhooks). */
   resendId: string | null;
 };
+
+/** MIME a partir del nombre de archivo. */
+function contentTypeFromFilename(filename: string): string | undefined {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return undefined;
+}
+
+/**
+ * Resend espera content en base64 (string) para JSON estable.
+ * Los Buffer grandes (foto wellboat) a veces fallan como cid si van crudos.
+ */
+function normalizeAttachments(
+  attachments: EmailAttachment[] | undefined,
+): EmailAttachment[] | undefined {
+  if (!attachments?.length) return undefined;
+  return attachments.map((att) => {
+    const contentType =
+      att.contentType ?? contentTypeFromFilename(att.filename);
+    if (att.path && att.content == null) {
+      return {
+        filename: att.filename,
+        path: att.path,
+        contentId: att.contentId,
+        contentType,
+      };
+    }
+    const raw = att.content;
+    const content =
+      raw instanceof Buffer
+        ? raw.toString("base64")
+        : typeof raw === "string"
+          ? raw
+          : undefined;
+    return {
+      filename: att.filename,
+      content,
+      contentId: att.contentId,
+      contentType,
+    };
+  });
+}
 
 /**
  * Envía un correo vía Resend.
@@ -70,7 +119,7 @@ export async function sendEmail(
     to: input.to,
     subject: input.subject,
     html: input.html,
-    attachments: input.attachments,
+    attachments: normalizeAttachments(input.attachments),
   });
 
   if (error) {

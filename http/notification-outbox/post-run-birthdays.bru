@@ -1,0 +1,40 @@
+meta {
+  name: Post run birthdays
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/api/v1/notification-outbox/run-birthdays
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Genera filas pending en el outbox:
+  - birthday_person: felicitación al cumpleañero (si tiene email)
+  - birthday_admin: aviso a destinatarios con birthdays.notifications
+  No envía correos. Jobs siguen OFF; usá Process outbox para enviar.
+}
+
+script:pre-request {
+  const token = bru.getVar("accessToken") || bru.getEnvVar("accessToken");
+  if (!token) {
+    throw new Error("Sin accessToken. Corré login + verify-mfa antes.");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.birthdayPeople: isDefined
+  res.body.emailsQueued: isDefined
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -234,7 +234,7 @@ export const listContractorUsersResponseSchema = z
 /**
  * Body invitar usuario a la org (P9b).
  * Crea cuenta o vincula email existente del mismo tenant; envía reset.
- * roleKey: dueño (`contratista`) o faena (`contratista_faena`).
+ * roleKey: dueño/admin de la org (`contratista`).
  */
 export const inviteContractorUserBodySchema = z.object({
   email: z.email("Email inválido").trim().toLowerCase(),
@@ -249,13 +249,8 @@ export const inviteContractorUserBodySchema = z.object({
     .min(1, "Apellido es requerido")
     .max(100),
   run: chileanRunSchema,
-  /**
-   * Rol portal del invitado.
-   * Default: contratista (admin de la org). Faena = ver PT + pedir cierre.
-   */
-  roleKey: z
-    .enum(["contratista", "contratista_faena"])
-    .default("contratista"),
+  /** Rol portal del invitado. Default: contratista (admin de la org). */
+  roleKey: z.enum(["contratista"]).default("contratista"),
   /** Vencimiento opcional del acceso (ISO). */
   accessExpiresAt: z.string().datetime().nullable().optional(),
 });

@@ -576,16 +576,13 @@ export type ExpiryDigestRecipient = {
 };
 
 /**
- * Usuarios activos cuyo rol tiene `cursos.notifications.digest` + read.
- * No usa el bypass de internalRol=superadmin: el permiso debe estar en el rol
- * (el rol sistema superadmin lo incluye vía seed).
+ * Usuarios activos cuyo rol tiene `resource` + `action` (read por defecto).
+ * No usa el bypass de internalRol=superadmin: el permiso debe estar en el rol.
  */
-export async function listExpiryDigestRecipients(): Promise<
-  ExpiryDigestRecipient[]
-> {
-  const resource = PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS_DIGEST;
-  const action = PERMISSION_ACTION.READ;
-
+async function listRecipientsWithRolePermission(
+  resource: string,
+  action: string = PERMISSION_ACTION.READ,
+): Promise<ExpiryDigestRecipient[]> {
   const users = await prisma.user.findMany({
     where: { deletedAt: null, state: true },
     select: {
@@ -625,6 +622,31 @@ export async function listExpiryDigestRecipients(): Promise<
     });
   }
   return out;
+}
+
+/**
+ * Usuarios activos cuyo rol tiene `cursos.notifications.digest` + read.
+ * No usa el bypass de internalRol=superadmin: el permiso debe estar en el rol
+ * (el rol sistema superadmin lo incluye vía seed).
+ */
+export async function listExpiryDigestRecipients(): Promise<
+  ExpiryDigestRecipient[]
+> {
+  return listRecipientsWithRolePermission(
+    PERMISSION_RESOURCE.CURSOS_NOTIFICATIONS_DIGEST,
+  );
+}
+
+/**
+ * Usuarios activos cuyo rol tiene `birthdays.notifications` + read.
+ * Reciben un correo por cada cumpleaños de usuario/embarcado de su empresa.
+ */
+export async function listBirthdayNotificationRecipients(): Promise<
+  ExpiryDigestRecipient[]
+> {
+  return listRecipientsWithRolePermission(
+    PERMISSION_RESOURCE.BIRTHDAYS_NOTIFICATIONS,
+  );
 }
 
 /**

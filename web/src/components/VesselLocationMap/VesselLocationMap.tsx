@@ -394,12 +394,20 @@ function FleetVesselLocationMap({
       }
       status={status}
     >
+      {/*
+        En flota el mapa no puede exigir min-h 220px: si no, el overflow del
+        card recorta la tabla y solo se ven los encabezados (0 filas visibles).
+      */}
       {loading && items.length === 0 ? (
-        <EmptyMapState message="Cargando posiciones…" />
+        <EmptyMapState message="Cargando posiciones…" compact />
       ) : withCoords.length === 0 ? (
-        <EmptyMapState message="Ninguna nave ha reportado posición aún." />
+        <EmptyMapState
+          message="Ninguna nave ha reportado posición aún."
+          compact
+        />
       ) : (
         <MiniMap
+          compact
           mapKey={withCoords
             .map((r) => `${r.locationId}:${r.recordedAt}`)
             .join("|")}
@@ -422,7 +430,7 @@ function FleetVesselLocationMap({
       )}
 
       {items.length > 0 ? (
-        <div className="mt-2 max-h-[120px] shrink-0 overflow-auto rounded-[10px] border border-[var(--color-nachipa-border-subtle)]">
+        <div className="mt-2 min-h-[96px] max-h-[140px] shrink-0 overflow-auto rounded-[10px] border border-[var(--color-nachipa-border-subtle)]">
           <table className="w-full border-collapse text-left text-[12px]">
             <thead className="sticky top-0 bg-[var(--color-table-head-bg,#f8f9fb)] text-[11px] font-medium text-[var(--color-table-head-text)]">
               <tr>
@@ -535,9 +543,21 @@ function ReportButton({
 }
 
 /** Placeholder cuando no hay mapa. */
-function EmptyMapState({ message }: { message: string }) {
+function EmptyMapState({
+  message,
+  compact = false,
+}: {
+  message: string;
+  /** En flota: cede altura a la tabla de naves. */
+  compact?: boolean;
+}) {
   return (
-    <div className="flex min-h-[220px] flex-1 items-center justify-center rounded-[10px] border border-dashed border-[var(--color-tremor-border)] bg-[var(--color-table-head-bg,#f8f9fb)] px-4 text-center">
+    <div
+      className={[
+        "flex flex-1 items-center justify-center rounded-[10px] border border-dashed border-[var(--color-tremor-border)] bg-[var(--color-table-head-bg,#f8f9fb)] px-4 text-center",
+        compact ? "min-h-0" : "min-h-[220px]",
+      ].join(" ")}
+    >
       <p className="m-0 text-[12px] text-[var(--color-nachipa-secondary)]">
         {message}
       </p>
@@ -552,6 +572,7 @@ function MiniMap({
   zoom,
   markers,
   fitToMarkers = false,
+  compact = false,
 }: {
   mapKey: string;
   center: [number, number];
@@ -565,9 +586,16 @@ function MiniMap({
     status?: SignalStatus;
   }>;
   fitToMarkers?: boolean;
+  /** En flota: sin min-height fijo para no tapar la tabla. */
+  compact?: boolean;
 }) {
   return (
-    <div className="min-h-[220px] flex-1 overflow-hidden rounded-[10px] border border-[var(--color-nachipa-border-subtle)]">
+    <div
+      className={[
+        "min-h-0 flex-1 overflow-hidden rounded-[10px] border border-[var(--color-nachipa-border-subtle)]",
+        compact ? "" : "min-h-[220px]",
+      ].join(" ")}
+    >
       <MapContainer
         key={mapKey}
         center={center}
@@ -577,7 +605,12 @@ function MiniMap({
         zoomControl={markers.length > 1}
         doubleClickZoom={false}
         attributionControl
-        style={{ width: "100%", height: "100%", minHeight: 220 }}
+        style={{
+          width: "100%",
+          height: "100%",
+          // Flota: el padre flex define la altura; single mantiene 220px.
+          minHeight: compact ? 0 : 220,
+        }}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'

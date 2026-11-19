@@ -42,6 +42,8 @@ export const userAdminResponseSchema = z
     lastLoginAt: z.string().datetime().nullable(),
     /** Acceso con vencimiento (ISO); null = sin límite. */
     accessExpiresAt: z.string().datetime().nullable(),
+    /** Fecha de nacimiento (ISO); null = sin cargar. */
+    birthDate: z.string().datetime().nullable(),
     deletedAt: z.string().datetime().nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -94,6 +96,8 @@ export const createUserBodySchema = z.object({
   state: z.boolean().optional(),
   /** ISO datetime o null; útiles para externos temporales. */
   accessExpiresAt: z.string().datetime().nullable().optional(),
+  /** Fecha de nacimiento (ISO); opcional. */
+  birthDate: z.string().datetime().nullable().optional(),
 });
 
 export const createUserRequestSchema = z.object({
@@ -141,6 +145,8 @@ export const updateUserBodySchema = z
     state: z.boolean().optional(),
     confirmed: z.boolean().optional(),
     accessExpiresAt: z.string().datetime().nullable().optional(),
+    /** Fecha de nacimiento (ISO) o null para limpiar. */
+    birthDate: z.string().datetime().nullable().optional(),
   })
   .refine((body) => Object.keys(body).length > 0, {
     message: "Debe enviar al menos un campo para actualizar",

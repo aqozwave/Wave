@@ -1,9 +1,11 @@
 import type { Request, Response } from "express";
 import { AppError } from "../../lib/errors.js";
+import { processBirthdayNotifications } from "./birthdayNotification.service.js";
 import { processBoardingBookExpiryNotifications } from "./boardingBookExpiryNotification.service.js";
 import { processCourseExpiryNotifications } from "./courseExpiryNotification.service.js";
 import {
   listNotificationOutboxResponseSchema,
+  processBirthdayNotificationsResponseSchema,
   processBoardingBookExpiryResponseSchema,
   processCourseExpiryResponseSchema,
   processOutboxResponseSchema,
@@ -67,6 +69,21 @@ export async function runTrainingExpiryHandler(
   if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
   const result = await processTrainingExpiryNotifications();
   res.status(200).json(processTrainingExpiryResponseSchema.parse(result));
+}
+
+/**
+ * POST /notification-outbox/run-birthdays
+ * Dispara el generador de cumpleaños a mano. Solo encola; no envía.
+ */
+export async function runBirthdayNotificationsHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw new AppError(401, "unauthorized", "Token requerido");
+  const result = await processBirthdayNotifications();
+  res
+    .status(200)
+    .json(processBirthdayNotificationsResponseSchema.parse(result));
 }
 
 /**

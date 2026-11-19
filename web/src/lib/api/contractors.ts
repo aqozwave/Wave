@@ -227,9 +227,9 @@ export type ListContractorUsersResult = {
 
 /**
  * Rol portal al invitar (P9b).
- * `contratista` = dueño/admin; `contratista_faena` = ver PT + pedir cierre.
+ * Solo `contratista` = dueño/admin de la org.
  */
-export type ContractorInviteRoleKey = "contratista" | "contratista_faena";
+export type ContractorInviteRoleKey = "contratista";
 
 /** Body invitar usuario. */
 export type InviteContractorUserBody = {
@@ -246,7 +246,6 @@ export type InviteContractorUserBody = {
 export function contractorInviteRoleLabel(
   roleKey: string | null | undefined,
 ): string {
-  if (roleKey === "contratista_faena") return "Faena · pide cierre";
   if (roleKey === "contratista") return "Dueño · administra empresa";
   if (!roleKey) return "—";
   return roleKey.replace(/_/g, " ");

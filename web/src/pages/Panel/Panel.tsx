@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router";
 import { SystemAnnouncementsBell } from "../../components/SystemAnnouncementsBell/SystemAnnouncementsBell";
+import { useToast } from "../../components/Toast/ToastProvider";
 import { UserMenu } from "../../components/UserMenu/UserMenu";
 import {
   getDashboardSummaryRequest,
@@ -22,6 +23,17 @@ import {
 import { VesselLocationMap } from "../../components/VesselLocationMap/VesselLocationMap";
 import { listLocationsRequest } from "../../lib/api/locations";
 import { ApiError, useAuth } from "../../lib/auth/AuthContext";
+import { downloadXls } from "../../lib/exportXls";
+
+/** Fila plana del Excel «Exportar resumen» (KPI + naves + vencimientos). */
+type PanelResumenExportRow = {
+  seccion: string;
+  item: string;
+  detalle: string;
+  estado: string;
+  valor: string | number | null;
+  fecha: string;
+};
 
 /** Valor del select “Todas las embarcaciones”. */
 const VESSEL_FILTER_ALL = "";
@@ -205,6 +217,7 @@ function monthlyPolyline(
  */
 export function Panel() {
   const { user, accessToken } = useAuth();
+  const { showToast } = useToast();
   const welcomeName = user ? capitalizeName(user.firstName) : "usuario";
   const isLocationScope =
     user?.dataScope === "location" ||
@@ -216,6 +229,8 @@ export function Panel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  /** Evita doble clic mientras se arma el Excel del resumen. */
+  const [exporting, setExporting] = useState(false);
   /** Filtro de embarcación (vacío = todas del alcance). */
   const [vesselFilter, setVesselFilter] = useState(VESSEL_FILTER_ALL);
   /** Opciones del select (naves visibles para el usuario). */
@@ -256,6 +271,116 @@ export function Panel() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * Descarga Excel del resumen del panel (KPI, naves y próximos vencimientos).
+   * Vuelve a pedir el summary con límites altos: en pantalla solo caben 4 filas.
+   */
+  async function onExportResumen() {
+    if (!accessToken) {
+      showToast("Sesión no disponible.", "danger");
+      return;
+    }
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const data = await getDashboardSummaryRequest(accessToken, {
+        // upcoming/vesselList admiten hasta 50; los charts del API topean en 20.
+        upcomingLimit: 50,
+        vesselChartLimit: 20,
+        courseChartLimit: 20,
+        vesselListLimit: 50,
+        locationId: vesselFilter || undefined,
+      });
+
+      const rows: PanelResumenExportRow[] = [];
+      const k = data.kpis;
+      const horizon = k.horizonDays;
+
+      rows.push({
+        seccion: "KPI",
+        item: "Cumplimiento",
+        detalle: `${k.crewCount} tripulantes activos`,
+        estado: "",
+        valor:
+          k.compliancePercent == null
+            ? null
+            : `${k.compliancePercent.toLocaleString("es-CL")} %`,
+        fecha: "",
+      });
+      rows.push({
+        seccion: "KPI",
+        item: `Vencen en ${horizon} días`,
+        detalle: "cursos OMI por vencer",
+        estado: "",
+        valor: k.expiringSoonCount,
+        fecha: "",
+      });
+      rows.push({
+        seccion: "KPI",
+        item: "Vencidos o faltantes",
+        detalle: "obligatorios vencidos o sin cursar",
+        estado: "",
+        valor: k.expiredOrMissingCount,
+        fecha: "",
+      });
+
+      for (const vessel of data.vessels) {
+        rows.push({
+          seccion: "Nave",
+          item: capitalizeName(vessel.name),
+          detalle: `${vessel.compliantCrewCount}/${vessel.crewCount} al día`,
+          estado: "",
+          valor:
+            vessel.compliancePercent == null
+              ? null
+              : `${vessel.compliancePercent.toLocaleString("es-CL")} %`,
+          fecha: "",
+        });
+      }
+
+      for (const item of data.upcoming) {
+        const estado = upcomingEstado(item.status);
+        rows.push({
+          seccion: "Vencimiento",
+          item: `${capitalizeName(item.crewFirstName)} ${capitalizeName(item.crewLastName)}`.trim(),
+          detalle: item.courseName,
+          estado: estado.label,
+          valor:
+            item.daysUntilExpiry == null ? null : item.daysUntilExpiry,
+          fecha: formatDate(item.expiresAt),
+        });
+      }
+
+      if (rows.length === 0) {
+        showToast("No hay datos para exportar.", "info");
+        return;
+      }
+
+      downloadXls(
+        rows,
+        [
+          { header: "Sección", value: (row) => row.seccion },
+          { header: "Ítem", value: (row) => row.item },
+          { header: "Detalle", value: (row) => row.detalle },
+          { header: "Estado", value: (row) => row.estado },
+          { header: "Valor", value: (row) => row.valor },
+          { header: "Fecha", value: (row) => row.fecha },
+        ],
+        "panel-resumen",
+      );
+      showToast("Excel descargado.", "success");
+    } catch (err) {
+      showToast(
+        err instanceof ApiError
+          ? err.message
+          : "No se pudo exportar el resumen",
+        "danger",
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
 
   /** Carga naves para el select (vessel; si no hay kind, todas activas). */
   useEffect(() => {
@@ -451,10 +576,12 @@ export function Panel() {
 
         <button
           type="button"
-          className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-nachipa-primary)] px-4 text-[13px] font-semibold leading-[19px] text-white"
+          onClick={() => void onExportResumen()}
+          disabled={exporting || loading}
+          className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-nachipa-primary)] px-4 text-[13px] font-semibold leading-[19px] text-white disabled:opacity-60"
         >
           <Download size={18} strokeWidth={1.5} aria-hidden />
-          Exportar resumen
+          {exporting ? "Exportando…" : "Exportar resumen"}
         </button>
 
         <UserMenu />
