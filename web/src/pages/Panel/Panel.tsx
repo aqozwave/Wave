@@ -285,9 +285,10 @@ export function Panel() {
     setExporting(true);
     try {
       const data = await getDashboardSummaryRequest(accessToken, {
+        // upcoming/vesselList admiten hasta 50; los charts del API topean en 20.
         upcomingLimit: 50,
-        vesselChartLimit: 50,
-        courseChartLimit: 50,
+        vesselChartLimit: 20,
+        courseChartLimit: 20,
         vesselListLimit: 50,
         locationId: vesselFilter || undefined,
       });
