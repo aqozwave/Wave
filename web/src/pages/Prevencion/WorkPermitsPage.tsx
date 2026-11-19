@@ -750,45 +750,85 @@ export function WorkPermitsPage() {
                             </button>
                           </>
                         ) : null}
-                        {canUpdate &&
-                        row.status === "active" &&
-                        resolveWorkPermitFlowPolicy(row.approvalFlowSnapshot)
-                          .hasRequestCloseStage ? (
-                          <button
-                            type="button"
-                            className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
-                            disabled={actingId === row.id}
-                            onClick={() =>
-                              openNoteModal("request-close", row)
-                            }
-                          >
-                            Pedir cierre
-                          </button>
-                        ) : null}
-                        {canReceive &&
-                        isStaff &&
-                        row.status === "to_verify" ? (
-                          <>
-                            <button
-                              type="button"
-                              className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
-                              disabled={actingId === row.id}
-                              onClick={() => openSignModal("close", row)}
-                            >
-                              {actingId === row.id ? "…" : "Cerrar trabajo"}
-                            </button>
-                            <button
-                              type="button"
-                              className="text-[13px] font-medium text-[var(--color-nachipa-title)] hover:underline disabled:opacity-60"
-                              disabled={actingId === row.id}
-                              onClick={() =>
-                                openSignModal("reject-close", row)
-                              }
-                            >
-                              Sin cierre
-                            </button>
-                          </>
-                        ) : null}
+                        {(() => {
+                          const flowPolicy = resolveWorkPermitFlowPolicy(
+                            row.approvalFlowSnapshot,
+                          );
+                          const canRequestClose =
+                            canUpdate &&
+                            row.status === "active" &&
+                            flowPolicy.hasRequestCloseStage;
+                          /** EST sin pedir cierre: capitán cierra desde active. */
+                          const canCaptainCloseDirect =
+                            canReceive &&
+                            isStaff &&
+                            flowPolicy.closeActor === "captain" &&
+                            !flowPolicy.hasRequestCloseStage &&
+                            row.status === "active";
+                          const canPreventionCloseDirect =
+                            canUpdate &&
+                            isStaff &&
+                            flowPolicy.closeActor === "prevention" &&
+                            !flowPolicy.hasRequestCloseStage &&
+                            row.status === "active";
+                          const canCloseFromVerify =
+                            isStaff &&
+                            row.status === "to_verify" &&
+                            (flowPolicy.closeActor === "prevention"
+                              ? canUpdate
+                              : canReceive);
+                          const canCloseNow =
+                            canCaptainCloseDirect ||
+                            canPreventionCloseDirect ||
+                            canCloseFromVerify;
+
+                          return (
+                            <>
+                              {canRequestClose ? (
+                                <button
+                                  type="button"
+                                  className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
+                                  disabled={actingId === row.id}
+                                  onClick={() =>
+                                    openNoteModal("request-close", row)
+                                  }
+                                >
+                                  Pedir cierre
+                                </button>
+                              ) : null}
+                              {canCloseNow ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="text-[13px] font-medium text-[var(--color-nachipa-primary)] hover:underline disabled:opacity-60"
+                                    disabled={actingId === row.id}
+                                    onClick={() =>
+                                      openSignModal("close", row)
+                                    }
+                                  >
+                                    {actingId === row.id
+                                      ? "…"
+                                      : flowPolicy.closeActor === "prevention"
+                                        ? "Cerrar trabajo (Prevención)"
+                                        : "Cerrar trabajo"}
+                                  </button>
+                                  {row.status === "to_verify" ? (
+                                    <button
+                                      type="button"
+                                      className="text-[13px] font-medium text-[var(--color-nachipa-title)] hover:underline disabled:opacity-60"
+                                      disabled={actingId === row.id}
+                                      onClick={() =>
+                                        openSignModal("reject-close", row)
+                                      }
+                                    >
+                                      Sin cierre
+                                    </button>
+                                  ) : null}
+                                </>
+                              ) : null}
+                            </>
+                          );
+                        })()}
                         {canDelete ? (
                           <button
                             type="button"

@@ -717,20 +717,17 @@ export function WorkPermitDetailPage() {
                       canUpdate &&
                       permit.status === "active" &&
                       flowPolicy.hasRequestCloseStage;
-                    const canPreventionCloseDirect =
-                      canUpdate &&
-                      isStaff &&
-                      flowPolicy.closeActor === "prevention" &&
-                      !flowPolicy.hasRequestCloseStage &&
-                      permit.status === "active";
+                    /**
+                     * Cierre final: con pedido → to_verify; sin pedido (EST) →
+                     * active. Capitán usa receive; Prevención usa update.
+                     */
                     const canFinalClose =
                       isStaff &&
                       (flowPolicy.closeActor === "prevention"
                         ? canUpdate
                         : canReceive) &&
                       (permit.status === "to_verify" ||
-                        (flowPolicy.closeActor === "prevention" &&
-                          !flowPolicy.hasRequestCloseStage &&
+                        (!flowPolicy.hasRequestCloseStage &&
                           permit.status === "active"));
 
                     return (
@@ -784,8 +781,7 @@ export function WorkPermitDetailPage() {
                             Pedir cierre
                           </Button>
                         ) : null}
-                        {canPreventionCloseDirect ||
-                        (canFinalClose && permit.status === "to_verify") ? (
+                        {canFinalClose ? (
                           <>
                             <Button
                               type="button"

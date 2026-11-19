@@ -1888,7 +1888,7 @@ export async function requestCloseWorkPermit(
 /**
  * POST /work-permits/:id/close — cierre final según flujo (capitán o Prevención).
  * Con pedido de cierre: to_verify → closed.
- * Sin pedido y cierre Prevención: active → closed.
+ * Sin pedido intermedio (EST): active → closed (capitán o Prevención según flujo).
  */
 export async function closeWorkPermit(
   actor: Actor,
@@ -1908,21 +1908,25 @@ export async function closeWorkPermit(
   const policy = flowPolicyFromRow(existing);
   await assertCloseActorAllowed(actor, policy);
 
+  /**
+   * Con etapa «pedir cierre»: solo desde to_verify.
+   * Sin esa etapa (flujo EST): se cierra directo desde active.
+   */
   const allowedStatuses: string[] = policy.hasRequestCloseStage
     ? ["to_verify"]
-    : policy.closeActor === "prevention"
-      ? ["active", "to_verify"]
-      : ["to_verify"];
+    : ["active", "to_verify"];
 
   if (!allowedStatuses.includes(existing.status)) {
+    const closer =
+      policy.closeActor === "prevention" ? "Prevención" : "El capitán";
     throw new AppError(
       409,
       "invalid_work_permit_transition",
       policy.hasRequestCloseStage
         ? `Solo se cierra desde «Verificar trabajo» (ahora: ${existing.status})`
         : policy.hasReceiveStage
-          ? `Prevención cierra desde «Autorizado a bordo» (ahora: ${existing.status})`
-          : `Prevención cierra desde «Trabajo autorizado» (ahora: ${existing.status})`,
+          ? `${closer} cierra desde «Autorizado a bordo» (ahora: ${existing.status})`
+          : `${closer} cierra desde «Trabajo autorizado» (ahora: ${existing.status})`,
     );
   }
 
