@@ -184,6 +184,11 @@ export type WorkPermit = {
   /** Flujo congelado al crear; null en PT viejos. */
   approvalFlowId: string | null;
   approvalFlowSnapshot: WorkPermitApprovalFlowSnapshot | null;
+  /**
+   * true si el tipo ya tiene otro flujo default y este PT sigue con el congelado.
+   * Cerrados → false.
+   */
+  approvalFlowOutdated: boolean;
   createdById: string | null;
   createdAt: string;
   updatedAt: string;

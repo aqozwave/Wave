@@ -444,6 +444,20 @@ export async function createApprovalFlow(
     );
   }
 
+  /**
+   * Soft-delete deja el código en el unique (businessId, code).
+   * Si recrean el mismo código, reactivamos esa fila en vez de chocar P2002.
+   */
+  const softDeleted = await prisma.approvalFlow.findFirst({
+    where: {
+      businessId: body.businessId,
+      code: body.code,
+      deletedAt: { not: null },
+      isSystem: false,
+    },
+    select: { id: true },
+  });
+
   /** Cantidad pedida; por defecto todas las del origen (mín. 3). */
   const targetCount = body.stageCount ?? source.stages.length;
   if (
@@ -500,6 +514,27 @@ export async function createApprovalFlow(
   assertMinimumFlowStages(stagesToCreate);
 
   try {
+    if (softDeleted) {
+      const restoredId = softDeleted.id;
+      await prisma.$transaction(async (tx) => {
+        await tx.approvalFlowStage.deleteMany({ where: { flowId: restoredId } });
+        await tx.approvalFlow.update({
+          where: { id: restoredId },
+          data: {
+            name: body.name,
+            description: body.description ?? null,
+            isSystem: false,
+            copiedFromId: source.id,
+            active: true,
+            deletedAt: null,
+            stages: { create: stagesToCreate },
+          },
+        });
+      });
+      await sortAndRenumberStagesByKind(restoredId);
+      return reloadDetail(restoredId);
+    }
+
     const created = await prisma.approvalFlow.create({
       data: {
         businessId: body.businessId,

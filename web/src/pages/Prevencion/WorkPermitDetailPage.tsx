@@ -660,6 +660,7 @@ export function WorkPermitDetailPage() {
                       Completar
                     </Button>
                   ) : null}
+                  {/* Reaplicar siempre disponible para staff; el banner lo destaca si hay desfase. */}
                   {canUpdate &&
                   isStaff &&
                   permit.status !== "closed" &&
@@ -814,6 +815,31 @@ export function WorkPermitDetailPage() {
             }
           />
         </div>
+
+        {/* Aviso: el tipo cambió de flujo y este PT sigue con el congelado. */}
+        {permit?.approvalFlowOutdated && isStaff ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-status-warning-border,#fed7aa)] bg-[var(--color-status-warning-bg,#ffedd5)] px-3 py-2.5 print:hidden">
+            <p className="m-0 min-w-0 flex-1 text-[13px] leading-[19px] text-[var(--color-nachipa-title)]">
+              El tipo{" "}
+              <span className="font-semibold">{permit.permitType.code}</span>{" "}
+              tiene un flujo nuevo. Este permiso sigue con
+              {permit.approvalFlowSnapshot
+                ? ` ${permit.approvalFlowSnapshot.code} · ${permit.approvalFlowSnapshot.name}`
+                : " el anterior"}
+              .
+            </p>
+            {canUpdate ? (
+              <button
+                type="button"
+                className={outlineBtnClass}
+                disabled={acting}
+                onClick={() => void onRefreshFlow()}
+              >
+                {acting ? "Aplicando…" : "Reaplicar flujo del tipo"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="flex gap-1 border-b border-[var(--color-tremor-border)] print:hidden">
           {tabs.map((t) => (

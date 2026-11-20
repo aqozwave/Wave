@@ -72,8 +72,25 @@ function toDateOnly(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Serializa PT → contrato. */
-function toWorkPermitResponse(row: PermitRow): WorkPermitResponse {
+/**
+ * ¿El flujo congelado del PT ya no es el default actual del tipo?
+ * Cerrados no avisan: no se puede reaplicar.
+ */
+function approvalFlowIsOutdated(
+  status: string,
+  frozenFlowId: string | null,
+  currentFlowId: string | null,
+): boolean {
+  if (status === "closed" || status === "no_closure") return false;
+  if (!currentFlowId) return false;
+  return frozenFlowId !== currentFlowId;
+}
+
+/** Serializa PT → contrato (pide el flowId actual del tipo). */
+function toWorkPermitResponse(
+  row: PermitRow,
+  currentApprovalFlowId: string | null,
+): WorkPermitResponse {
   return {
     id: row.id,
     businessId: row.businessId,
@@ -107,10 +124,62 @@ function toWorkPermitResponse(row: PermitRow): WorkPermitResponse {
     requirementsSnapshot: row.requirementsSnapshot ?? null,
     approvalFlowId: row.approvalFlowId,
     approvalFlowSnapshot: parseApprovalFlowSnapshot(row.approvalFlowSnapshot),
+    approvalFlowOutdated: approvalFlowIsOutdated(
+      row.status,
+      row.approvalFlowId,
+      currentApprovalFlowId,
+    ),
     createdById: row.createdById,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/** Resuelve el flujo actual del tipo y serializa un PT. */
+async function toWorkPermitResponseAsync(
+  row: PermitRow,
+): Promise<WorkPermitResponse> {
+  const { flowId } = await resolveApprovalFlowSnapshot(
+    row.businessId,
+    row.permitTypeId,
+  );
+  return toWorkPermitResponse(row, flowId);
+}
+
+/**
+ * Serializa varios PT reutilizando el resolve por tipo
+ * (evita N consultas iguales en el listado).
+ */
+async function toWorkPermitResponseList(
+  rows: PermitRow[],
+): Promise<WorkPermitResponse[]> {
+  const unique = new Map<
+    string,
+    { businessId: string; permitTypeId: string }
+  >();
+  for (const row of rows) {
+    if (!unique.has(row.permitTypeId)) {
+      unique.set(row.permitTypeId, {
+        businessId: row.businessId,
+        permitTypeId: row.permitTypeId,
+      });
+    }
+  }
+
+  const flowByType = new Map<string, string | null>();
+  await Promise.all(
+    [...unique.values()].map(async ({ businessId, permitTypeId }) => {
+      const { flowId } = await resolveApprovalFlowSnapshot(
+        businessId,
+        permitTypeId,
+      );
+      flowByType.set(permitTypeId, flowId);
+    }),
+  );
+
+  return rows.map((row) =>
+    toWorkPermitResponse(row, flowByType.get(row.permitTypeId) ?? null),
+  );
 }
 
 /** Shape congelado del flujo en el PT. */
@@ -313,7 +382,7 @@ export async function refreshWorkPermitApprovalFlow(
     },
     include: permitInclude,
   });
-  return toWorkPermitResponse(updated);
+  return await toWorkPermitResponseAsync(updated);
 }
 
 /**
@@ -641,7 +710,7 @@ export async function listWorkPermits(
   ]);
 
   return {
-    items: rows.map(toWorkPermitResponse),
+    items: await toWorkPermitResponseList(rows),
     total,
     page: query.page,
     limit: query.limit,
@@ -661,7 +730,7 @@ export async function getWorkPermitById(
     throw new AppError(404, "work_permit_not_found", "Permiso no encontrado");
   }
   assertPermitAccess(actor, row);
-  return toWorkPermitResponse(row);
+  return await toWorkPermitResponseAsync(row);
 }
 
 /**
@@ -695,7 +764,7 @@ export async function deleteWorkPermitById(
     });
   });
 
-  return toWorkPermitResponse(updated);
+  return await toWorkPermitResponseAsync(updated);
 }
 
 /** Estado de verificación de una exigencia (P13b). */
@@ -1146,7 +1215,7 @@ export async function createWorkPermitFromNotice(
     });
   }
 
-  return toWorkPermitResponse(created);
+  return await toWorkPermitResponseAsync(created);
 }
 
 /**
@@ -1600,7 +1669,7 @@ export async function submitWorkPermit(
     data: { status: "to_approve" },
     include: permitInclude,
   });
-  return toWorkPermitResponse(updated);
+  return await toWorkPermitResponseAsync(updated);
 }
 
 /**
@@ -1644,7 +1713,7 @@ export async function approveWorkPermit(
   await upsertWorkPermitSignature(id, "prevention_approve", actor.id, {
     digital: body,
   });
-  return toWorkPermitResponse(updated);
+  return await toWorkPermitResponseAsync(updated);
 }
 
 /**
@@ -1684,7 +1753,7 @@ export async function returnWorkPermit(
     },
     include: permitInclude,
   });
-  return toWorkPermitResponse(updated);
+  return await toWorkPermitResponseAsync(updated);
 }
 
 /**
@@ -1750,7 +1819,7 @@ export async function receiveWorkPermit(
       data: { status: "active", reviewNote: null },
       include: permitInclude,
     });
-    return toWorkPermitResponse(updated);
+    return await toWorkPermitResponseAsync(updated);
   }
 
   const canReceive = await actorHasPermission(
@@ -1782,7 +1851,7 @@ export async function receiveWorkPermit(
   await upsertWorkPermitSignature(id, "captain_receive", actor.id, {
     digital: body,
   });
-  return toWorkPermitResponse(updated);
+  return await toWorkPermitResponseAsync(updated);
 }
 
 /**
@@ -1828,7 +1897,7 @@ export async function rejectReceiptWorkPermit(
     },
     include: permitInclude,
   });
-  return toWorkPermitResponse(updated);
+  return await toWorkPermitResponseAsync(updated);
 }
 
 /**
@@ -1882,7 +1951,7 @@ export async function requestCloseWorkPermit(
   await upsertWorkPermitSignature(id, "contractor_request_close", actor.id, {
     note: observation,
   });
-  return toWorkPermitResponse(updated);
+  return await toWorkPermitResponseAsync(updated);
 }
 
 /**
@@ -1940,7 +2009,7 @@ export async function closeWorkPermit(
   await upsertWorkPermitSignature(id, "captain_close", actor.id, {
     digital: body,
   });
-  return toWorkPermitResponse(updated);
+  return await toWorkPermitResponseAsync(updated);
 }
 
 /** Body sin cierre = nota + firma digital. */
@@ -1994,7 +2063,7 @@ export async function rejectCloseWorkPermit(
       signatureImage: body.signatureImage,
     },
   });
-  return toWorkPermitResponse(updated);
+  return await toWorkPermitResponseAsync(updated);
 }
 
 /**
@@ -2083,7 +2152,7 @@ export async function getWorkPermitDocument(
       phone: issuer.phone,
       email: issuer.email,
     },
-    permit: toWorkPermitResponse(existing),
+    permit: await toWorkPermitResponseAsync(existing),
     people: people
       .filter((r) => !r.person.deletedAt)
       .map((r) => ({

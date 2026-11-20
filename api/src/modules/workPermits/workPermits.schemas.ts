@@ -86,6 +86,11 @@ export const workPermitResponseSchema = z
         ),
       })
       .nullable(),
+    /**
+     * true si el tipo ya tiene otro flujo default y este PT sigue con el congelado.
+     * Cerrados / sin cierre → siempre false.
+     */
+    approvalFlowOutdated: z.boolean(),
     createdById: z.uuid().nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
